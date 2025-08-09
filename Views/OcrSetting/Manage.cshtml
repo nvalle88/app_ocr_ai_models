@@ -1,0 +1,108 @@
+﻿@* @model app_tramites.Models.OCRSetting
+
+@section Migas {
+    <li><a asp-action="Index" onclick="cargando()">OCR Setting</a></li>
+    <li class="active">@ViewData["accion"] </li>
+}
+<div class="row">
+    <div class="col-xs-12 col-sm-7 col-md-7 col-lg-9 margin-top-0">
+        <h1 class="page-title text-align-center txt-color-blueDark">
+            <b>   &nbsp;</b>
+        </h1>
+    </div>
+    <div class="col-xs-12 col-sm-5 col-md-5 col-lg-3 margin-top-0">
+        <ul id="sparks">
+            <li class="sparks-info">
+                <a class="btn btn-primary" onclick="cargando()" asp-action="Index"><i class="fa fa-arrow-left"></i> Back </a>
+            </li>
+        </ul>
+    </div>
+    <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+        <div id="content" class="well no-padding">
+            <form asp-action="Manage" method="post" novalidate="novalidate" class="smart-form client-form">
+                <header>
+                    <b> @ViewData["accion"] Setting </b>
+                </header>
+                <fieldset>
+
+                    <section>
+                        <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+                    </section>
+                    <section class="row">
+                        <section class="col col-sm-3">
+                            <label class="label">Platforms</label>
+                            <select asp-for="PlatformCode" class="form-control select2" asp-items="ViewBag.Platforms">
+                                <option value="">-- Select an assistant --</option> <!-- ← ESTE genera el duplicado -->
+                            </select>
+                        </section>
+                        <section class="col col-sm-3">
+                            <label class="label">Code</label>
+                            <label class="input">
+                                <input type="text" asp-for="SettingCode" placeholder="Code">
+                                <b class="tooltip tooltip-bottom-right">Enter the platform code</b>
+                                <span asp-validation-for="SettingCode" class="text-danger"></span>
+                            </label>
+                        </section>
+                        <section class="col col-sm-3">
+                            <label class="label">Name</label>
+                            <label class="input">
+                                <input type="text" asp-for="Name" placeholder="Name">
+                                <b class="tooltip tooltip-bottom-right">Enter the name</b>
+                                <span asp-validation-for="Name" class="text-danger"></span>
+                            </label>
+                        </section>
+                        <section class="col col-sm-3">
+                            <label class="label">Model Id</label>
+                            <label class="input">
+                                <input type="text" asp-for="ModelId" placeholder="Model Id">
+                                <b class="tooltip tooltip-bottom-right">Enter Model Id</b>
+                                <span asp-validation-for="ModelId" class="text-danger"></span>
+                            </label>
+                        </section>
+                    </section>
+                    <section class="row">
+                        <section class="col col-sm-6">
+                            <label class="label">Endpoint</label>
+                            <label class="input">
+                                <input type="text" asp-for="Endpoint" placeholder="Endpoint">
+                                <b class="tooltip tooltip-bottom-right">Endpoint</b>
+                                <span asp-validation-for="Endpoint" class="text-danger"></span>
+                            </label>
+                        </section>
+                        <section class="col col-sm-6">
+                            <label class="label">Api Key</label>
+                            <label class="input">
+                                <input type="text" asp-for="ApiKey" placeholder="Api Key">
+                                <b class="tooltip tooltip-bottom-right">Api Key</b>
+                                <span asp-validation-for="ApiKey" class="text-danger"></span>
+                            </label>
+                        </section>
+                    </section>
+                    <section class="col col-lg-12">
+                        <i></i>&nbsp; Active ?
+                        <span class="onoffswitch">
+                            <input type="checkbox" checked="@Model.IsActive" asp-for="IsActive" class="onoffswitch-checkbox" id="st11(@Model.IsActive)">
+                            <label class="onoffswitch-label" asp-for="IsActive" for="st11(@Model.IsActive)">
+                                <span class="onoffswitch-inner" data-swchon-text="Yes" data-swchoff-text="No"></span>
+                                <span class="onoffswitch-switch">
+                                </span>
+                            </label>
+                        </span>
+                    </section>
+                </fieldset>
+
+                <footer>
+                    <button type="submit" id="btn-guardar" class="btn btn-primary">
+                        Save
+                    </button>
+                    <a asp-action="Index" asp-controller="OcrSetting" onclick="cargando()" class="btn btn-default"><strong> Cancel </strong></a>
+                </footer>
+            </form>
+
+        </div>
+    </div>
+</div>
+<!-- /.modal -->
+@section Scripts {
+    @await Html.PartialAsync("_ValidationScriptsPartial")
+} *@

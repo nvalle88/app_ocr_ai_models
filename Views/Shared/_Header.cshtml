@@ -4,19 +4,19 @@
     <!-- PLACE YOUR LOGO HERE -->
     <span id="logo">
         <a href="/">
-            <img src="~/img/logo.png" alt="SmartAdmin">
+                <img src="~/img/logosaludsa.png" alt="Saludsa">
         </a>
     </span>
     <!-- END LOGO PLACEHOLDER -->
 
     <!-- Note: The activity badge color changes when clicked and resets the number to 0
     Suggestion: You may want to set a flag when this happens to tick off all checked messages / notifications -->
-    <span id="activity" class="activity-dropdown">
+   @*  <span id="activity" class="activity-dropdown">
         <i class="fa fa-user"></i> <b class="badge"> 21 </b>
-    </span>
+    </span> *@
 
     <!-- AJAX-DROPDOWN : control this dropdown height, look and feel from the LESS variable file -->
-    <div class="ajax-dropdown">
+    @* <div class="ajax-dropdown">
 
         <!-- the ID links are fetched via AJAX to the ajax container "ajax-notifications" -->
         <div class="btn-group btn-group-justified" data-toggle="buttons">
@@ -55,12 +55,12 @@
         </span>
         <!-- end footer -->
 
-    </div>
+    </div> *@
     <!-- END AJAX-DROPDOWN -->
 </div>
 
 <!-- projects dropdown -->
-<div class="project-context hidden-xs">
+@* <div class="project-context hidden-xs">
 
     <span class="label">Projects:</span>
     <span class="project-selector dropdown-toggle" data-toggle="dropdown">Recent projects <i class="fa fa-angle-down"></i></span>
@@ -83,7 +83,7 @@
     </ul>
     <!-- end dropdown-menu-->
 
-</div>
+</div> *@
 <!-- end projects dropdown -->
 
 <!-- pulled right: nav area -->
@@ -100,13 +100,13 @@
     <!-- end collapse menu -->
     <!-- #MOBILE -->
     <!-- Top menu profile link : this shows only when top menu is active -->
-    <ul id="mobile-profile-img" class="header-dropdown-list hidden-xs padding-5">
+   @*  <ul id="mobile-profile-img" class="header-dropdown-list hidden-xs padding-5">
         <li class="">
-            <a href="#" class="dropdown-toggle no-margin userdropdown" data-toggle="dropdown">
+           @*  <a href="#" class="dropdown-toggle no-margin userdropdown" data-toggle="dropdown">
                 <img src="~/img/avatars/sunny.png" alt="John Doe" class="online"/>
-            </a>
-            <ul class="dropdown-menu pull-right">
-                <li>
+            </a> *@
+   @*          <ul class="dropdown-menu pull-right">
+@*                 <li>
                     <a href="javascript:void(0);" class="padding-10 padding-top-0 padding-bottom-0"><i class="fa fa-cog"></i> Setting</a>
                 </li>
                 <li class="divider"></li>
@@ -121,15 +121,15 @@
                 <li>
                     <a href="javascript:void(0);" class="padding-10 padding-top-0 padding-bottom-0" data-action="launchFullscreen"><i class="fa fa-arrows-alt"></i> Full <u>S</u>creen</a>
                 </li>
-                <li class="divider"></li>
-                <li>
+                <li class="divider"></li> *@
+                @* <li>
                     <a asp-controller="Account" asp-action="Logout" class="padding-10 padding-top-5 padding-bottom-5" data-action="userLogout">
                         <i class="fa fa-sign-out fa-lg"></i> <strong><u>L</u>ogout</strong>
                     </a>
                 </li>
             </ul>
-        </li>
-    </ul>
+        </li> *@
+    @* </ul> *@ 
 
     <!-- logout button -->
     <div id="logout" class="btn-header transparent pull-right">
@@ -141,16 +141,16 @@
     </div>
     <!-- end logout button -->
     <!-- search mobile button (this is hidden till mobile view port) -->
-    <div id="search-mobile" class="btn-header transparent pull-right">
+  @*   <div id="search-mobile" class="btn-header transparent pull-right">
         <span>
             <a href="javascript:void(0)" title="Search">
                 <i class="fa fa-search"></i>
             </a>
         </span>
-    </div>
+    </div> *@
     <!-- end search mobile button -->
     <!-- input: search field -->
-    <form asp-controller="AppViews" asp-action="Search" class="header-search pull-right">
+   @*  <form asp-controller="AppViews" asp-action="Search" class="header-search pull-right">
         <input id="search-fld" type="text" name="param" placeholder="Find reports and more" data-autocomplete='[
 					"ActionScript",
 					"AppleScript",
@@ -181,18 +181,18 @@
             <i class="fa fa-times"></i>
         </a>
     </form>
-    <!-- end input: search field -->
+    <!-- end input: search field --> *@
     <!-- fullscreen button -->
-    <div id="fullscreen" class="btn-header transparent pull-right">
+    @* <div id="fullscreen" class="btn-header transparent pull-right">
         <span>
             <a href="javascript:void(0);" data-action="launchFullscreen" title="Full Screen">
                 <i class="fa fa-arrows-alt"></i>
             </a>
         </span>
-    </div>
+    </div> *@
     <!-- end fullscreen button -->
     <!-- #Voice Command: Start Speech -->
-    <div id="speech-btn" class="btn-header transparent pull-right hidden-sm hidden-xs">
+   @*  <div id="speech-btn" class="btn-header transparent pull-right hidden-sm hidden-xs">
         <div>
             <a href="javascript:void(0)" title="Voice Command" data-action="voiceCommand">
                 <i class="fa fa-microphone"></i>
@@ -211,10 +211,10 @@
                 </div>
             </div>
         </div>
-    </div>
+    </div> *@
     <!-- end voice command -->
     <!-- multiple lang dropdown : find all flags in the flags page -->
-    <ul class="header-dropdown-list hidden-xs">
+    @* <ul class="header-dropdown-list hidden-xs">
         <li>
             <a href="#" class="dropdown-toggle" data-toggle="dropdown">
                 <img src="~/img/blank.gif" class="flag flag-us" alt="United States"> <span> English (US) </span> <i class="fa fa-angle-down"></i>
@@ -253,7 +253,7 @@
 
             </ul>
         </li>
-    </ul>
+    </ul> *@
     <!-- end multiple lang -->
 
 </div>

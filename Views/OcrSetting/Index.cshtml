@@ -1,0 +1,192 @@
+@* @model List<app_tramites.Models.OCRSetting>
+@section Migas {
+
+    <li><a asp-action="Index" onclick="cargando()">Setting</a></li>
+    <li class="active">List</li>
+
+}
+
+<div class="row">
+    <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+        <a asp-action="Manage" onclick="cargando()" class="btn btn-primary"><strong><i class="fa fa-plus"></i> New</strong></a>
+    </div>
+    <div class="col-xs-12 col-sm-5 col-md-5 col-lg-12">
+        <br />
+    </div>
+</div>
+<!-- widget grid -->
+<section id="widget-grid" class="">
+    <div class="row">
+        <article class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+            <div class="jarviswidget jarviswidget-color-darken" id="wid-id-0" data-widget-editbutton="false">
+                <!-- widget options:
+                usage: <div class="jarviswidget" id="wid-id-0" data-widget-editbutton="false">
+
+                data-widget-colorbutton="false"
+                data-widget-editbutton="false"
+                data-widget-togglebutton="false"
+                data-widget-deletebutton="false"
+                data-widget-fullscreenbutton="false"
+                data-widget-custombutton="false"
+                data-widget-collapsed="true"
+                data-widget-sortable="false"
+
+                -->
+                <header>
+                    <span class="widget-icon">
+                        <i class="fa fa-table"></i>
+                    </span>
+                    <h2>Platforms </h2>
+
+                </header>
+
+                <!-- widget div-->
+                <div>
+
+                    <!-- widget edit box -->
+                    <div class="jarviswidget-editbox">
+                        <!-- This area used as dropdown edit box -->
+
+                    </div>
+                    <!-- end widget edit box -->
+                    <!-- widget content -->
+                    <div class="widget-body no-padding">
+
+                        <table id="dt_basic" class="table table-striped table-bordered table-hover" width="100%">
+                            <thead>
+                                <tr>
+                                    <th data-hide="phone"><i class="text-muted hidden-md hidden-sm hidden-xs"></i> Code-Name</th>
+                                    <th data-hide="phone"><i class="text-muted hidden-md hidden-sm hidden-xs"></i> Platform</th>
+                                    <th><i class="text-muted hidden-md hidden-sm hidden-xs"></i> Model ID</th>
+                                    <th data-class="expand"><i class="text-muted hidden-md hidden-sm hidden-xs"></i> Endpoint</th>
+                                    <th data-hide="phone,tablet"><i class="txt-color-blue hidden-md hidden-sm hidden-xs"></i> Api Key</th>
+                                    <th data-hide="phone,tablet"><i class="txt-color-blue hidden-md hidden-sm hidden-xs"></i> Created At</th>
+                                    <th data-hide="phone,tablet"><i class="txt-color-blue hidden-md hidden-sm hidden-xs"></i> Is Active</th>
+                                    <th data-hide="phone,tablet"><i class="txt-color-blue hidden-md hidden-sm hidden-xs"></i> Options</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+
+
+                                @foreach (var item in Model)
+                                {
+                                    <tr>
+                                        <td>
+                                            @item.SettingCode-@item.Name
+                                        </td>
+                                        <td>
+                                            @item.PlatformCodeNavigation.PlatformCode-@item.PlatformCodeNavigation.Name
+                                        </td>
+                                        <td>
+                                            @item.ModelId
+                                        </td>
+                                        <td>
+                                            @item.Endpoint
+                                        </td>
+                                        <td>
+                                            @item.ApiKey
+                                        </td>
+                                        <td>
+                                            @item.CreatedAt
+                                        </td>
+
+                                        <td>
+                                            <span class="onoffswitch">
+                                                <input type="checkbox" disabled="disabled" checked="@item.IsActive" name="start_interval" class="onoffswitch-checkbox" id="st11(@item.IsActive)">
+                                                <label class="onoffswitch-label" for="st11(@item.IsActive)">
+                                                    <span class="onoffswitch-inner" data-swchon-text="Yes" data-swchoff-text="No"></span>
+                                                    <span class="onoffswitch-switch">
+                                                    </span>
+                                                </label>
+                                            </span>
+                                        </td>
+
+                                        <td align="center">
+                                            <a asp-action="Manage" onclick="cargando()" class="font-md text-left fa fa-edit " asp-route-settingCode="@item.SettingCode" asp-route-platformCode="@item.PlatformCodeNavigation.PlatformCode"></a> |
+                                            <a href="javascript:void(0);" class="btnEliminar font-md text-left fa fa-trash-o" data-platform-code="@item.PlatformCode" data-setting-code="@item.SettingCode" onclick="Delete(this)" data-descripcion="&#191; Do you want to delete the record... ?"></a>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+
+                    </div>
+                    <!-- end widget content -->
+
+                </div>
+                <!-- end widget div -->
+
+            </div>
+        </article>
+    </div>
+</section>
+@section Scripts {
+
+    @{
+        await Html.RenderPartialAsync("_BootboxPartial");
+    }
+    @{
+        await Html.RenderPartialAsync("_DateTablePartial");
+    }
+    <script>
+
+        function Delete(e) {
+            var btnEliminar = $(e);
+            var descripcion = btnEliminar.data("descripcion");
+
+            bootbox.confirm({
+                title: " ¿ Eliminar ?",
+                message: descripcion,
+                buttons: {
+                    cancel: {
+                        label: '<i class="fa fa-times"></i> Cancel'
+                    },
+                    confirm: {
+                        label: '<i class="fa fa-check"></i> OK'
+                    }
+                },
+                callback: function (result) {
+
+                    if (result == true) {
+
+                        mostrarLoadingPanel("content", "");
+                        var platformCode = btnEliminar.data("platformCode");
+                        var settingCode = btnEliminar.data("settingCode");
+                            var myUrl = '@Url.Action("Delete", "OcrSetting")';
+
+                        var url = myUrl + '?platformCode=' + platformCode + '&settingCode=' + settingCode;
+
+                        $.ajax({
+                            type: "GET",
+                            url: url,
+                            contentType: "application/json; charset=utf-8",
+                            datatype: "json",
+                            timeout: 500000,
+                            success: function (data) {
+                                if (data.estado == 'Error') {
+                                    mostrarNotificacion("Error", data.mensaje);
+                                    $("#content").waitMe("hide");
+                                }
+                                else {
+
+
+                                    var urlInicio = '@Url.Action("Index", "OcrSetting")';
+                                    $("#content").waitMe("hide");
+                                    window.location = urlInicio;
+
+                                }
+                            },
+                            error: function (data) {
+
+                                $("#content").waitMe("hide");
+                                    mostrarNotificacion("Error", "The record could not be deleted. Please try again. If the problem persists, contact the system administrator.");
+                            }
+                        });
+                    };
+                }
+            });
+        }
+    </script>
+
+}
+ *@

@@ -1,141 +1,259 @@
-@using Microsoft.AspNetCore.Identity
-@using app_ocr_ai_models.Models.AccountViewModels
-@model LoginViewModel
-@inject SignInManager<IdentityUser> SignInManager
-<div class="row">
-    <div class="col-xs-12 col-sm-12 col-md-7 col-lg-8 hidden-xs hidden-sm">
-        <h1 class="txt-color-red login-header-big">SmartAdmin</h1>
-        <div class="hero">
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Nexus - La IA que Revoluciona tu Auditoría</title>
+    <!-- Bootstrap 5 CDN & Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.5/font/bootstrap-icons.min.css" rel="stylesheet">
+    <!-- GSAP para animaciones -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.5/gsap.min.js"></script>
+    <style>
+        /* Fondo dinámico */
+        #animated-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(115deg, #4f46e5, #9333ea, #f43f5e);
+            background-size: 600% 600%;
+            animation: gradientShift 20s ease infinite;
+            z-index: -1;
+        }
 
-            <div class="pull-left login-desc-box-l">
-                <h4 class="paragraph-header">It's Okay to be Smart. Experience the simplicity of SmartAdmin, everywhere you go!</h4>
-                <div class="login-app-icons">
-                    <a href="javascript:void(0);" class="btn btn-danger btn-sm">Frontend Template</a>
-                    <a href="javascript:void(0);" class="btn btn-danger btn-sm">Find out more</a>
+        @@keyframes gradientShift {
+            0%
+
+        {
+            background-position: 0% 50%;
+        }
+
+        50% {
+            background-position: 100% 50%;
+        }
+
+        100% {
+            background-position: 0% 50%;
+        }
+
+        }
+        /* Título degradado */
+        .gradient-text {
+            font-size: 4.8rem;
+            background: linear-gradient(90deg,#ff0055,#00ccff,#ffff00);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: textGradientMove 5s ease infinite alternate;
+        }
+
+        @@keyframes textGradientMove {
+            0%
+
+        {
+            background-position: 0% 50%;
+        }
+
+        100% {
+            background-position: 100% 50%;
+        }
+
+        }
+
+        .btn-primary, .bg-primary {
+            background-color: #9333ea !important;
+            border-color: #9333ea !important;
+        }
+        /* Post-it base */
+        .card-postit {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            color: #333;
+            position: relative;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            transition: transform .2s;
+            text-align: left;
+        }
+        /* Tamaños proporcionales ampliados en 1/3 */
+        .postit-blue {
+            background: #cfe9fc;
+            width: 346px;
+            transform: rotate(-2deg);
+        }
+
+        .postit-yellow {
+            background: #fff9c4;
+            width: 306px;
+            transform: rotate(3deg);
+        }
+
+        .postit-green {
+            background: #d0f0c0;
+            width: 266px;
+            transform: rotate(-4deg);
+        }
+
+        .postit-pink {
+            background: #ffd1dc;
+            width: 226px;
+            transform: rotate(2deg);
+        }
+        /* Tipografía proporcional */
+        .postit-title {
+            font-weight: bold;
+            margin-bottom: 0.8rem;
+        }
+
+        .postit-blue .postit-title {
+            font-size: 1.7rem;
+        }
+
+        .postit-yellow .postit-title {
+            font-size: 1.5rem;
+        }
+
+        .postit-green .postit-title {
+            font-size: 1.3rem;
+        }
+
+        .postit-pink .postit-title {
+            font-size: 1.2rem;
+        }
+
+        .postit-text {
+            font-size: 0.9rem;
+        }
+
+        .postit-blue .postit-text {
+            font-size: 1.2rem;
+        }
+
+        .postit-yellow .postit-text {
+            font-size: 1.1rem;
+        }
+
+        .postit-green .postit-text {
+            font-size: 1.0rem;
+        }
+
+        .postit-pink .postit-text {
+            font-size: 0.95rem;
+        }
+        /* Icon sizes */
+        .postit-icon {
+            font-size: 3.4rem;
+            margin-bottom: 0.5rem;
+        }
+        /* Login card destacado */
+        .card-transparent {
+            max-width: 480px !important;
+            padding: 2rem !important;
+        }
+
+            .card-transparent h3 {
+                font-size: 1.5rem;
+            }
+
+            .card-transparent .form-control {
+                font-size: 1.1rem;
+            }
+
+            .card-transparent .btn {
+                font-size: 1.2rem;
+                padding: 0.75rem;
+            }
+        /* Hover efecto */
+        .card-postit:hover {
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body class="d-flex align-items-center justify-content-center text-dark vh-100">
+    <div id="animated-bg"></div>
+    <div class="container">
+        <div class="text-center mb-4">
+            <!-- Logo y título combinados -->
+            @* img src="~/img/nexusaiauditoricono.jpg" alt="Nexus AI Auditor Logo" style="width:100px; margin-bottom:1rem;"> *@
+            <h1 class="gradient-text fw-bold">Nexus AI Auditor</h1>
+        </div>
+        <div class="row justify-content-center align-items-center gy-4" style="min-height:350px;">
+            <!-- Card: Introducción y Problema -->
+            <div class="col-auto">
+                <div class="card-postit postit-blue">
+                    <i class="bi bi-hospital postit-icon text-primary"></i>
+                    <div class="postit-title">Transformación Hospitalaria</div>
+                    <div class="postit-text">Optimiza la auditoría de reembolsos hospitalarios con eficiencia y velocidad excepcionales.</div>
                 </div>
             </div>
-
-            <img src="~/img/demo/iphoneview.png" class="pull-right display-image" alt="" style="width:210px">
-
-        </div>
-
-        <div class="row">
-            <div class="col-xs-12 col-sm-12 col-md-6 col-lg-6">
-                <h5 class="about-heading">About SmartAdmin - Are you up to date?</h5>
-                <p>
-                    Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa.
-                </p>
+            <!-- Card: Oportunidad de Mejora -->
+            <div class="col-auto">
+                <div class="card-postit postit-yellow">
+                    <i class="bi bi-check2-circle postit-icon text-primary"></i>
+                    <div class="postit-title">Procesos Sin Retrasos</div>
+                    <div class="postit-text">Reduce reprocesos y acelera la reasignación, logrando resultados en tiempo récord.</div>
+                </div>
             </div>
-            <div class="col-xs-12 col-sm-12 col-md-6 col-lg-6">
-                <h5 class="about-heading">Not just your average template!</h5>
-                <p>
-                    Et harum quidem rerum facilis est et expedita distinctio. Nam libero tempore, cum soluta nobis est eligendi voluptatem accusantium!
-                </p>
+            <!-- Login centered -->
+            <div class="col-auto d-flex justify-content-center">
+                <div class="card-transparent p-8 pb-8 shadow-lg bg-white" style="max-width:1024px; font-size: 1.5rem;">
+                    <h3 class="h3 text-center mb-6">Acceso Seguro</h3>
+                    <form asp-controller="Account" asp-action="Login">
+                        <input type="email" name="email" class="form-control mb-4 py-3" placeholder="Correo Electrónico" required>
+                        <input type="password" name="password" class="form-control mb-4 py-3" placeholder="Contraseña" required>
+                        <button type="submit" class="btn btn-primary w-100 py-3 fs-4">Ingresar</button>
+                    </form>
+                </div>
+            </div>
+            <!-- Card: Clasificador Inteligente -->
+            <div class="col-auto">
+                <div class="card-postit postit-green">
+                    <i class="bi bi-gear postit-icon text-primary"></i>
+                    <div class="postit-title">Clasificación Precisa</div>
+                    <div class="postit-text">Garantiza más del 95% de precisión en la clasificación de documentos médicos.</div>
+                </div>
+            </div>
+            <!-- Card: Resumen y Sugerencias -->
+            <div class="col-auto">
+                <div class="card-postit postit-pink">
+                    <i class="bi bi-lightning-charge postit-icon text-primary"></i>
+                    <div class="postit-title">Resumen y Recomendaciones</div>
+                    <div class="postit-text">Genera resúmenes clínicos y sugerencias inteligentes para decisiones rápidas y confiables.</div>
+                </div>
+            </div>
+            <!-- Card: Enrutamiento Automático -->
+            <div class="col-auto">
+                <div class="card-postit postit-yellow">
+                    <i class="bi bi-arrow-repeat postit-icon text-primary"></i>
+                    <div class="postit-title">Enrutamiento Automático</div>
+                    <div class="postit-text">Dirige el 80% de los sobres correctamente sin intervención manual.</div>
+                </div>
+            </div>
+            <!-- Card: Resúmenes Aceptados -->
+            <div class="col-auto">
+                <div class="card-postit postit-green">
+                    <i class="bi bi-file-earmark-check postit-icon text-primary"></i>
+                    <div class="postit-title">Resúmenes Aceptados</div>
+                    <div class="postit-text">85% de resúmenes generados aceptados sin necesidad de edición.</div>
+                </div>
+            </div>
+            <!-- Card: Satisfacción Equipo -->
+            <div class="col-auto">
+                <div class="card-postit postit-blue">
+                    <i class="bi bi-emoji-smile postit-icon text-primary"></i>
+                    <div class="postit-title">Alta Satisfacción</div>
+                    <div class="postit-text">Logra puntuaciones ≥4.5/5 en satisfacción del equipo auditor.</div>
+                </div>
             </div>
         </div>
-
     </div>
-    <div class="col-xs-12 col-sm-12 col-md-5 col-lg-4">
-        <div class="well no-padding">
-            <form asp-controller="Account" asp-action="Login" id="login-form" class="smart-form client-form">
-                <header>
-                    Sign In
-                </header>
-
-                <fieldset>
-                    <section>
-                        <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
-                    </section>
-                    <section>
-                        <label class="label">E-mail</label>
-                        <label class="input">
-                            <i class="icon-append fa fa-user"></i>
-                            <input type="email" name="email" value="">
-                            <b class="tooltip tooltip-top-right"><i class="fa fa-user txt-color-teal"></i> Please enter email address/username</b>
-                        </label>
-                    </section>
-
-                    <section>
-                        <label class="label">Password</label>
-                        <label class="input">
-                            <i class="icon-append fa fa-lock"></i>
-                            <input type="password" name="password" value="">
-                            <b class="tooltip tooltip-top-right"><i class="fa fa-lock txt-color-teal"></i> Enter your password</b>
-                        </label>
-                        <div class="note">
-                            <a asp-controller="Account" asp-action="ForgotPassword">Forgot password?</a>
-                        </div>
-                    </section>
-
-                    <section>
-                        <label class="checkbox">
-                            <input type="checkbox" name="remember" checked="">
-                            <i></i>Stay signed in
-                        </label>
-                    </section>
-                </fieldset>
-                <footer>
-                    <button type="submit" class="btn btn-primary ladda-button" id="btn-guardar">
-                        <span class="ladda-label" id="laddaSpanGuardar">Ingresar</span>
-                    </button>
-                </footer>
-            </form>
-
-        </div>
-
-        <h5 class="text-center"> - Or sign in using -</h5>
-
-        <ul class="list-inline text-center">
-            <li>
-                <a href="javascript:void(0);" class="btn btn-primary btn-circle"><i class="fa fa-facebook"></i></a>
-            </li>
-            <li>
-                <a href="javascript:void(0);" class="btn btn-info btn-circle"><i class="fa fa-twitter"></i></a>
-            </li>
-            <li>
-                <a href="javascript:void(0);" class="btn btn-warning btn-circle"><i class="fa fa-linkedin"></i></a>
-            </li>
-        </ul>
-
-    </div>
-</div>
-@section Scripts {
-    @await Html.PartialAsync("_ValidationScriptsPartial")
-    <script type="text/javascript">
-        runAllForms();
-
-        $(function() {
-            // Validation
-            $("#login-form").validate({
-                // Rules for form validation
-                rules : {
-                    email : {
-                        required : true,
-                        email : true
-                    },
-                    password : {
-                        required : true,
-                        minlength : 3,
-                        maxlength : 20
-                    }
-                },
-
-                // Messages for form validation
-                messages : {
-                    email : {
-                        required : 'Please enter your email address',
-                        email : 'Please enter a VALID email address'
-                    },
-                    password : {
-                        required : 'Please enter your password'
-                    }
-                },
-
-                // Do not change code below
-                errorPlacement : function(error, element) {
-                    error.insertAfter(element.parent());
-                }
-            });
-        });
+    <!-- GSAP Animations -->
+    <script>
+        gsap.from('.gradient-text', { y:-40, opacity:0, duration:1 });
+        gsap.from('.card-postit', { y:30, opacity:0, stagger:0.2, delay:0.5 });
+        gsap.from('.card-transparent', { scale:0.8, opacity:0, duration:0.8, delay:1 });
     </script>
-}
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

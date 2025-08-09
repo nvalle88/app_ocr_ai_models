@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace SmartAdmin.Web.Controllers
 {
-    [Authorize]
+
     public class FormsController : Controller
     {
         // GET: /forms/smart-forms/

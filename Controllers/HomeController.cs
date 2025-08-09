@@ -15,6 +15,7 @@ namespace app_ocr_ai_models.Controllers
         [Authorize]
         public IActionResult Index() 
         {
+           return RedirectToAction("Index", "Nexus");
             return View();
         }
         

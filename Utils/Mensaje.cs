@@ -3,15 +3,15 @@ namespace app_ocr_ai_models.Utils
     public static class Mensaje
     {
         
-        public static string Satisfactorio { get { return "La acción se ha realizado satisfactoriamente."; } }
+        public static string Satisfactory { get { return "The action has been successfully completed."; } }
         public static string ErrorListado { get { return "Ha ocurrido un error al cargar el listado."; } }
-        public static string Excepcion { get { return "Ha ocurrido una excepción."; } }
-        public static string ErrorCargarDatos { get { return "Ha ocurrido un error al cargar los datos."; } }
+        public static string Excepcion { get { return "An exception has occurred."; } }
+        public static string ErrorLoadData { get { return "An error occurred while loading the data"; } }
         public static string ErrorUploadFiles { get { return "Ha ocurrido un error al subir la documentación adicional."; } }
 
-        public static string MensajeSatisfactorio { get { return "Satisfactorio"; } }
+        public static string MessaggeOK { get { return "Satisfactorio"; } }
 
-        public static string RegistroNoEncontrado { get { return "El registro solicitado no se ha encontrado"; } }
+        public static string RecordNotFound { get { return "The requested record has not been found"; } }
         public static string BorradoNoSatisfactorio { get { return "No es posible eliminar el registro, existen relaciones que dependen de él"; } }
         public static string Error { get { return "Error"; } }
 
@@ -33,7 +33,7 @@ namespace app_ocr_ai_models.Utils
         public static string DebeIntroducirAlMenosUnRango { get { return "Debe introducir al menos un valor de rango."; } }
         public static string ExisteEmpleado { get { return "Existe un empleado de igual información"; } }
 
-        public static string ExisteUsuario { get { return "Existe un usuario con el correo electrónico ingresado, intente con otro correo electrónico"; } }
+        public static string RecordExists { get { return "The record already exists, please try again with another code."; } }
         public static string NoExistenRegistrosPorAsignar { get { return "No existen Registros por agregar"; } }
         public static string GenerandoListas { get { return "Las listas se están cargando"; } }
         public static string GuardadoSatisfactorio { get { return "Los datos se han guardado correctamente"; } }
@@ -41,7 +41,7 @@ namespace app_ocr_ai_models.Utils
         public static string ErrorFichaEdicion { get { return "Existe una ficha en edición"; } }
         public static string ErrorCargaArchivo { get { return "Se produjo un error al cargar el archivo"; } }
         public static string ErrorServicio { get { return "No se pudo establecer conexión con el servicio"; } }
-        public static string CorregirFormulario { get { return "Corregir la información"; } }
+        public static string FixForm { get { return "Some information is incorrect. Please review and correct it."; } }
         public static string SinArchivo { get { return "No existe archivo para descargar"; } }
         public static string RegistroEditado { get { return "El registro se ha editado corectamente"; } }
 
@@ -49,8 +49,8 @@ namespace app_ocr_ai_models.Utils
         public static string ErrorCrear { get { return "Ha ocurrido un error al crear el registro."; } }
         public static string ErrorEditar { get { return "Ha ocurrido un error al editar el registro."; } }
         public static string ErrorEliminar { get { return "Ha ocurrido un error al eliminar el registro."; } }
-        public static string Informacion { get { return "Información"; } }
-        public static string Aviso { get { return "Aviso"; } }
+        public static string Information { get { return "Información"; } }
+        public static string Warning { get { return "Aviso"; } }
         public static string Success { get { return "Success"; } }
 
         public static string ErrorActivar { get { return "Ha ocurrido un error al activar el registro."; } }

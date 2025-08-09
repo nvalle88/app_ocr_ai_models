@@ -32,6 +32,11 @@
     <link rel="apple-touch-startup-image" href="~/img/splash/iphone.png" media="screen and (max-device-width: 320px)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <link href="~/js/waitme/waitme.min.css" rel="stylesheet" />
+    <link href="~/js/waitme/waitme.css" rel="stylesheet" />
+    <script src="~/js/waitme/waitme.min.js"></script>
+    <script src="~/js/waitme/waitme.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
 </head>
 <body class="smart-style-1">
     @{ await Html.RenderPartialAsync("_Header"); }
@@ -41,6 +46,15 @@
         @{ await Html.RenderPartialAsync("_Ribbon"); }
         <!-- MAIN CONTENT -->
         <div id="content">
+            <!-- Widget JavaScript bundle -->
+
+            <!-- Search widget element is not visible by default -->
+
+
+            <ol class="breadcrumb h6 fa-pull-left col col-lg-12">
+                <li><a asp-action="Index" asp-controller="Nexus"><i class="fa fa-home"></i> Inicio</a></li>
+                @RenderSection("Migas", required: false)
+            </ol>
             @RenderBody()
         </div>
         <!-- END MAIN CONTENT -->

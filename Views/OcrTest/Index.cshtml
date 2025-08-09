@@ -1,0 +1,224 @@
+﻿@model app_tramites.Models.ViewModel.QueryInput
+
+@section Migas {
+    <li><a onclick="cargando()" href="/">OCR Query</a></li>
+}
+
+<div class="row">
+    <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+        <div class="smart-form client-form well no-padding">
+            <header><b>Send OCR Query</b></header>
+            <fieldset>
+                <section class="row">
+                    <section class="col col-sm-6">
+                        <label class="label">Proceso</label>
+                        <select asp-for="ProcessCode"
+                                class="form-control select2"
+                                asp-items="ViewBag.Process">
+                            <option value="">-- Select an assistant --</option>
+                        </select>
+                    </section>
+                    <section class="col col-sm-6">
+                        <label class="label">Upload Files (optional)</label>
+                        <label class="input input-file">
+                            <span class="button">
+                                <input id="fileInput"
+                                       type="file"
+                                       accept=".pdf,.jpg,.png"
+                                       multiple
+                                       onchange="handleFileSelect(this.files)">
+                                Browse
+                            </span>
+                            <input type="text" readonly placeholder="No files selected">
+                        </label>
+                        <div id="fileList" class="mt-2">
+                            <small>No files selected.</small>
+                        </div>
+                    </section>
+                </section>
+
+                <section class="row mt-3">
+                    <section class="col col-sm-12">
+                        <label class="label">Query (optional)</label>
+                        <label class="textarea">
+                            <i class="icon-append fa fa-question-circle"></i>
+                            <textarea id="query"
+                                      asp-for="Query"
+                                      rows="3"
+                                      placeholder="Additional info"></textarea>
+                            <b class="tooltip tooltip-bottom-right">
+                                Optional additional information
+                            </b>
+                        </label>
+                    </section>
+                </section>
+
+                <section class="row">
+                    <section class="col col-sm-12">
+                        <div id="promptsContainer"
+                             class="alert alert-block alert-info"
+                             style="display:none;">
+                            <a class="close" data-dismiss="alert" href="#">×</a>
+                            <h4 class="alert-heading">Assistant Prompts</h4>
+                            <ul id="promptsList"></ul>
+                        </div>
+                    </section>
+                </section>
+            </fieldset>
+
+            <footer>
+                <section class="row">
+                    <div class="col col-sm-12 mt-3">
+                        <button id="btnSubmit" type="button" class="btn btn-primary">
+                            <i class="fa fa-paper-plane"></i> Submit
+                        </button>
+                    </div>
+                </section>
+            </footer>
+        </div>
+
+        <div id="resultContainer"
+             class="well mt-3"
+             style="display:none;">
+            <pre id="resultMd" class="mb-0"></pre>
+        </div>
+
+        <div id="historyContainer" class="mt-4">
+            <h4><i class="fa fa-history"></i> Previous Results</h4>
+            <div id="historyList" class="smart-form"></div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function () {
+            $('.select2').select2({
+                placeholder: "Select an assistant",
+                allowClear: true,
+                width: 'resolve'
+            });
+        });
+
+        function handleFileSelect(files) {
+            const fileListDiv = document.getElementById('fileList');
+            fileListDiv.innerHTML = '';
+
+            if (!files || files.length === 0) {
+                fileListDiv.innerHTML = '<small>No files selected.</small>';
+                return;
+            }
+
+            const list = document.createElement('ul');
+            list.className = 'list-unstyled';
+
+            Array.from(files).forEach(file => {
+                const item = document.createElement('li');
+                item.className = 'd-flex align-items-center mb-2';
+
+                let thumbHtml;
+                if (file.type.startsWith('image/')) {
+                    const url = URL.createObjectURL(file);
+                    thumbHtml = `<img src="${url}" style="max-width:80px; max-height:80px; margin-right:10px;" alt="${file.name}"/>`;
+                } else {
+                    thumbHtml = `<i class="fa fa-file-pdf-o fa-2x" style="margin-right:10px;"></i>`;
+                }
+
+                item.innerHTML = `${thumbHtml}
+                                  <span>${file.name} (${(file.size/1024).toFixed(1)} KB)</span>`;
+                list.appendChild(item);
+            });
+
+            fileListDiv.appendChild(list);
+        }
+
+        document.getElementById("btnSubmit").addEventListener("click", async () => {
+            mostrarLoadingPanel("content", "");
+
+            const resultMd = document.getElementById("resultMd");
+            const resultContainer = document.getElementById("resultContainer");
+            const historyList = document.getElementById("historyList");
+
+            resultMd.innerHTML = "";
+            resultContainer.style.display = "none";
+
+            const ProcessCode = document.getElementById("ProcessCode").value.trim();
+            const query = document.getElementById("query").value.trim();
+            const files = Array.from(document.getElementById("fileInput").files);
+
+            if (!ProcessCode) {
+                $("#content").waitMe("hide");
+                alert("ProcessCode is required.");
+                return;
+            }
+
+            const filePayload = [];
+            for (const file of files) {
+                try {
+                    const base64 = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result.split(',')[1]);
+                        reader.onerror = err => reject(err);
+                        reader.readAsDataURL(file);
+                    });
+                    filePayload.push({
+                        FileName: file.name,
+                        Content: base64,
+                        Extension: '.' + file.name.split('.').pop().toLowerCase()
+                    });
+                } catch {
+                    $("#content").waitMe("hide");
+                    alert(`Error reading file: ${file.name}`);
+                    return;
+                }
+            }
+
+            const payload = {
+                ProcessCode: ProcessCode,
+                Query: query,
+                Files: filePayload
+            };
+
+            try {
+                const resp = await fetch('/OcrTest/Index', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!resp.ok) throw new Error(`Status ${resp.status}`);
+                const data = await resp.json();
+                const result = (data.result || "No result").trim();
+
+                resultMd.innerHTML = `
+                    <i class="fa fa-check-circle txt-color-green"></i>
+                    <strong>OCR Result:</strong>
+                    <code>${result}</code>
+                `.trim();
+                resultContainer.className = "well mt-3 bg-success text-white border border-success";
+                resultContainer.style.display = "block";
+
+                const entry = document.createElement("div");
+                entry.className = "well bg-light mb-2";
+                entry.innerHTML = `
+                    <div><strong>Proceso:</strong> ${ProcessCode}</div>
+                    <div><strong>Query:</strong> ${query || "<em>None</em>"}</div>
+                    <pre class="mt-2">${result}</pre>
+                `.trim();
+                historyList.prepend(entry);
+
+            } catch (e) {
+                console.error(e);
+                resultMd.innerHTML = `
+                    <i class="fa fa-times-circle txt-color-red"></i>
+                    <strong>Error:</strong>
+                    <code>Request failed.</code>
+                `;
+                resultContainer.className = "well mt-3 bg-danger text-white border border-danger";
+                resultContainer.style.display = "block";
+            }
+
+            $("#content").waitMe("hide");
+        });
+    </script>
+}

@@ -61,7 +61,7 @@ namespace app_ocr_ai_models.Controllers
                 if (result.Succeeded)
                 {
                     _logger.LogInformation("User logged in.");
-                    this.TempData["Mensaje"] = $"{Mensaje.MensajeSatisfactorio}| Bienvenido {User.Identity?.Name}";
+                    this.TempData["Mensaje"] = $"{Mensaje.MessaggeOK}| Bienvenido {User.Identity?.Name}";
                     return RedirectToLocal(returnUrl);
                 }
                 if (result.RequiresTwoFactor)

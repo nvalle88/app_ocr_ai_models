@@ -1,0 +1,899 @@
+﻿@model app_tramites.Models.ModelAi.ProcessCase
+@using Markdig
+
+@section Migas {
+        <li><a asp-action="Index" onclick="cargando()">OCR Query</a></li>
+        <li class="active">Detalle del Caso</li>
+}
+
+<div class="row justify-content-center">
+    <!-- Columna principal (chat/resultados) -->
+    <div class="col-lg-7 d-flex flex-column">
+        <div id="content" class="well no-padding flex-grow-1 d-flex flex-column">
+            <div class="smart-form flex-grow-1 d-flex flex-column">
+                <!-- Header -->
+                <header class="case-header">
+                    <div class="case-title">
+                        <i class="fa-solid fa-magnifying-glass text-primary me-2"></i>
+                        Resultados del Caso
+                    </div>
+                    <hr />
+                    <br />
+                    <div class="case-meta">
+                        <div class="item">
+                            <i class="fa-solid fa-barcode fa-lg text-primary"></i>
+                            <span><b> NE-@(((Model.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))</b></span>
+                        </div>
+                        @if (Model.FinalResponseResults?.Any() == true)
+                        {
+                            var lastDate = Model.FinalResponseResults
+                            .OrderByDescending(r => r.CreatedDate)
+                            .FirstOrDefault()?.CreatedDate;
+                            if (lastDate != null)
+                            {
+                                        <div class="item">
+                                            <i class="fa-regular fa-clock fa-lg text-primary"></i>
+                                                    <span><b> @lastDate.Value.ToLocalTime().ToString("dd/MM/yyyy, HH:mm")</b></span>
+                                        </div>
+                            }
+                        }
+                    </div>
+
+                    <div class="case-back">
+                        <a asp-action="Index" onclick="cargando()"
+                           class="btn btn-primary btn-lg shadow-sm">
+                            <i class="fa-solid fa-circle-arrow-left me-2"></i>
+                            Volver
+                        </a>
+                    </div>
+                </header>
+
+                <div class="mi-resultados-wrapper">
+                    <div class="content-card mb-4">
+                        <!-- Header opcional -->
+                        <div class="content-card-header">
+                            <h5 class="card-title mb-0">Resultados de la Consulta</h5>
+                        </div>
+
+                        <div class="content-card-body">
+                            @if (!Model.FinalResponseResults.Any())
+                            {
+                                    <div class="alert alert-warning text-center fs-5">
+                                        <i class="fa fa-info-circle me-2"></i>
+                                        No hay resultados disponibles para este caso.
+                                    </div>
+                            }
+                            else
+                            {
+                                var allMarkdown = string.Join(
+                                    "\n\n---\n\n",
+                                    Model.FinalResponseResults
+                                    .OrderBy(r => r.CreatedDate)
+                                    .Select(r => r.ResponseText ?? ""));
+                                var markdown = Model.FinalResponseResults
+                                .OrderByDescending(r => r.CreatedDate)
+                                .First().ResponseText;
+                                var html = RenderMarkdown(allMarkdown);
+                                    <article class="result-panel mb-0 rounded shadow-sm border">
+                                        <div class="markdown-panel">
+                                            <div id="chatOutput"
+                                                 data-content="@Html.Raw(html.Replace("\"", "&quot;"))">
+                                            </div>
+                                        </div>
+                                    </article>
+                            }
+                        </div>
+                        <div id="chatInputArea" class="border-top bg-white p-3 chat-input-wrapper" >
+                            <textarea id="chatInput"
+                                      class="chat-input form-control"
+                                      rows="3"
+                                      placeholder="Escribe tu mensaje… (Enter = enviar, Shift+Enter = nueva línea)"
+                                      aria-label="Escribe tu mensaje"
+                                      style="resize: none; font-size:18px; line-height:1.4; padding:10px;"></textarea>
+
+                            <button id="sendChat" class="chat-send-btn" aria-label="Enviar mensaje" title="Enviar">
+                                <i class="fa-solid fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Chat input area -->
+
+    </div>
+
+    <div class="col-lg-5">
+        <div class="bg-light p-4 rounded shadow-sm" style="max-height: 90vh; overflow-y: auto;">
+            <h5 class="mb-3">Archivos</h5>
+
+            <div id="thumbnailList" class="row g-2">
+                @foreach (var file in Model.DataFile)
+                {
+                    var origName = file.IsFileUri ? file.FileUri : file.FileUri;
+                    var ext = System.IO.Path.GetExtension(origName)?.ToLower().TrimStart('.') ?? "";
+                    var url = file.FileUri;
+
+                        <div class="col-3">
+                            <div class="thumbnail-item border rounded position-relative"
+                                 data-url="@url"
+                                 data-type="@ext"
+                                 style="cursor:pointer; width:100%; padding-top:140%; overflow:hidden;">
+
+                                <canvas class="pdf-thumb-canvas d-none position-absolute top-0 start-0 w-100 h-100"></canvas>
+
+                                <img class="img-thumb d-none position-absolute top-0 start-0 w-100 h-100 object-fit-cover"
+                                     src="@url" alt="thumb"
+                                     onerror="this.classList.add('d-none'); this.nextElementSibling.classList.remove('d-none');" />
+
+                                <i class="file-icon fa-solid fa-file fa-2x text-secondary d-none
+                           position-absolute top-50 start-50 translate-middle"></i>
+                            </div>
+                        </div>
+                }
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Contenedor global del visor central (PDF.js o imagen) -->
+<div id="viewerContainer"
+     class="position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-none
+            justify-content-center align-items-center"
+     style="z-index:1050;">
+    <div class="viewer-content bg-white rounded p-3"
+         style="width:80vw; height:80vh; position:relative;">
+        <!-- Botón cerrar -->
+        <button id="closeViewer" class="btn btn-sm btn-danger position-absolute"
+                style="top:8px; right:8px;">
+            <i class="fa fa-close"></i>
+        </button>
+        <!-- Área donde se verá PDF o imagen grande -->
+        <div id="pdfViewer" class="h-100 overflow-auto"></div>
+    </div>
+</div>
+
+<!-- THINKING OVERLAY -->
+<div id="thinkingOverlay" class="thinking-overlay d-none" role="status" aria-live="polite">
+  <div class="thinking-box">
+    <div class="dots" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div class="thinking-text">Analizando…</div>
+  </div>
+</div>
+
+@section Scripts {
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+              <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+        <script>
+            document.addEventListener('DOMContentLoaded', () => {
+
+                          const textarea = document.getElementById('chatInput');
+          const sendBtn = document.getElementById('sendChat');
+          const overlay = document.getElementById('thinkingOverlay');
+          const chatOutputEl = document.getElementById('chatOutput'); // <- nombre cambiado
+
+          // --- Auto-resize textarea ---
+          function autoResize(el) {
+            if (!el) return;
+            el.style.height = 'auto';
+            const max = 320;
+            const newH = Math.min(el.scrollHeight, max);
+            el.style.height = newH + 'px';
+          }
+          if (textarea) {
+            autoResize(textarea);
+            textarea.addEventListener('input', () => autoResize(textarea));
+            textarea.addEventListener('keydown', (e) => {
+              // Enter = enviar, Shift+Enter = nueva línea
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendBtn.click();
+              }
+            });
+          }
+
+          // --- Overlay control ---
+          function showOverlay() {
+            if (!overlay) return;
+            overlay.classList.remove('d-none');
+            overlay.style.pointerEvents = 'auto';
+            document.body.style.overflow = 'hidden';
+          }
+          function hideOverlay() {
+            if (!overlay) return;
+            overlay.classList.add('d-none');
+            overlay.style.pointerEvents = 'none';
+            document.body.style.overflow = '';
+          }
+
+          // --- Button loading state (uses FA spinner) ---
+          function setBtnLoading(on) {
+            if (!sendBtn) return;
+            if (on) {
+              sendBtn.disabled = true;
+              if (!sendBtn.dataset.orig) sendBtn.dataset.orig = sendBtn.innerHTML;
+              sendBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            } else {
+              sendBtn.disabled = false;
+              sendBtn.innerHTML = sendBtn.dataset.orig || '<i class="fa-solid fa-paper-plane"></i>';
+            }
+          }
+
+          // --- Typewriter effect (safe for HTML) ---
+          function typeWriteInto(el, html, speed = 6) {
+            if (!el) return Promise.resolve();
+            return new Promise(resolve => {
+              el.innerHTML = '';
+              let i = 0;
+              function step() {
+                i++;
+                el.innerHTML = html.slice(0, i);
+                el.scrollTop = el.scrollHeight;
+                if (i < html.length) {
+                  setTimeout(step, speed);
+                } else {
+                  resolve();
+                }
+              }
+              step();
+            });
+          }
+
+          // --- Send handler ---
+          if (sendBtn) {
+            sendBtn.addEventListener('click', async (ev) => {
+              ev.preventDefault();
+              const text = textarea?.value?.trim();
+              if (!text) return;
+
+              try {
+                setBtnLoading(true);
+                showOverlay();
+
+                const resp = await fetch('@Url.Action("ChatAjax", "Nexus")', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ caseCode: '@Model.CaseCode', message: text })
+                });
+
+                if (!resp.ok) throw new Error(resp.statusText);
+                const data = await resp.json();
+                const html = marked.parse(data.response || '');
+
+                // set immediate content attribute (useful si otro código depende de él)
+                if (chatOutputEl) chatOutputEl.setAttribute('data-content', html);
+
+                // ocultar overlay antes de la animación de escritura (mejor UX)
+                hideOverlay();
+
+                // Mostrar con typewriter
+                if (chatOutputEl) {
+                  await typeWriteInto(chatOutputEl, html, 6); // velocidad 6ms por caracter
+                }
+
+                // limpiar input y ajustar alto
+                if (textarea) {
+                  textarea.value = '';
+                  autoResize(textarea);
+                }
+              } catch (err) {
+                console.error(err);
+                hideOverlay();
+                setBtnLoading(false);
+                alert('Error: ' + (err && err.message ? err.message : 'Error en la petición'));
+                return;
+              } finally {
+                setBtnLoading(false);
+              }
+            });
+          }
+
+          // --- Inicial: si hay contenido previo, mostrarlo (sin animar fuertemente) ---
+          if (chatOutputEl) {
+            const content = chatOutputEl.getAttribute('data-content') || chatOutputEl.innerHTML || '';
+            if (content.trim().length > 0) {
+              chatOutputEl.innerHTML = content;
+            }
+          }
+
+            //           const btnChat = document.getElementById('sendChat');
+            // if (!btnChat) return;
+
+            // btnChat.addEventListener('click', async e => {
+            //   e.preventDefault();
+            //   btnChat.disabled = true;
+
+            //   const msg = document.getElementById('chatInput').value.trim();
+            //   if (!msg) { btnChat.disabled = false; return; }
+
+            //   try {
+            //     const resp = await fetch('@Url.Action("ChatAjax", "Nexus")', {
+            //       method: 'POST',
+            //       headers: { 'Content-Type': 'application/json' },
+            //       body: JSON.stringify({
+            //         caseCode: '@Model.CaseCode',
+            //         message: msg
+            //       })
+            //     });
+            //     if (!resp.ok) throw new Error(resp.statusText);
+
+            //     const data = await resp.json();
+            //     // Markdown → HTML:
+            //     const html = marked.parse(data.response);
+
+            //     // Máquina de escribir sobre el HTML:
+            //     const out = document.getElementById('chatOutput');
+            //     out.setAttribute('data-content', html);
+            //     // out.innerHTML = '';
+            //     let idx = 0;
+            //     function typeChar() {
+            //       const content = out.getAttribute('data-content');
+            //       if (idx <= content.length) {
+            //         out.innerHTML = content.slice(0, idx++);
+            //         setTimeout(typeChar, 1);
+            //       }
+            //     }
+            //     typeChar();
+
+            //     document.getElementById('chatInput').value = '';
+            //   } catch (err) {
+            //     console.error(err);
+            //     alert('Error: ' + err.message);
+            //   } finally {
+            //     btnChat.disabled = false;
+            //   }
+            // });
+
+                // Máquina de escribir
+                const output = document.getElementById('chatOutput');
+                if(output) {
+                    const content = output.getAttribute('data-content');
+                    let idx = 0;
+                    function typeChar() {
+                        if (idx <= content.length) {
+                            output.innerHTML = content.slice(0, idx);
+                            idx++;
+                            setTimeout(typeChar, Math.random(1,2) * 1);
+                        }
+                    }
+                    typeChar();
+                };
+
+                                  const items = document.querySelectorAll('.thumbnail-item');
+                    const viewer = document.getElementById('viewerContainer');
+                    const pdfViewer = document.getElementById('pdfViewer');
+
+                    // Mostrar miniaturas PDF o imágenes
+                    items.forEach(item => {
+                        const url = item.dataset.url;
+                        const type = item.dataset.type;
+
+                        if (type === 'pdf') {
+                            const canvas = item.querySelector('.pdf-thumb-canvas');
+                            canvas.classList.remove('d-none');
+                            pdfjsLib.getDocument(url).promise
+                                .then(pdf => pdf.getPage(1))
+                                .then(page => {
+                                    const vp = page.getViewport({ scale: 0.5 });
+                                    canvas.width = vp.width;
+                                    canvas.height = vp.height;
+                                    const ctx = canvas.getContext('2d');
+                                    return page.render({ canvasContext: ctx, viewport: vp }).promise;
+                                })
+                                .catch(() => {
+                                    canvas.classList.add('d-none');
+                                });
+                        } else {
+                            const img = item.querySelector('.img-thumb');
+                            img.classList.remove('d-none');
+                        }
+
+                        // Click para abrir visor flotante
+                        item.addEventListener('click', () => {
+                            pdfViewer.innerHTML = ''; // limpiar visor
+
+                            if (type === 'pdf') {
+                                pdfjsLib.getDocument(url).promise
+                                    .then(pdf => pdf.getPage(1))
+                                    .then(page => {
+                                        const canvas = document.createElement('canvas');
+                                        const vp = page.getViewport({ scale: 1.5 });
+                                        canvas.width = vp.width;
+                                        canvas.height = vp.height;
+                                        pdfViewer.appendChild(canvas);
+                                        page.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
+                                        viewer.classList.remove('d-none');
+                                    })
+                                    .catch(() => {
+                                        pdfViewer.innerHTML = '<p class="text-danger">Error al cargar el PDF.</p>';
+                                        viewer.classList.remove('d-none');
+                                    });
+                            } else {
+                                const img = document.createElement('img');
+                                img.src = url;
+                                img.className = 'img-fluid rounded';
+                                pdfViewer.appendChild(img);
+                                viewer.classList.remove('d-none');
+                            }
+                        });
+                    });
+
+                    // Cierre del visor
+                    document.getElementById('closeViewer').addEventListener('click', () => {
+                        viewer.classList.add('d-none');
+                        pdfViewer.innerHTML = '';
+                    });
+        });
+
+        </script>
+
+        <style>
+            /* ================================
+                         Header “case-header”
+                         ================================ */
+            .case-header {
+                background-color: #f8f9fa;
+                border-radius: 0.5rem;
+                box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+                padding: 1.5rem;
+                margin-bottom: 1.5rem;
+            }
+
+                .case-header .case-title {
+                    text-align: center;
+                    font-size: 2.5rem;
+                    font-weight: 700;
+                    margin-bottom: 1.5rem;
+                    border-bottom: none;
+                    padding-bottom: 0;
+                }
+
+                .case-header .case-meta {
+                    display: flex;
+                    gap: 3rem;
+                    font-size: 1.5rem;
+                    color: #6c757d;
+                    align-items: center;
+                }
+
+                    .case-header .case-meta .item {
+                        display: flex;
+                        align-items: center;
+                        gap: 1rem;
+                    }
+
+                        .case-header .case-meta .item:first-child {
+                            padding-left: 1rem;
+                        }
+
+                .case-header .case-back {
+                    text-align: right;
+                    margin-top: 1rem;
+                    margin-right: 1.5rem;
+                }
+
+            /* ================================
+                         Content Card “content-card”
+                         ================================ */
+            .content-card {
+                background-color: #ffffff;
+                border-radius: 0.5rem;
+                box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.1);
+                overflow: hidden;
+                margin: 2rem; /* Aumentado para más aire */
+                display: flex;
+                flex-direction: column;
+                height: auto;
+            }
+
+            .content-card-header {
+                padding: 1rem 1.5rem;
+                border-bottom: 1px solid #e2e8f0;
+                background-color: #f1f5f9;
+            }
+
+                .content-card-header .card-title {
+                    font-size: 1.25rem;
+                    font-weight: 600;
+                    color: #334155;
+                }
+
+            .content-card-body {
+                padding: 2rem;
+                flex-grow: 1;
+                overflow-y: auto;
+            }
+
+                .content-card-body.custom-padding {
+                    padding-left: 2.5rem;
+                    padding-right: 2.5rem;
+                }
+
+            /* ================================
+                         Markdown Result Panel “result-panel”
+                         ================================ */
+            .result-panel {
+                background: white;
+                border: 1px solid #cbd5e1;
+                border-radius: 12px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+                overflow: hidden;
+                margin: 1rem;
+                max-width: 850px;
+                position: relative;
+            }
+
+                .result-panel::before {
+                    content: "⌘";
+                    font-size: 1.2rem;
+                    color: #666;
+                    position: absolute;
+                    top: 0.75rem;
+                    left: 0.75rem;
+                }
+
+            .markdown-panel {
+                font-size: 1.5rem;
+                line-height: 1.7;
+                color: #212529;
+                animation: fadeIn 0.4s ease-in;
+            }
+
+            @@keyframes fadeIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(5px);
+                }
+
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+
+
+            /* ================================
+                         Botón de Copiar o Similar
+                         ================================ */
+            .copy-button {
+                position: absolute;
+                top: 0.75rem;
+                right: 0.75rem;
+                background-color: #f0f0f0;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 0.85rem;
+                color: #333;
+                cursor: pointer;
+                transition: background-color 0.2s ease;
+            }
+
+                .copy-button:hover {
+                    background-color: #e0e0e0;
+                }
+
+            /* ================================
+                         Responsive Ajustes
+                         ================================ */
+            @@media (max-width: 768px) {
+                .content-card, .result-panel {
+                    margin: 1rem;
+                    padding: 1rem;
+                }
+
+                .case-header .case-meta {
+                    flex-direction: column;
+                    gap: 1rem;
+                }
+
+                .markdown-panel {
+                    padding: 1rem;
+                }
+
+                .copy-button {
+                    top: 0.5rem;
+                    right: 0.5rem;
+                }
+
+                .result-panel::before {
+                    left: 0.5rem;
+                    top: 0.5rem;
+                }
+            }
+
+            /* ================================
+                         OVERRIDES para .mi-resultados-wrapper
+                         ================================ */
+            .mi-resultados-wrapper .content-card {
+                display: flex;
+                flex-direction: column;
+            }
+
+            .mi-resultados-wrapper .content-card-body {
+                display: block;
+                overflow: visible;
+                padding: 0 1rem 6rem 1rem; /* espacio abajo para que el input se vea siempre */
+            }
+
+            .mi-resultados-wrapper .result-panel {
+                max-width: none !important; /* quitar el límite de 850px */
+                width: calc(100% - 2px) !important; /* 1px de margen a cada lado */
+                margin: 0 1px 2px !important; /* 0 arriba, 1px lados, 2px abajo */
+                display: flex;
+                flex-direction: column;
+                border-radius: 0.5rem !important;
+                padding: 0; /* eliminar padding extra */
+                box-sizing: border-box; /* incluir borde/padding en el ancho */
+            }
+
+            .mi-resultados-wrapper .markdown-panel {
+                width: 100% !important; /* fill full width of article */
+                margin: 0 !important;
+                padding: 1rem !important;
+                box-sizing: border-box;
+                flex-grow: 1;
+                overflow-y: auto;
+                border-top-left-radius: 0.5rem;
+                border-top-right-radius: 0.5rem;
+            }
+
+                .mi-resultados-wrapper .markdown-panel #chatOutput {
+                    margin-top: 5px !important;
+                }
+
+            .chat-input-wrapper {
+                position: relative;
+            }
+
+            /* Área de texto redondeada */
+            .chat-input {
+                padding: 0.75rem 3.5rem 0.75rem 1rem; /* espacio interno derecho para el botón */
+                border-radius: 2rem; /* bordes muy redondeados */
+                border: 1px solid #d1d5db; /* gris claro */
+                font-size: 1rem;
+                line-height: 1.5;
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+            /* Botón dentro del input */
+            .chat-send-btn {
+                position: absolute;
+                top: 50%;
+                right: 1rem;
+                transform: translateY(-50%);
+                background-color: #0d6efd; /* azul bootstrap primary */
+                border: none;
+                color: #fff;
+                width: 2.5rem;
+                height: 2.5rem;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: background-color 0.2s;
+            }
+
+                .chat-send-btn:hover {
+                    background-color: #0b5ed7;
+                }
+
+            /* Ajuste de altura automática al escribir más líneas */
+            .chat-input-wrapper textarea {
+                overflow: hidden;
+            }
+
+            .chat-input {
+                padding: 0.75rem 3.5rem 0.75rem 1rem;
+                border-radius: 2rem;
+                border: 1px solid #d1d5db;
+                font-size: 1rem;
+                line-height: 1.5;
+                width: 100%;
+                box-sizing: border-box;
+                transition: box-shadow 0.2s, border-color 0.2s;
+                box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
+            }
+
+                .chat-input:focus {
+                    outline: none;
+                    border-color: #86b7fe;
+                    box-shadow: inset 0 1px 3px rgba(0, 123, 255, 0.2);
+                }
+
+            /* Sombra suave bajo todo el wrapper */
+            .chat-input-wrapper {
+                position: relative;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+                border-radius: 2rem;
+                padding: 2px; /* para que la sombra no se recorte */
+                background: #fff;
+            }
+
+            /* Botón circular flotante */
+            .chat-send-btn {
+                position: absolute;
+                top: 50%;
+                right: 0.5rem;
+                transform: translateY(-50%);
+                background-color: #0d6efd;
+                border: none;
+                color: #fff;
+                width: 2.75rem;
+                height: 2.75rem;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: background-color 0.2s, box-shadow 0.2s, transform 0.1s;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            }
+                /* Mejor icono: papel-avión más estilizado */
+                .chat-send-btn i {
+                    font-size: 1.1rem;
+                    transform: rotate(45deg);
+                }
+
+                .chat-send-btn:hover {
+                    background-color: #0b5ed7;
+                    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+                    transform: translateY(-52%) scale(1.05);
+                }
+
+                .chat-send-btn:active {
+                    background-color: #0a58ca;
+                    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+                    transform: translateY(-50%) scale(0.95);
+                }
+
+            .chat-send-btn {
+                position: absolute;
+                top: 50%;
+                right: 0.5rem;
+                transform: translateY(-50%);
+                background-color: #0d6efd;
+                border: none;
+                color: #fff;
+                width: 2.75rem;
+                height: 2.75rem;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: background-color 0.2s, box-shadow 0.2s, transform 0.1s;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            }
+
+                .chat-send-btn i {
+                    font-size: 1.1rem;
+                }
+
+            .thumbnail-item {
+                position: relative;
+                overflow: hidden;
+                background: #f8f9fa;
+            }
+
+                .thumbnail-item canvas,
+                .thumbnail-item img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                }
+
+                .thumbnail-item .file-icon {
+                    font-size: 2rem;
+                }
+
+
+                    /* Chat input - tamaño por defecto más grande y auto-grow */
+    .chat-input-wrapper {
+        position: relative;
+        padding: 8px;
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+
+    /* textarea */
+    .chat-input {
+        width: 100%;
+        box-sizing: border-box;
+        min-height: 80px;     /* MÁS GRANDE por defecto */
+        max-height: 320px;    /* no crecer indefinidamente */
+        padding: 12px 64px 12px 14px;
+        border-radius: 10px;
+        resize: none;
+        overflow-y: auto;
+        font-size: 1rem;
+        line-height: 1.45;
+        border: 1px solid #d1d5db;
+    }
+
+    /* Enfoque */
+    .chat-input:focus { outline: none; border-color: #86b7fe; box-shadow: 0 0 0 3px rgba(13,110,253,0.06); }
+
+    /* Botón enviar */
+    .chat-send-btn {
+        position: absolute;
+        top: 50%;
+        right: 12px;
+        transform: translateY(-50%);
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        background-color: #0d6efd;
+        color: #fff;
+        box-shadow: 0 4px 10px rgba(13,110,253,0.18);
+    }
+
+    /* Disabled look */
+    .chat-send-btn[disabled] { opacity: 0.65; cursor: not-allowed; transform: translateY(-50%) scale(0.98); }
+
+    /* Spinner dentro del botón (si se reemplaza innerHTML por el spinner) */
+    .chat-send-btn i.fa-spinner { font-size: 1.05rem; }
+
+    /* Thinking overlay (cubrir toda la ventana; visible mientras analiza) */
+    .thinking-overlay {
+        position: fixed;
+        inset: 0;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        z-index: 2050;
+        pointer-events: none; /* será activado cuando se muestre */
+    }
+
+    .thinking-overlay .thinking-box {
+        display:flex;
+        gap:10px;
+        align-items:center;
+        background: rgba(255,255,255,0.95);
+        border-radius: 10px;
+        padding: 12px 18px;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.18);
+        pointer-events: auto;
+    }
+
+    /* Dots animados */
+    .dots { display:inline-flex; gap:6px; align-items:center; justify-content:center; }
+    .dots span { width:8px; height:8px; border-radius:50%; background:#6c757d; opacity:0.35; transform: translateY(0); animation: dotUp 1s infinite ease-in-out; }
+    .dots span:nth-child(2){ animation-delay: 0.12s; }
+    .dots span:nth-child(3){ animation-delay: 0.24s; }
+
+        @@keyframes dotUp {
+      0% { transform: translateY(0); opacity: 0.35; }
+      50% { transform: translateY(-8px); opacity: 1; }
+      100% { transform: translateY(0); opacity: 0.35; }
+    }
+
+    .thinking-text { font-weight:600; color:#343a40; }
+
+    /* helper */
+    .d-none { display:none !important; }
+        </style>
+
+            #chatOutput {
+        font-size: 18px;
+    }
+}
+
+@functions {
+    public string RenderMarkdown(string markdown)
+    {
+        if (string.IsNullOrEmpty(markdown)) return string.Empty;
+        var pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+        return Markdig.Markdown.ToHtml(markdown, pipeline);
+    }
+}
+
