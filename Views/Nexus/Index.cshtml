@@ -109,10 +109,10 @@
                                             if (done)
                                             {
                                                 var txt = string.Join(" ", c.FinalResponseResults.Select(r => r.ResponseText?.ToLower() ?? ""));
-                                                if (txt.Contains("desconocido")) resumenCategoria = "No Definido";
-                                                else if (txt.Contains("ambulatorio")) resumenCategoria = "Ambulatorio";
-                                                else if (txt.Contains("hospitalario")) resumenCategoria = "Hospitalario";
-                                                else if (txt.Contains("hospital del día")) resumenCategoria = "Hospital del Día";
+                                                if (txt.Contains("**desconocido**")) resumenCategoria = "No Definido";
+                                                else if (txt.Contains("**ambulatorio**")) resumenCategoria = "Ambulatorio";
+                                                else if (txt.Contains("**hospitalario**")) resumenCategoria = "Hospitalario";
+                                                else if (txt.Contains("**hospital del día**")) resumenCategoria = "Hospital del Día";
                                                 else resumenCategoria = "No Definido";
                                             }
                                             var date = c.StartDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
@@ -383,7 +383,7 @@
                     // Seleccionar icono y texto para FA6
                     let tipoIconClass = 'file-medical text-secondary';
                     let tipoNombre = 'Generado';
-                          if (cat.includes('desconocido')) {
+                          if (cat.includes('no definido')) {
                                     tipoIconClass = 'question text-danger';
                                 tipoNombre = 'No Definido';
                           }

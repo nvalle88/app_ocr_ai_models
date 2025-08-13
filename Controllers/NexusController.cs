@@ -20,6 +20,7 @@ using Usage = app_tramites.Models.ModelAi.Usage;
 using System;
 using AspNetCoreGeneratedDocument;
 using Microsoft.AspNetCore.Identity;
+using System.Globalization;
 
 #endregion
 
@@ -52,7 +53,8 @@ namespace SmartAdmin.Web.Controllers
         public async Task<IActionResult> Index()
         {
             var vm = new QueryInput { ProcessCode = "A-HOSP" };
-            var today = DateTime.Now.AddDays(-1);
+            var today = DateTime.ParseExact("2025-08-11 15:20:00", "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+
             var casos = await _db.ProcessCase.Include(x => x.FinalResponseResults).Where(x => x.StartDate > today)
                                  .OrderByDescending(pc => pc.StartDate)
                                  .ToListAsync();
@@ -70,14 +72,14 @@ namespace SmartAdmin.Web.Controllers
 
             // Detectar tipo de caso
             string resumenCategoria;
-            if (txt.Contains("hospital del día"))
+            if (txt.Contains("**hospital del día**"))
                 resumenCategoria = "Hospital del Día";
-            else if (txt.Contains("hospitalario"))
+            else if (txt.Contains("**hospitalario**"))
                 resumenCategoria = "Hospitalario";
-            else if (txt.Contains("ambulatorio"))
+            else if (txt.Contains("**ambulatorio**"))
                 resumenCategoria = "Ambulatorio";
             else
-                resumenCategoria = "Generado";
+                resumenCategoria = "No Definido";
 
             return Json(new { caseCode, typeCase = resumenCategoria });
         }
@@ -184,7 +186,7 @@ namespace SmartAdmin.Web.Controllers
                 ConfigCode = finalConfig.ConfigCode,
                 ResponseText = finalResp.ResultText,
                 ExecutionSummary = $"Files:{dataFiles.Count};Steps:{finalConfig.IncludedStepOrders}",
-                CreatedDate = DateTime.UtcNow
+                CreatedDate = DateTime.Now
             };
             // Guardar resultado
             _db.FinalResponseResult.Add(final);
@@ -244,6 +246,8 @@ namespace SmartAdmin.Web.Controllers
  @"Eres Nexus, un asistente experto en auditoría que responde de manera clara y profesional.  
 Siempre responde en formato Markdown acorde a la pregunta que te hacen.  
 Incluye el nombre del usuario que te consulta en tus respuestas para hacerlo más cercano.  
+Omite siempre el o los nombres de clientes o pacientes en todas las respuestas, has referencia siempre como el paciente.
+Para el nombre de los médicos si puedes responderlo el nombre del doctor o doctora por lo general es Doctor: Nombre en los documentos.
 Mantén un tono amigable y de confianza, como si fueras un asesor experto y buen amigo al mismo tiempo.  
 Recuerda que eres NEXUS, el mejor aliado en temas de auditoría.";
             // 3) Prepara el contenido del usuario: su pregunta + (opcional) OCR
@@ -253,8 +257,7 @@ Recuerda que eres NEXUS, el mejor aliado en temas de auditoría.";
                 "\n\n---\n\n",
                 processCase.DataFile.Select(f => f.Text)
             );
-            userContent += $"\n\nDocumentos adjuntos: Usuario que consulta: {usuario.Email}\n" + allText;
-
+            userContent += $"\n\nInformación del Caso número NE-{(processCase.CaseCode.ToString()?.ToString()?.Split('-').FirstOrDefault() ?? "")}: Usuario que consulta: Auditor de Saldusa\n" + allText;
 
             var config = _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
             var agent = await _db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode);
@@ -279,7 +282,7 @@ Recuerda que eres NEXUS, el mejor aliado en temas de auditoría.";
                 ConfigCode = config.ConfigCode,  // o algún marcador
                 ResponseText = aiDto.ResultText,
                 ExecutionSummary = $"Pregunta usuario directa {usuario.Email}",
-                CreatedDate = DateTime.UtcNow
+                CreatedDate = DateTime.Now
             };
             _db.FinalResponseResult.Add(final);
             await _db.SaveChangesAsync();
@@ -316,7 +319,7 @@ Recuerda que eres NEXUS, el mejor aliado en temas de auditoría.";
             {
                 CaseCode = caseCode,
                 DefinitionCode = processDef.Code,
-                StartDate = DateTime.UtcNow,
+                StartDate = DateTime.Now,
                 State = "Started"
             };
             _db.ProcessCase.Add(processCase);
@@ -336,7 +339,7 @@ Recuerda que eres NEXUS, el mejor aliado en temas de auditoría.";
                 IsFileUri = !string.IsNullOrEmpty(r.Url),
                 FileUri = r.Url,
                 Text = r.Text,
-                CreatedDate = DateTime.UtcNow
+                CreatedDate = DateTime.Now
             }).ToList();
             _db.DataFile.AddRange(dataFiles);
             await _db.SaveChangesAsync();
@@ -377,7 +380,7 @@ Recuerda que eres NEXUS, el mejor aliado en temas de auditoría.";
             };
 
             var requestJson = JsonSerializer.Serialize(requestBody);
-            var startedAt = DateTime.UtcNow;
+            var startedAt = DateTime.Now;
 
             using var httpClient = new HttpClient();
             httpClient.DefaultRequestHeaders.Add("api-key", agent.AgentConfig.ApiKey);
@@ -393,7 +396,7 @@ Recuerda que eres NEXUS, el mejor aliado en temas de auditoría.";
                 ? matchResult.Groups[1].Value.Trim()
                 : rawText.Trim();
 
-            var finishedAt = DateTime.UtcNow;
+            var finishedAt = DateTime.Now;
 
             return new OpenAiResponseDto
             {
