@@ -50,6 +50,18 @@ namespace SmartAdmin.Web.Controllers
             return View(processCase);
         }
 
+        public async Task<IActionResult> Details1(Guid caseCode)
+        {
+            var processCase = await _db.ProcessCase
+                                       .Include(pc => pc.FinalResponseResults).Include(pc => pc.DataFile)
+                                       .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode);
+
+            if (processCase == null)
+                return NotFound();
+
+            return View(processCase);
+        }
+
         public async Task<IActionResult> Index()
         {
             var vm = new QueryInput { ProcessCode = "A-HOSP" };
@@ -300,57 +312,71 @@ Recuerda que eres NEXUS, el mejor aliado en temas de auditoría.";
         [HttpPost]
         public async Task<IActionResult> CreateCaseProcess([FromBody] QueryInput input)
         {
-            if (input == null || string.IsNullOrWhiteSpace(input.ProcessCode))
-                return BadRequest("ProcessCode es obligatorio.");
-
-            var processDef = await _db.Process
-                .Include(p => p.ProcessStep.OrderBy(s => s.StepOrder))
-                .FirstOrDefaultAsync(p => p.Code == input.ProcessCode);
-            if (processDef == null)
-                return NotFound("Proceso no encontrado.");
-
-            var ocrSetting = await _db.OCRSetting
-                .FirstOrDefaultAsync(x => x.SettingCode == "DEFAULT" && x.PlatformCode == "AZURE");
-            if (ocrSetting == null)
-                return NotFound("Configuración OCR no encontrada.");
-
-            var caseCode = Guid.NewGuid();
-            var processCase = new ProcessCase
+            try
             {
-                CaseCode = caseCode,
-                DefinitionCode = processDef.Code,
-                StartDate = DateTime.Now,
-                State = "Started"
-            };
-            _db.ProcessCase.Add(processCase);
-            await _db.SaveChangesAsync();
 
-            var blobCfg = await _db.AzureBlobConf.AsNoTracking().FirstOrDefaultAsync()
-                          ?? throw new InvalidOperationException("AzureBlobConf no encontrada.");
+                if (input == null || string.IsNullOrWhiteSpace(input.ProcessCode))
+                    return BadRequest("ProcessCode es obligatorio.");
+                var ocrSetting = await _db.OCRSetting
+                    .FirstOrDefaultAsync(x => x.SettingCode == "DEFAULT" && x.PlatformCode == "AZURE");
+                if (ocrSetting == null)
+                    return NotFound("Configuración OCR no encontrada.");
 
-            var ocrTasks = input.Files.Select(f =>
-                ProcessFileAsync(f, ocrSetting, blobCfg)
-            );
-            var ocrResults = await Task.WhenAll(ocrTasks);
+                var blobCfg = await _db.AzureBlobConf.AsNoTracking().FirstOrDefaultAsync()
+                  ?? throw new InvalidOperationException("AzureBlobConf no encontrada.");
 
-            var dataFiles = ocrResults.Select(r => new DataFile
+                var ocrTasks = input.Files.Select(f =>
+                    ProcessFileAsync(f, ocrSetting, blobCfg)
+                );
+
+                var ocrResults = await Task.WhenAll(ocrTasks);
+
+                var processDef = await _db.Process
+                    .Include(p => p.ProcessStep.OrderBy(s => s.StepOrder))
+                    .FirstOrDefaultAsync(p => p.Code == input.ProcessCode);
+                if (processDef == null)
+                    return NotFound("Proceso no encontrado.");
+
+                var caseCode = Guid.NewGuid();
+                var processCase = new ProcessCase
+                {
+                    CaseCode = caseCode,
+                    DefinitionCode = processDef.Code,
+                    StartDate = DateTime.Now,
+                    State = "Started"
+                };
+                _db.ProcessCase.Add(processCase);
+                await _db.SaveChangesAsync();
+
+                
+
+                var dataFiles = ocrResults.Select(r => new DataFile
+                {
+                    CaseCode = caseCode,
+                    IsFileUri = !string.IsNullOrEmpty(r.Url),
+                    FileUri = r.Url,
+                    Text = r.Text,
+                    CreatedDate = DateTime.Now
+                }).ToList();
+                _db.DataFile.AddRange(dataFiles);
+                await _db.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    caseCode = processCase.CaseCode,
+                    definitionCode = processCase.DefinitionCode,
+                    startDate = processCase.StartDate,
+                    state = processCase.State
+                });
+            }
+            catch (Exception ex)
             {
-                CaseCode = caseCode,
-                IsFileUri = !string.IsNullOrEmpty(r.Url),
-                FileUri = r.Url,
-                Text = r.Text,
-                CreatedDate = DateTime.Now
-            }).ToList();
-            _db.DataFile.AddRange(dataFiles);
-            await _db.SaveChangesAsync();
-
-            return Ok(new
-            {
-                caseCode = processCase.CaseCode,
-                definitionCode = processCase.DefinitionCode,
-                startDate = processCase.StartDate,
-                state = processCase.State
-            });
+                return BadRequest(new
+                {
+                    error = true,
+                    message = ex.Message,
+                });
+            }
         }
 
 
@@ -425,24 +451,37 @@ Recuerda que eres NEXUS, el mejor aliado en temas de auditoría.";
 
 
         private async Task<(string Url, string Text)> ProcessFileAsync(
-    OcrFile file,
-    OCRSetting ocrSetting,
-    AzureBlobConf blobCfg)
+     OcrFile file,
+     OCRSetting ocrSetting,
+     AzureBlobConf blobCfg,
+     int timeoutMilliseconds = 90000) // 30 segundos por defecto
         {
-            // Subir blob
-            var blobUrl = await UploadBlobAsync(file, blobCfg);
+            using var cts = new CancellationTokenSource(timeoutMilliseconds);
 
-            // Ejecutar OCR
-            var clientOcr = new DocumentIntelligenceClient(
-                new Uri(ocrSetting.Endpoint),
-                new AzureKeyCredential(ocrSetting.ApiKey));
-            var operation = await clientOcr.AnalyzeDocumentAsync(
-                WaitUntil.Completed,
-                ocrSetting.ModelId,
-                new Uri(blobUrl));
+            try
+            {
+                // Subir blob
+                var blobUrl = await UploadBlobAsync(file, blobCfg);
 
-            return (Url: blobUrl, Text: operation.Value.Content);
+                // Ejecutar OCR con timeout
+                var clientOcr = new DocumentIntelligenceClient(
+                    new Uri(ocrSetting.Endpoint),
+                    new AzureKeyCredential(ocrSetting.ApiKey));
+
+                var operation = await clientOcr.AnalyzeDocumentAsync(
+                    WaitUntil.Completed,
+                    ocrSetting.ModelId,
+                    new Uri(blobUrl),
+                    cancellationToken: cts.Token);
+
+                return (Url: blobUrl, Text: operation.Value.Content);
+            }
+            catch (TaskCanceledException ex)
+            {
+                throw new TimeoutException($"El procesamiento del archivo superó el tiempo límite de {timeoutMilliseconds} ms.");
+            }
         }
+
 
         private async Task<string> UploadBlobAsync(
             OcrFile file,

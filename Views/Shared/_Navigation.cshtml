@@ -1,6 +1,6 @@
 <!-- Left panel : Navigation area -->
 <!-- Note: This width of the aside area can be adjusted through LESS variables -->
-<aside id="left-panel">
+@* <aside id="left-panel">
     <!-- User info -->
     <div class="login-info">
         <span>
@@ -41,7 +41,7 @@
                 </ul>
             </li> *@
 
-            <li is-active-route asp-controller="Nexus">
+            @* <li is-active-route asp-controller="Nexus">
                 <a href="#" title="Nexus">
                     <i class="fa fa-lg fa-fw fa-home"></i> <span class="menu-item-parent">Nexus</span>
                 </a>
@@ -50,7 +50,7 @@
                         <a asp-controller="Nexus" asp-action="Index" title="Nexus">
                             <span class="menu-item-parent">Nexus</span>
                         </a>
-                    </li>
+                    </li> *@
                    @*  <li is-active-route asp-controller="OcrTest" asp-action="Setting">
                         <a asp-controller="OcrTest" asp-action="Setting" title="Setting">
                             <span class="menu-item-parent">Setting</span>
@@ -568,10 +568,10 @@
                     </li>
                 </ul>
             </li> *@
-        </ul>
+      @*   </ul>
     </nav>
     <span class="minifyme" data-action="minifyMenu">
         <i class="fa fa-arrow-circle-left hit"></i>
     </span>
-</aside>
+</aside> *@ 
 <!-- END NAVIGATION -->

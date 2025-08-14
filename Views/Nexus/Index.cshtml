@@ -7,11 +7,6 @@
 <section id="widget-grid">
     <div class="d-flex justify-content-end align-items-center px-4 py-2" style="background: linear-gradient(90deg, #0d6efd, #0b5ed7); border-radius: 0.5rem 0.5rem 0 0;">
     </div>
-    <div class="d-flex justify-content-end mb-3">
-        <button id="btnProcessPending" class="btn btn-success icon-action">
-            <i class="fa fa-play me-2"></i> Procesar pendientes
-        </button>
-    </div>
     <div class="row">
         <!-- Widget Subida OCR -->
         <article class="col-lg-12">
@@ -139,7 +134,7 @@
                                                 <td>
                                                     @if (done)
                                                     {
-                                                        <a href="/Nexus/Details?caseCode=@c.CaseCode" onclick="cargando()" class="btn btn-outline-primary btn-sm  icon-action rounded-circle"><i class="fa fa-eye"></i></a>
+                                                        <a href="/Nexus/Details1?caseCode=@c.CaseCode" onclick="cargando()" class="btn btn-outline-primary btn-sm  icon-action rounded-circle"><i class="fa fa-eye"></i></a>
                                                     }
                                                     else
                                                     {
@@ -402,7 +397,7 @@
                                 tipoCell.innerHTML = `<i class="fas fa-${tipoIconClass} fa-lg me-1"></i> <span>${tipoNombre}</span>`;
 
                     
-                                row.children[4].innerHTML = `<a href='/Nexus/Details?caseCode=${btn.dataset.casecode}' class='btn btn-outline-primary btn-sm rounded-circle'><i class='fas fa-eye'></i></a>`;
+                                row.children[4].innerHTML = `<a href='/Nexus/Details1?caseCode=${btn.dataset.casecode}' class='btn btn-outline-primary btn-sm rounded-circle'><i class='fas fa-eye'></i></a>`;
                 
                             } 
                             catch {
@@ -418,10 +413,7 @@
             }
 
             // Eventos globales
-            document.getElementById('btnProcessPending').addEventListener('click', async () => {
-                const btns = document.querySelectorAll('.btnProcessRow');
-                for (let b of btns) await processCase(b);
-            });
+           
             document.addEventListener('click', e => {
                 const b = e.target.closest('.btnProcessRow'); if (b) processCase(b);
             });

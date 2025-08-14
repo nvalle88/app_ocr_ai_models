@@ -13,8 +13,8 @@
     @{ await Html.RenderPartialAsync("_StylesheetsPartial"); }
 
     <!-- FAVICONS -->
-    <link rel="shortcut icon" href="~/img/favicon/favicon.ico" type="image/x-icon" />
-    <link rel="icon" href="~/img/favicon/favicon.ico" type="image/x-icon" />
+    <link rel="shortcut icon" href="~/img/logo_saludsa_home.svg" type="image/x-icon" />
+    <link rel="icon" href="~/img/logo_saludsa_home.svg" type="image/x-icon" />
 
     <!-- GOOGLE FONT -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:400italic,700italic,300,400,700" />
@@ -37,46 +37,47 @@
     <script src="~/js/waitme/waitme.min.js"></script>
     <script src="~/js/waitme/waitme.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+    <style>
+        /* Oculta el panel lateral si existe */
+        #left-panel,
+        .page-sidebar,
+        .sidebar,
+        #sidebar,
+        .smart-left-panel {
+            display: none !important;
+        }
+
+        /* Elimina márgenes/paddings reservados */
+        #main,
+        #content,
+        .page-content,
+        .container,
+        .container-fluid {
+            margin-left: 0 !important;
+            padding-left: 0 !important;
+            width: 100% !important;
+            box-sizing: border-box;
+        }
+
+        /* Si el template aplica transform/translate para reserva de espacio */
+        body[style],
+        body.minified,
+        body.hidden-menu {
+            padding-left: 0 !important;
+        }
+    </style>
+
+
 </head>
 <body class="smart-style-4">
     @{ await Html.RenderPartialAsync("_Header"); }
-    @{ await Html.RenderPartialAsync("_Navigation"); }
-    <!-- MAIN PANEL -->
     <div id="main" role="main">
-        @{ await Html.RenderPartialAsync("_Ribbon"); }
-        <!-- MAIN CONTENT -->
         <div id="content">
-            <!-- Widget JavaScript bundle -->
-
-            <!-- Search widget element is not visible by default -->
-
-
-            <ol class="breadcrumb h6 fa-pull-left col col-lg-12">
-                <li><a asp-action="Index" asp-controller="Nexus"><i class="fa fa-home"></i> Inicio</a></li>
-                @RenderSection("Migas", required: false)
-            </ol>
             @RenderBody()
         </div>
-        <!-- END MAIN CONTENT -->
     </div>
-    <!-- END MAIN PANEL -->
-    @{ await Html.RenderPartialAsync("_Footer"); }
-    @{ await Html.RenderPartialAsync("_Shortcuts"); }
+
     @{ await Html.RenderPartialAsync("_Scripts"); }
-    <environment include="Development">
-        <!-- PACE LOADER - turn this on if you want ajax loading to show (caution: uses lots of memory on iDevices)-->
-        <script data-pace-options='{ "restartOnRequestAfter": true }' src="~/js/plugin/pace/pace.js"></script>
-
-        <!-- Demo purpose only -->
-        <script src="~/js/demo.js"></script>
-    </environment>
-    <environment exclude="Development">
-        <!-- PACE LOADER - turn this on if you want ajax loading to show (caution: uses lots of memory on iDevices)-->
-        <script data-pace-options='{ "restartOnRequestAfter": true }' src="~/js/plugin/pace/pace.min.js"></script>
-
-        <!-- Demo purpose only -->
-        <script src="~/js/demo.min.js" asp-append-version="true"></script>
-    </environment>
     <script>
         $(function () {
             // DO NOT REMOVE : GLOBAL FUNCTIONS!
