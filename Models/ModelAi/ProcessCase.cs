@@ -16,6 +16,8 @@ public partial class ProcessCase
     public string State { get; set; } = null!;
 
     public virtual ICollection<DataFile> DataFile { get; set; } = new List<DataFile>();
+
+    public virtual ICollection<CaseReview> CaseReviews { get; set; } = new List<CaseReview>();
     public virtual ICollection<FinalResponseResult> FinalResponseResults { get; set; } = new List<FinalResponseResult>();
 
     public virtual Process DefinitionCodeNavigation { get; set; } = null!;

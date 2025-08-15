@@ -38,6 +38,55 @@ namespace SmartAdmin.Web.Controllers
             _db = context;
         }
 
+        public class SubmitFeedbackDto
+        {
+            public string CaseCode { get; set; }
+            public bool? Helped { get; set; }
+            public string Comment { get; set; }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> SubmitFeedback([FromBody] SubmitFeedbackDto dto)
+        {
+            if (dto == null) return BadRequest(new { success = false, message = "Payload inválido" });
+
+            // Validación básica
+            if (string.IsNullOrWhiteSpace(dto.CaseCode))
+            {
+                return BadRequest(new { success = false, message = "caseCode es requerido" });
+            }
+
+            try
+            {
+                var user = await _userManager.GetUserAsync(User); // Usuario logeado
+                var userName = user?.UserName ?? "Sistema";
+                var entity = new CaseReview
+                {
+                    CaseCode =Guid.Parse(dto.CaseCode),
+                    Answer = dto.Helped.Value,
+                    ReviewText = string.IsNullOrWhiteSpace(dto.Comment) ? null : dto.Comment,
+                    CreatedAt = DateTime.Now,
+                    CreatedBy= userName,
+                    
+                };
+
+                _db.CaseReview.Add(entity);
+                await _db.SaveChangesAsync();
+
+                return Ok(new { success = true, message = "Reseña guardada" });
+            }
+            catch (DbUpdateException dbEx)
+            {
+                // Log aquí si tienes logger
+                return StatusCode(500, new { success = false, message = "Error guardando en la base de datos" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = ex.Message });
+            }
+        }
+
+
         public async Task<IActionResult> Details(Guid caseCode)
         {
             var processCase = await _db.ProcessCase
@@ -65,7 +114,7 @@ namespace SmartAdmin.Web.Controllers
         public async Task<IActionResult> Index()
         {
             var vm = new QueryInput { ProcessCode = "A-HOSP" };
-            var today = DateTime.ParseExact("2025-08-11 15:20:00", "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            var today = DateTime.ParseExact("2025-08-14 08:20:00", "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
             var casos = await _db.ProcessCase.Include(x => x.FinalResponseResults).Where(x => x.StartDate > today)
                                  .OrderByDescending(pc => pc.StartDate)
@@ -187,7 +236,7 @@ namespace SmartAdmin.Web.Controllers
                 combined.ToString(),
                 dataFiles.First().Id,
                 stepOrder: 999,
-                maxTokens: metadata.MaxTokens ?? 1000,
+                maxTokens: metadata.MaxTokens ?? 100000,
                 temperature: metadata.Temperature ?? 0.2,
                 topP: 1.0);
 
@@ -226,6 +275,7 @@ namespace SmartAdmin.Web.Controllers
             public Guid CaseCode { get; set; }
             public string Message { get; set; } = "";
             public List<string> FileUrls { get; set; } = new();
+            public string Origin { get; set; }
         }
 
         // Models/ChatRequest.cs
@@ -253,59 +303,109 @@ namespace SmartAdmin.Web.Controllers
                 return NotFound("Caso no encontrado.");
 
             var usuario = await _userManager.GetUserAsync(User);
-            // 2) Prepara tu SYSTEM prompt **genérico**, o déjalo en blanco si no lo necesitas
-            string systemPrompt =
- @"Eres Nexus, un asistente experto en auditoría que responde de manera clara y profesional.  
-Siempre responde en formato Markdown acorde a la pregunta que te hacen.  
-Incluye el nombre del usuario que te consulta en tus respuestas para hacerlo más cercano.  
-Omite siempre el o los nombres de clientes o pacientes en todas las respuestas, has referencia siempre como el paciente.
-Para el nombre de los médicos si puedes responderlo el nombre del doctor o doctora por lo general es Doctor: Nombre en los documentos.
-Mantén un tono amigable y de confianza, como si fueras un asesor experto y buen amigo al mismo tiempo.  
-Recuerda que eres NEXUS, el mejor aliado en temas de auditoría.";
-            // 3) Prepara el contenido del usuario: su pregunta + (opcional) OCR
+
+            // 2) Lógica para elegir prompt / agent según req.Origin
+            //    Si Origin está vacío -> usar el prompt / agente por defecto ("chat-nexus")
+            OPAIPrompt prompt = null;
+            Agent agent = null;
+            FinalResponseConfig config = null;
+
+            if (string.IsNullOrWhiteSpace(req.Origin))
+            {
+                // comportamiento actual por defecto
+                prompt = await _db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == "chat-nexus");
+                config = _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
+                agent = await _db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode);
+            }
+            else
+            {
+                // Intentar localizar un prompt con el código enviado en Origin
+                prompt = await _db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == req.Origin);
+
+                if (prompt != null)
+                {
+                    // Encontramos un prompt específico: usamos su contenido
+                    // (aún usamos el config/agent por defecto salvo que tengas mapping adicional)
+                    config = _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
+                    agent = await _db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode);
+                }
+                else
+                {
+                    // Si no hay prompt, intentar buscar un Agent con ese código
+                    agent = await _db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == req.Origin);
+                    if (agent != null)
+                    {
+                        // Si existe un Agent con ese código, intentar obtener la FinalResponseConfig relacionado
+                        config = _db.FinalResponseConfig.FirstOrDefault(x => x.AgentCode == agent.Code && x.IsEnabled)
+                                 ?? _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
+                    }
+                    else
+                    {
+                        // Fallback: usamos el prompt/agent por defecto
+                        prompt = await _db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == "chat-nexus");
+                        config = _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
+                        agent = await _db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode);
+                    }
+                }
+            }
+
+            // 3) Construir prompts para la llamada a OpenAI
+            string systemPrompt = prompt?.Content ?? "Sistema por defecto ... (revisa configuraciones)";
             var userContent = req.Message;
-            // Si quieres añadir texto OCR de los archivos:
+
+            // Adjuntamos el texto de los DataFile del caso
             var allText = string.Join(
                 "\n\n---\n\n",
-                processCase.DataFile.Select(f => f.Text)
+                processCase.DataFile.Select(f => f.Text ?? "")
             );
-            userContent += $"\n\nInformación del Caso número NE-{(processCase.CaseCode.ToString()?.ToString()?.Split('-').FirstOrDefault() ?? "")}: Usuario que consulta: Auditor de Saldusa\n" + allText;
 
-            var config = _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
-            var agent = await _db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode);
-            // 4) Llamada a OpenAI usando tu método existente
-            //    (reutiliza CallOpenAiAsync sin meter PromptTemplate)
+            // Si el cliente envió file URLs explícitas, podemos anexarlas o hacer algo con ellas:
+            if (req.FileUrls != null && req.FileUrls.Any())
+            {
+                userContent += "\n\nArchivos remitidos por el cliente:\n" + string.Join("\n", req.FileUrls);
+            }
+
+            userContent += $"\n\nInformación del Caso número NE-{(processCase.CaseCode.ToString()?.Split('-').FirstOrDefault() ?? "")}: Usuario que consulta: Auditor de Saldusa\n"
+                           + allText;
+
+            var metadata = !string.IsNullOrWhiteSpace(config.MetadataJson)
+                ? JsonSerializer.Deserialize<FinalResponseMetadata>(config.MetadataJson)!
+                : new FinalResponseMetadata();
+            // 4) Llamada a OpenAI (reutilizando tu método)
+            //    Nota: si quieres que algunos agentes usen diferentes parámetros (temperature, maxTokens, etc.)
+            //    podrías mapearlo según 'agent' o 'req.Origin' aquí.
             var aiDto = await CallOpenAiAsync(
                 agent: agent,
                 systemContent: systemPrompt,
                 userText: userContent,
                 dataFileId: processCase.DataFile.First().Id,
                 stepOrder: 0,
-                maxTokens: 1000,
+                maxTokens: metadata.MaxTokens ?? 16000,
                 temperature: 0.2,
                 topP: 1.0
             );
 
-            // 5) (Opcional) Guardar resultado en BD
+            // 5) Guardar resultado en BD (igual que antes)
             var final = new FinalResponseResult
             {
                 CaseCode = req.CaseCode,
                 FileId = null,
-                ConfigCode = config.ConfigCode,  // o algún marcador
+                ConfigCode = config?.ConfigCode ?? "DEFAULT",
                 ResponseText = aiDto.ResultText,
-                ExecutionSummary = $"Pregunta usuario directa {usuario.Email}",
+                ExecutionSummary = $"Pregunta usuario directa {usuario?.Email}",
                 CreatedDate = DateTime.Now
             };
             _db.FinalResponseResult.Add(final);
             await _db.SaveChangesAsync();
 
-            // 6) Devuelves sólo la respuesta
+            // 6) Devolver la respuesta
             return Json(new
             {
                 response = aiDto.ResultText,
                 timestamp = final.CreatedDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
             });
         }
+
 
 
 

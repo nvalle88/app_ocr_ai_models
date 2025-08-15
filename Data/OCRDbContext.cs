@@ -34,6 +34,7 @@ public partial class OCRDbContext: DbContext
     public virtual DbSet<Process> Process { get; set; }
 
     public virtual DbSet<ProcessCase> ProcessCase { get; set; }
+    public virtual DbSet<CaseReview> CaseReview { get; set; }
 
     public virtual DbSet<ProcessStep> ProcessStep { get; set; }
 
@@ -258,6 +259,8 @@ public partial class OCRDbContext: DbContext
                 .IsUnicode(false);
         });
 
+       
+
         modelBuilder.Entity<ProcessCase>(entity =>
         {
             entity.HasKey(e => e.CaseCode).HasName("PK__ProcessC__F536950C493032E1");
@@ -276,6 +279,22 @@ public partial class OCRDbContext: DbContext
                 .HasForeignKey(d => d.DefinitionCode)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_ProcessCase_Definition");
+        });
+
+        modelBuilder.Entity<CaseReview>(entity =>
+        {
+            entity.HasKey(e => e.ReviewId);
+            entity.Property(e => e.ReviewId).HasDefaultValueSql("NEWID()");
+            entity.Property(e => e.CreatedAt)
+                  .HasDefaultValueSql("DATEADD(HOUR, -5, GETUTCDATE())"); // Hora Ecuador
+            entity.Property(e => e.ReviewText).HasMaxLength(500);
+            entity.Property(e => e.CreatedBy).HasMaxLength(100);
+
+            // Relación 1:N
+            entity.HasOne(e => e.Case)
+                  .WithMany(p => p.CaseReviews) // Aquí se enlaza la colección de ProcessCase
+                  .HasForeignKey(e => e.CaseCode)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ProcessStep>(entity =>
