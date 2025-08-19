@@ -10,5 +10,7 @@
         public string? CreatedBy { get; set; }
 
         public virtual ProcessCase Case { get; set; } = null!;
+
+
     }
 }

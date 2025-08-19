@@ -4,7 +4,7 @@ using app_tramites.Models.ModelAi;
 using Microsoft.EntityFrameworkCore;
 namespace app_ocr_ai_models.Data;
 
-public partial class OCRDbContext: DbContext
+public partial class OCRDbContext : DbContext
 {
     public OCRDbContext()
     {
@@ -35,6 +35,8 @@ public partial class OCRDbContext: DbContext
 
     public virtual DbSet<ProcessCase> ProcessCase { get; set; }
     public virtual DbSet<CaseReview> CaseReview { get; set; }
+
+    public virtual DbSet<Note> Note { get; set; }
 
     public virtual DbSet<ProcessStep> ProcessStep { get; set; }
 
@@ -259,7 +261,7 @@ public partial class OCRDbContext: DbContext
                 .IsUnicode(false);
         });
 
-       
+
 
         modelBuilder.Entity<ProcessCase>(entity =>
         {
@@ -279,6 +281,8 @@ public partial class OCRDbContext: DbContext
                 .HasForeignKey(d => d.DefinitionCode)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_ProcessCase_Definition");
+
+            
         });
 
         modelBuilder.Entity<CaseReview>(entity =>
@@ -295,6 +299,27 @@ public partial class OCRDbContext: DbContext
                   .WithMany(p => p.CaseReviews) // Aquí se enlaza la colección de ProcessCase
                   .HasForeignKey(e => e.CaseCode)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Note>(entity =>
+        {
+            entity.ToTable("Notes");
+            entity.HasKey(e => e.NoteId);
+
+            entity.Property(e => e.CaseCode)
+                  .HasColumnType("uniqueidentifier")
+                  .IsRequired();
+
+            entity.Property(e => e.CreatedAt)
+                  .HasColumnType("datetime2(0)")
+                  .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            // Si quieres relación formal con ProcessCase:
+            entity.HasOne(n => n.ProcessCase)
+                    .WithMany(pc => pc.Notes)
+                    .HasForeignKey(n => n.CaseCode)
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .HasConstraintName("FK_Notes_ProcessCase");
         });
 
         modelBuilder.Entity<ProcessStep>(entity =>

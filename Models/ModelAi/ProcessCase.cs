@@ -20,5 +20,7 @@ public partial class ProcessCase
     public virtual ICollection<CaseReview> CaseReviews { get; set; } = new List<CaseReview>();
     public virtual ICollection<FinalResponseResult> FinalResponseResults { get; set; } = new List<FinalResponseResult>();
 
+    public virtual ICollection<Note> Notes { get; set; } = new List<Note>();
+
     public virtual Process DefinitionCodeNavigation { get; set; } = null!;
 }

@@ -38,6 +38,136 @@ namespace SmartAdmin.Web.Controllers
             _db = context;
         }
 
+
+
+
+        // GET Nexus/Notes/GetNotes?caseCode=NE-123
+        [HttpGet("GetNotes")]
+        public async Task<IActionResult> GetNotes(string caseCode)
+        {
+            if (string.IsNullOrWhiteSpace(caseCode))
+                return BadRequest(new { success = false, error = "caseCode requerido" });
+
+            var notes = await _db.Note
+                .Where(n => n.CaseCode ==Guid.Parse(caseCode))
+                .OrderByDescending(n => n.CreatedAt)
+                .Select(n => new
+                {
+                    id = n.NoteId,
+                    caseCode = n.CaseCode,
+                    title = n.Title,
+                    detail = n.Detail,
+                    createdAt = n.CreatedAt,
+                    createdBy = n.CreatedBy
+                })
+                .ToListAsync();
+
+            return Ok(notes);
+        }
+
+        // DTO para AddNote
+        public class AddNoteDto
+        {
+            public int id { get; set; } // 0 => nuevo, >0 => editar
+            public string caseCode { get; set; }
+            public string title { get; set; }
+            public string detail { get; set; }
+        }
+
+        // POST Nexus/Notes/AddNote
+        [HttpPost("AddNote")]
+        public async Task<IActionResult> AddNote([FromBody] AddNoteDto dto)
+        {
+            if (dto == null || string.IsNullOrWhiteSpace(dto.caseCode))
+                return BadRequest(new { success = false, error = "Payload inválido" });
+
+            dto.title = (dto.title ?? "").Trim();
+            dto.detail = (dto.detail ?? "").Trim();
+
+            if (dto.id > 0)
+            {
+                var existing = await _db.Note.FindAsync(dto.id);
+                if (existing == null) return NotFound(new { success = false, error = "Nota no encontrada" });
+
+                existing.Title = dto.title;
+                existing.Detail = dto.detail;
+                // opcional: mantener updatedAt/updatedBy si lo necesitas
+                await _db.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    success = true,
+                    note = new
+                    {
+                        id = existing.NoteId,
+                        caseCode = existing.CaseCode,
+                        title = existing.Title,
+                        detail = existing.Detail,
+                        createdAt = existing.CreatedAt,
+                        createdBy = existing.CreatedBy
+                    }
+                });
+            }
+            else
+            {
+                var note = new Note
+                {
+                    CaseCode =Guid.Parse(dto.caseCode),
+                    Title = dto.title,
+                    Detail = dto.detail,
+                    CreatedAt = DateTime.Now,
+                    CreatedBy = User?.Identity?.Name // opcional, puede ser null
+                    
+                };
+
+                _db.Note.Add(note);
+                try
+                {
+                    await _db.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+
+                    throw;
+                }
+
+                return Ok(new
+                {
+                    success = true,
+                    note = new
+                    {
+                        id = note.NoteId,
+                        caseCode = note.CaseCode,
+                        title = note.Title,
+                        detail = note.Detail,
+                        createdAt = note.CreatedAt,
+                        createdBy = note.CreatedBy
+                    }
+                });
+            }
+        }
+
+        // DTO para DeleteNote
+        public class DeleteDto
+        {
+            public int id { get; set; }
+        }
+
+        // POST Nexus/Notes/DeleteNote
+        [HttpPost("DeleteNote")]
+        public async Task<IActionResult> DeleteNote([FromBody] DeleteDto dto)
+        {
+            if (dto == null || dto.id <= 0) return BadRequest(new { success = false, error = "id inválido" });
+
+            var note = await _db.Note.FindAsync(dto.id);
+            if (note == null) return NotFound(new { success = false, error = "Nota no encontrada" });
+
+            _db.Note.Remove(note);
+            await _db.SaveChangesAsync();
+            return Ok(new { success = true });
+        }
+
+
         public class SubmitFeedbackDto
         {
             public string CaseCode { get; set; }
@@ -62,12 +192,12 @@ namespace SmartAdmin.Web.Controllers
                 var userName = user?.UserName ?? "Sistema";
                 var entity = new CaseReview
                 {
-                    CaseCode =Guid.Parse(dto.CaseCode),
+                    CaseCode = Guid.Parse(dto.CaseCode),
                     Answer = dto.Helped.Value,
                     ReviewText = string.IsNullOrWhiteSpace(dto.Comment) ? null : dto.Comment,
                     CreatedAt = DateTime.Now,
-                    CreatedBy= userName,
-                    
+                    CreatedBy = userName,
+
                 };
 
                 _db.CaseReview.Add(entity);
@@ -209,7 +339,11 @@ namespace SmartAdmin.Web.Controllers
             if (finalConfig.UseOriginalText)
             {
                 foreach (var df in dataFiles)
-                    combined.AppendLine(df.Text);
+                {
+                    var fileName = System.IO.Path.GetFileName(df.FileUri);
+                    var ext = System.IO.Path.GetExtension(df.FileUri)?.ToLower().TrimStart('.') ?? "";
+                    combined.AppendLine($"documento: {fileName}.{ext}---{df.Text}---");
+                }
             }
             else
             {
@@ -353,11 +487,22 @@ namespace SmartAdmin.Web.Controllers
             string systemPrompt = prompt?.Content ?? "Sistema por defecto ... (revisa configuraciones)";
             var userContent = req.Message;
 
+
+
+
+
+
             // Adjuntamos el texto de los DataFile del caso
-            var allText = string.Join(
-                "\n\n---\n\n",
-                processCase.DataFile.Select(f => f.Text ?? "")
-            );
+            var combined = new StringBuilder();
+
+            foreach (var df in processCase.DataFile)
+            {
+                var fileName = System.IO.Path.GetFileName(df.FileUri);
+                var ext = System.IO.Path.GetExtension(df.FileUri)?.ToLower().TrimStart('.') ?? "";
+                combined.AppendLine($"documento: {fileName}.{ext}---{df.Text}---");
+            }
+
+            var allText = combined.ToString();
 
             // Si el cliente envió file URLs explícitas, podemos anexarlas o hacer algo con ellas:
             if (req.FileUrls != null && req.FileUrls.Any())
@@ -448,7 +593,7 @@ namespace SmartAdmin.Web.Controllers
                 _db.ProcessCase.Add(processCase);
                 await _db.SaveChangesAsync();
 
-                
+
 
                 var dataFiles = ocrResults.Select(r => new DataFile
                 {

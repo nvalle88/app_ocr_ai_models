@@ -98,24 +98,24 @@ body {
                            NOTA: no agregamos padding lateral a las columnas (el body ya lo hace) */
 .left-col {
     position: relative;
-    flex: 0 0 25%;
-    max-width: 25%;
+    flex: 0 0 15%;
+    max-width: 15%;
     transition: width 360ms ease, flex-basis 360ms ease;
     padding: 0;
 }
 
 .center-col {
     position: relative;
-    flex: 0 0 50%;
-    max-width: 50%;
+    flex: 0 0 65%;
+    max-width: 65%;
     transition: width 360ms ease, flex-basis 360ms ease;
     padding: 0;
 }
 
 .right-col {
     position: relative;
-    flex: 0 0 25%;
-    max-width: 25%;
+    flex: 0 0 20%;
+    max-width: 20%;
     transition: width 360ms ease, flex-basis 360ms ease;
     padding: 0;
 }
@@ -205,6 +205,8 @@ html.right-hidden .right-col {
 .result-area {
     padding-bottom: calc(var(--chat-input-height,72px) + 28px);
     overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 /* Chat input */
@@ -367,6 +369,11 @@ html.right-hidden .right-col {
 .studio-panel-body {
     padding: 12px !important;
     box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden; /* el scroll lo manejan sus hijos */
 }
 
 .studio-grid {
@@ -375,14 +382,19 @@ html.right-hidden .right-col {
     gap: 12px;
     align-items: start;
     width: 100%;
+    flex: 1 1 auto; /* puede crecer y scrollear */
+    min-height: 0;
+    overflow-y: auto; /* SCROLL independiente del panel derecho */
+    -webkit-overflow-scrolling: touch;
+    padding-right: 8px; /* espacio para la scrollbar */
 }
 
 .studio-tile {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    min-height: 92px;
-    padding: 12px;
+    min-height: 40px;
+    padding: 6px;
     border-radius: 14px;
     border: 1px solid rgba(7,33,65,0.06);
     color: #072146;
@@ -403,13 +415,13 @@ html.right-hidden .right-col {
     }
 
     .studio-tile .tile-icon {
-        width: 44px;
-        height: 44px;
-        border-radius: 10px;
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 18px;
+        font-size: 10px;
         background: #fff;
         color: inherit;
         box-shadow: 0 6px 18px rgba(2,8,23,0.06);
@@ -417,7 +429,7 @@ html.right-hidden .right-col {
 
     .studio-tile .tile-menu {
         color: rgba(7,33,65,0.65);
-        font-size: 16px;
+        font-size: 12px;
         opacity: 0.9;
     }
 
@@ -426,8 +438,8 @@ html.right-hidden .right-col {
     }
 
     .studio-tile .tile-title {
-        font-weight: 700;
-        font-size: 14px;
+        font-weight: 500;
+        font-size: 10px;
         color: #072146;
     }
 
@@ -445,21 +457,25 @@ html.right-hidden .right-col {
         color: #fff;
     }
 
+
 .tile-video {
-    background: linear-gradient(135deg, rgba(237,255,245,1) 0%, rgba(246,255,250,1) 100%);
+    background: linear-gradient( 135deg, rgba(255, 240, 240, 1) 0%, /* rosado muy claro */
+    rgba(255, 250, 250, 1) 100% /* casi blanco */
+    );
 }
 
     .tile-video .tile-icon {
-        background: #10b981;
+        background: #f87171;
         color: #fff;
     }
 
+
 .tile-mind {
-    background: linear-gradient(135deg, rgba(255,248,240,1) 0%, rgba(255,251,244,1) 100%);
+    background: linear-gradient(135deg, rgba(237,255,245,1) 0%, rgba(246,255,250,1) 100%);
 }
 
     .tile-mind .tile-icon {
-        background: #fb923c;
+        background: #10b981;
         color: #fff;
     }
 
@@ -481,6 +497,184 @@ html.right-hidden .right-col {
         border-radius: 8px;
         box-shadow: 0 10px 30px rgba(2,8,23,0.12);
     }
+
+aside#colRight .studio-grid {
+    /* opcional: mantener su grid pero no cambiar columnas aquí */
+}
+
+/* ---- Studio tiles (solo en panel derecho) ---- */
+aside#colRight .studio-tile {
+    display: flex;
+    flex-direction: column; /* icono arriba, texto debajo */
+    align-items: center; /* centra horizontalmente */
+    justify-content: center; /* centra verticalmente dentro de su caja */
+    text-align: center;
+    gap: 6px; /* separación icono / título */
+    padding: 6px 8px;
+    min-height: 44px;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+    /* Forzar que la zona superior centre el icono (anula space-between global) */
+    aside#colRight .studio-tile .tile-top {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        gap: 6px;
+    }
+
+    /* Icono centrado, sin margin-bottom y tamaño controlado */
+    aside#colRight .studio-tile .tile-icon {
+        width: 30px;
+        height: 30px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        margin: 0; /* anula margins previos */
+        font-size: 14px;
+        box-shadow: 0 6px 14px rgba(2,8,23,0.06);
+        background: inherit; /* respeta el background específico .tile-xxx */
+    }
+
+    /* Título centrado y compacto */
+    aside#colRight .studio-tile .tile-title {
+        font-weight: 600;
+        font-size: 0.82rem;
+        line-height: 1.05;
+        white-space: nowrap; /* quitar si quieres permitir 2 líneas */
+        overflow: hidden;
+        text-overflow: ellipsis;
+        width: 100%;
+        margin: 0;
+        padding: 0 4px;
+    }
+
+    /* Pequeña separación interior si existe cuerpo adicional */
+    aside#colRight .studio-tile .tile-body {
+        margin-top: 4px;
+    }
+
+/* ---- cf-toggle (botones “tilde”) dentro del panel derecho ---- */
+aside#colRight .cf-toggle {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+}
+
+aside#colRight .cf-toggle-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 6px;
+    padding: 6px 8px;
+    min-width: 56px;
+    min-height: 58px;
+    border-radius: 10px;
+    box-sizing: border-box;
+}
+
+    /* Icono de toggle centrado y compacto (anula margin-bottom global) */
+    aside#colRight .cf-toggle-btn .tile-icon {
+        width: 34px;
+        height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        margin: 0;
+        font-size: 15px;
+        box-shadow: 0 6px 14px rgba(2,8,23,0.06);
+        background: inherit;
+    }
+
+    /* Label del toggle */
+    aside#colRight .cf-toggle-btn .tile-title {
+        font-size: 0.84rem;
+        font-weight: 700;
+        line-height: 1.05;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        width: 100%;
+        padding: 0 4px;
+    }
+
+/* Botón Validación contractual */
+#studioAudio .tile-icon {
+    color: #7c5cff; /* morado */
+}
+
+/* Botón Alertas y Hallazgos */
+#studioVideo .tile-icon {
+    color: #f87171; /* rojo */
+}
+
+/* Botón Facturas */
+#studioMind .tile-icon {
+    color: #10b981; /* verde */
+}
+
+/* Botón Informes */
+#informesMenuBtn .tile-icon {
+    color: #8b5cf6; /* violeta */
+}
+#studioAudio .tile-menu {
+    color: #7c5cff;
+}
+
+#studioVideo .tile-menu {
+    color: #f87171;
+}
+
+#studioMind .tile-menu {
+    color: #10b981;
+}
+
+#informesMenuBtn .tile-menu {
+    color: #8b5cf6;
+}
+
+/* Responsive — reducir tamaños en pantallas pequeñas */
+@@media (max-width: 575px) {
+    aside#colRight .studio-tile {
+        min-height: 40px;
+        padding: 5px;
+        gap: 4px;
+    }
+
+        aside#colRight .studio-tile .tile-icon {
+            width: 24px;
+            height: 24px;
+            font-size: 12px;
+        }
+
+        aside#colRight .studio-tile .tile-title {
+            font-size: 0.75rem;
+        }
+
+    aside#colRight .cf-toggle-btn {
+        min-width: 48px;
+        min-height: 52px;
+        padding: 5px 6px;
+        gap: 4px;
+    }
+
+        aside#colRight .cf-toggle-btn .tile-icon {
+            width: 28px;
+            height: 28px;
+            font-size: 13px;
+        }
+
+        aside#colRight .cf-toggle-btn .tile-title {
+            font-size: 0.78rem;
+        }
+}
 
 /* Anulaciones para smart-style-4 (por si aplica CSS global) */
 .smart-style-4 aside,
@@ -602,13 +796,11 @@ html.right-hidden .right-col {
         transform: translateY(-4px);
     }
 
-/* comment box */
 .cf-comment .form-control {
     resize: vertical;
     min-height: 58px;
 }
 
-/* botones */
 #cfSend {
     min-width: 110px;
 }
@@ -701,4 +893,301 @@ html.right-hidden .right-col {
 body .chat-input-inner {
     box-shadow: 0 18px 44px rgba(2,8,23,0.10), 0 0 0 8px rgba(0,116,210,0.06) !important;
     border: 1px solid rgba(0,116,210,0.95) !important;
+}
+
+/* pequeñas utilidades */
+.pdf-pages-container, .pdf-page-box {
+    overflow: visible;
+}
+
+/* ensure table rows don't overflow and the left sources scroll nicely */
+#sourcesWrapper {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-right: 6px;
+}
+
+/* preview content adjustments */
+#previewContent {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* utility to visually hide elements with aria-hidden */
+[aria-hidden="true"] {
+    pointer-events: none;
+}
+
+/* ======================
+   Notas (lista) — estilos para el panel derecho
+   ====================== */
+
+.notes-section {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.notes-header {
+    padding: 4px 6px;
+}
+
+.notes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 220px; /* ajuste: altura de la lista debajo de tiles */
+    overflow-y: auto;
+    padding-right: 8px;
+    box-sizing: border-box;
+}
+
+/* cada nota en la lista */
+.note-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(250,252,255,0.98));
+    border: 1px solid rgba(11,43,74,0.04);
+    box-shadow: 0 6px 14px rgba(2,8,23,0.03);
+    position: relative;
+}
+
+    /* titulo y detalle truncado */
+    .note-item .note-meta {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .note-item .note-title {
+        font-weight: 700;
+        font-size: 0.95rem;
+        color: #072146;
+        margin-bottom: 4px;
+    }
+
+    .note-item .note-snippet {
+        font-size: 0.85rem;
+        color: #6c757d;
+        line-height: 1.2;
+        max-height: 3em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+/* botón de menú (tres puntos) a la derecha */
+.note-actions {
+    margin-left: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.note-action-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: rgba(7,33,65,0.65);
+    padding: 6px;
+    border-radius: 6px;
+}
+
+    .note-action-btn:hover {
+        background: rgba(7,33,65,0.03);
+    }
+
+/* menu emergente simple */
+.note-menu {
+    position: absolute;
+    right: 10px;
+    top: 40px;
+    background: #fff;
+    border: 1px solid rgba(11,43,74,0.06);
+    border-radius: 8px;
+    box-shadow: 0 12px 30px rgba(2,8,23,0.08);
+    z-index: 2500;
+    overflow: hidden;
+    display: none;
+}
+
+    .note-menu button {
+        display: block;
+        width: 100%;
+        padding: 8px 12px;
+        border: none;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+    }
+
+        .note-menu button:hover {
+            background: rgba(0,0,0,0.03);
+        }
+
+/* EDITOR: ocupar todo el panel derecho (cuando visible) */
+.notes-editor {
+    position: relative;
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid rgba(11,43,74,0.06);
+    padding: 12px;
+    box-shadow: 0 12px 30px rgba(2,8,23,0.06);
+    box-sizing: border-box;
+    /* el editor ocupará el panel: lo forzamos con reglas JS (al abrir) para usar altura completa */
+}
+
+/* Internals del editor */
+.notes-editor-inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 260px;
+}
+
+.notes-editor-header .fw-semibold {
+    font-size: 1rem;
+}
+
+/* estado cuando editor está activo: ocultamos otros elementos del panel derecho EXCEPTO el editor */
+.card.card-panel-right.editor-active .studio-grid,
+.card.card-panel-right.editor-active .cf-top-panel,
+.card.card-panel-right.editor-active hr,
+.card.card-panel-right.editor-active .studio-illustration-panel,
+.card.card-panel-right.editor-active .notes-list,
+.card.card-panel-right.editor-active .notes-header {
+    display: none !important;
+}
+
+.card.card-panel-right.editor-active .notes-editor {
+    display: block !important;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+}
+
+/* pequeño ajuste responsivo */
+@media (max-width:991px) {
+    .notes-list {
+        max-height: 180px;
+    }
+}
+
+
+aside#colRight .studio-grid {
+    /* permitimos que los tiles ocupen su tamaño natural; el espacio restante será para .notes-section */
+    flex: 0 0 auto;
+    max-height: 38%;
+    min-height: 120px;
+}
+
+/* notes-section ocupa el área entre studio-grid y el hr */
+.notes-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    flex: 1 1 auto; /* crecerá para rellenar el espacio disponible */
+    min-height: 100px;
+    max-height: calc(100% - 20px);
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+/* Header: título a la izquierda, botón a la derecha pero el botón puede ocupar todo el ancho en pantallas pequeñas */
+.notes-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 6px;
+}
+
+/* Botón principal: ocupa el alto del header y se adapta al ancho disponible */
+#btnAddNote {
+    white-space: nowrap;
+    min-width: 120px;
+}
+
+/* Lista: ocupa todo el espacio disponible y hace scroll si hace falta */
+.notes-list {
+    flex: 1 1 auto;
+    min-height: 0; /* importante para que el scroll funcione dentro de flex */
+    overflow-y: auto;
+    padding-right: 8px;
+    box-sizing: border-box;
+}
+
+/* Footer opcional dentro de la sección (si prefieres botón abajo) */
+.notes-section .notes-footer {
+    display: flex;
+    justify-content: center;
+    padding: 8px 4px;
+    gap: 8px;
+}
+
+/* Editor: ya tenías reglas, nos aseguramos que quede a 100% cuando activo */
+.card.card-panel-right.editor-active {
+    position: relative;
+}
+
+    .card.card-panel-right.editor-active .notes-editor {
+        display: block !important;
+        position: relative;
+        flex: 1 1 auto;
+        min-height: 0;
+        height: 100%;
+    }
+
+/* Hacer que cada nota añadida tenga un aspecto consistente */
+.note-item {
+    cursor: default;
+}
+
+/* pequeños ajustes responsivos */
+@media (max-width: 575px) {
+    aside#colRight .studio-grid {
+        max-height: 28%;
+    }
+
+    #btnAddNote {
+        min-width: 0;
+        width: 100%;
+    }
+}
+
+
+.chat-divider {
+    height: 1px;
+    background: rgba(0,0,0,0.08);
+    margin: 14px 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+}
+
+    /* texto centrado sobre la raya (opcional) */
+    .chat-divider span {
+        display: inline-block;
+        position: relative;
+        top: -10px;
+        background: var(--page-bg, #fff); /* usa tu variable de fondo si la tienes */
+        padding: 2px 8px;
+        font-size: 12px;
+        color: #6c757d;
+        border-radius: 999px;
+        box-shadow: 0 1px 0 rgba(0,0,0,0.02) inset;
+    }
+
+/* estilo para cada respuesta */
+.chat-response {
+    margin-bottom: 12px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    word-break: break-word;
+    /* fondo ligero, ajústalo a tu tema */
+    background: rgba(255,255,255,0.01);
 }
