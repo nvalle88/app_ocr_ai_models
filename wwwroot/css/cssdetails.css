@@ -911,6 +911,46 @@ body .chat-input-inner {
 #previewContent {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    display: flex;
+    align-items: flex-start; /* importante para que el contenido quede arriba y scrolleable */
+    justify-content: center;
+    overflow: auto;
+    position: relative;
+}
+
+/* Wrapper que usaremos para aplicar tamaño/transform */
+.preview-zoom-wrapper {
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    /* no ponemos transform por defecto; lo aplicará JS según caso */
+}
+
+    /* Para permitir "panning" con el mouse */
+    .preview-zoom-wrapper.is-grabbing {
+        cursor: grabbing;
+    }
+
+    .preview-zoom-wrapper.is-grab {
+        cursor: grab;
+    }
+
+.preview-image {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    height: auto;
+}
+
+#previewContent { /* opcional para garantizar ambos ejes scroll */
+    overflow: auto;
+}
+
+
+.preview-image {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    height: auto;
 }
 
 /* utility to visually hide elements with aria-hidden */
@@ -1190,4 +1230,11 @@ aside#colRight .studio-grid {
     word-break: break-word;
     /* fondo ligero, ajústalo a tu tema */
     background: rgba(255,255,255,0.01);
+}
+
+.card-header.d-flex {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: nowrap; /* evita que salte a la siguiente línea */
 }

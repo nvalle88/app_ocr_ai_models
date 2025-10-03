@@ -21,6 +21,12 @@ using System;
 using AspNetCoreGeneratedDocument;
 using Microsoft.AspNetCore.Identity;
 using System.Globalization;
+using Azure.Identity;
+using Azure.Messaging;
+using Azure;
+
+using Azure.Identity;
+
 
 #endregion
 
@@ -31,6 +37,7 @@ namespace SmartAdmin.Web.Controllers
     {
         private readonly OCRDbContext _db;
         private readonly UserManager<IdentityUser> _userManager;
+
 
         public NexusController(OCRDbContext context, UserManager<IdentityUser> userManager)
         {
@@ -244,7 +251,7 @@ namespace SmartAdmin.Web.Controllers
         public async Task<IActionResult> Index()
         {
             var vm = new QueryInput { ProcessCode = "A-HOSP" };
-            var today = DateTime.ParseExact("2025-08-14 08:20:00", "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            var today = DateTime.ParseExact("2025-09-12 17:10:00", "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
             var casos = await _db.ProcessCase.Include(x => x.FinalResponseResults).Where(x => x.StartDate > today)
                                  .OrderByDescending(pc => pc.StartDate)
@@ -426,7 +433,7 @@ namespace SmartAdmin.Web.Controllers
         {
             if (req == null
                 || req.CaseCode == Guid.Empty
-                || string.IsNullOrWhiteSpace(req.Message))
+                )
                 return BadRequest("Datos inválidos.");
 
             // 1) Recupera el caso y sus archivos
@@ -443,13 +450,25 @@ namespace SmartAdmin.Web.Controllers
             OPAIPrompt prompt = null;
             Agent agent = null;
             FinalResponseConfig config = null;
+            OPAIModelPrompt promtModel = null;
 
             if (string.IsNullOrWhiteSpace(req.Origin))
             {
                 // comportamiento actual por defecto
-                prompt = await _db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == "chat-nexus");
-                config = _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
-                agent = await _db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode);
+                // Updated line to handle possible null value by using the null-coalescing operator
+                config = _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled)
+                         ?? throw new InvalidOperationException("FinalResponseConfig not found for ProcessCode 'A-HOSP'.");
+                // Updated line to handle possible null value by using the null-coalescing operator
+                prompt = await _db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == "chat-nexus")
+                         ?? throw new InvalidOperationException("Prompt with code 'chat-nexus' not found.");
+
+                // Updated the line to handle possible null value by using the null-coalescing operator
+                config = _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled)
+                         ?? throw new InvalidOperationException("FinalResponseConfig not found for ProcessCode 'A-HOSP'.");
+                // Updated line to handle possible null value by using the null-coalescing operator
+                agent = await _db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode)
+                        ?? throw new InvalidOperationException($"Agent not found for AgentCode '{config.AgentCode}'.");
+
             }
             else
             {
@@ -461,7 +480,8 @@ namespace SmartAdmin.Web.Controllers
                     // Encontramos un prompt específico: usamos su contenido
                     // (aún usamos el config/agent por defecto salvo que tengas mapping adicional)
                     config = _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
-                    agent = await _db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode);
+                    promtModel = _db.OPAIModelPrompt.FirstOrDefault(x => x.PromptCode ==prompt.Code);
+                    agent = await _db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == promtModel.ModelCode);
                 }
                 else
                 {
@@ -516,9 +536,8 @@ namespace SmartAdmin.Web.Controllers
             var metadata = !string.IsNullOrWhiteSpace(config.MetadataJson)
                 ? JsonSerializer.Deserialize<FinalResponseMetadata>(config.MetadataJson)!
                 : new FinalResponseMetadata();
-            // 4) Llamada a OpenAI (reutilizando tu método)
-            //    Nota: si quieres que algunos agentes usen diferentes parámetros (temperature, maxTokens, etc.)
-            //    podrías mapearlo según 'agent' o 'req.Origin' aquí.
+
+
             var aiDto = await CallOpenAiAsync(
                 agent: agent,
                 systemContent: systemPrompt,
@@ -623,8 +642,6 @@ namespace SmartAdmin.Web.Controllers
                 });
             }
         }
-
-
 
         private async Task<OpenAiResponseDto> CallOpenAiAsync(
             Agent agent,

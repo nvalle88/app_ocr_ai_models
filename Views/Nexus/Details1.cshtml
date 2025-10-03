@@ -59,9 +59,16 @@
                             <div class="fw-semibold" id="previewTitle">Vista previa</div>
                             <div class="d-flex gap-1">
                                 <button id="btnBackToList" class="btn btn-sm btn-outline-secondary" title="Volver al listado"><i class="fa fa-arrow-left"></i> Volver</button>
-                                <button id="btnOpenInViewer" class="btn btn-sm btn-light" title="Abrir en nueva pestaña"><i class="fa fa-up-right-from-square"></i></button>
+                               
                                 <button id="btnDownloadPreview" class="btn btn-sm btn-light" title="Descargar"><i class="fa fa-download"></i></button>
-                                <button id="btnFlagPreview" class="btn btn-sm btn-outline-warning" title="Marcar"><i class="fa fa-flag"></i></button>
+
+                                <!-- Zoom controls -->
+                                <div class="btn-group ms-2" role="group" aria-label="Zoom controls">
+                                    <button id="btnZoomOut" type="button" class="btn btn-sm btn-light" title="Zoom - (tecla '-')"><i class="fa fa-search-minus"></i></button>
+                                    <button id="btnZoomReset" type="button" class="btn btn-sm btn-light" title="Reset zoom (tecla 0)"><i class="fa fa-ban"></i></button>
+                                    <button id="btnZoomIn" type="button" class="btn btn-sm btn-light" title="Zoom + (tecla '+')"><i class="fa fa-search-plus"></i></button>
+                                </div>
+
                             </div>
                         </div>
 
@@ -86,13 +93,27 @@
                     <div class="d-flex align-items-center gap-2">
                         <h5 class="mb-0 header-title">Resultados del Caso</h5>
                     </div>
+                    <div class="card-header d-flex align-items-center justify-content-between small-header center-header">
+                        <div class="d-flex align-items-center gap-2">
+                            <a asp-action="Index" onclick="cargando()"
+                               class="btn btn-primary btn-lg d-flex align-items-center gap-2"
+                               id="btnBackPage" title="Volver">
+                                <i class="fa fa-arrow-left"></i>
+                                <span>Volver</span>
+                            </a>
+                        </div>
 
-                    <div>
-                        <a asp-action="Index" onclick="cargando()" class="btn btn-primary btn-lg d-flex align-items-center gap-2" id="btnBackPage">
-                            <i class="fa fa-arrow-left"></i>
-                            <span>Volver</span>
-                        </a>
+                        <div class="d-flex align-items-center gap-2">
+                            <button id="btnExportPdf" type="button"
+                                    class="btn btn-primary btn-lg d-flex align-items-center gap-2"
+                                    title="Exportar resultados a PDF">
+                                <i class="fa fa-file-pdf me-1" aria-hidden="true"></i>
+                                <span>Exportar PDF</span>
+                            </button>
+                        </div>
                     </div>
+
+
                 </div>
 
                 <div class="card-body d-flex flex-column panel-body panel-height">
@@ -183,15 +204,7 @@
                                 <div class="tile-title">Facturas</div>
                             </div>
                         </button>
-                         <button id="informesMenuBtn" class="studio-tile tile-mind" title="Facturas" type="button" aria-label="Facturas">
-                            <div class="tile-top">
-                                <div class="tile-icon"><i class="fa fa-money-bill-wave"></i></div>
-                                <div class="tile-menu"><i class="fa fa-ellipsis-vertical"></i></div>
-                            </div>
-                            <div class="tile-body">
-                                <div class="tile-title">Otro</div>
-                            </div>
-                        </button>
+                         
                     </div>
                     <hr class="my-2" />
 
@@ -292,6 +305,144 @@
 @section Scripts {
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
                 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
+    <script>
+        // Reemplaza sólo el listener / lógica de export por este bloque
+        document.addEventListener('DOMContentLoaded', () => {
+          const exportBtn = document.getElementById('btnExportPdf');
+          if (!exportBtn) return;
+
+          const caseCode = '@Model.CaseCode';
+          const caseDateStr = '@((Model.FinalResponseResults != null && Model.FinalResponseResults.Any()) ? Model.FinalResponseResults.OrderByDescending(r => r.CreatedDate).FirstOrDefault()?.CreatedDate.ToLocalTime().ToString("dd/MM/yyyy, HH:mm") : "")';
+          const filesCount = @(Model.DataFile?.Count() ?? 0);
+
+          function pad(n){ return String(n).padStart(2,'0'); }
+          function formatDate(d){ try { return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch(e){ return d.toString(); } }
+          function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }
+
+          exportBtn.addEventListener('click', async (ev) => {
+            ev.preventDefault();
+            exportBtn.disabled = true;
+            const orig = exportBtn.innerHTML;
+            exportBtn.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> Generando...';
+
+            try {
+              // esperar fuentes para que iconos se rendericen
+              if (document.fonts && document.fonts.ready) {
+                try { await document.fonts.ready; } catch(_) {}
+              }
+
+              const chatOut = document.getElementById('chatOutput');
+              if (!chatOut) throw new Error('No se encontró #chatOutput');
+
+              // Contenedor a rasterizar: NO incluimos cabecera ni "Resumen"
+              const docWrap = document.createElement('div');
+              docWrap.style.boxSizing = 'border-box';
+              docWrap.style.padding = '8px 12px';
+              docWrap.style.fontFamily = getComputedStyle(document.body).fontFamily || 'Arial, sans-serif';
+              docWrap.style.color = getComputedStyle(document.body).color || '#222';
+              docWrap.style.background = '#fff';
+              docWrap.style.width = '100%';
+
+              // CSS para evitar cortes internos
+              const avoidBreakCss = `
+                .chat-response, .chat-response-final, .chat-divider, .note-detail, .pdf-page-box {
+                  page-break-inside: avoid;
+                  break-inside: avoid;
+                  -webkit-column-break-inside: avoid;
+                  -ms-break-inside: avoid;
+                }
+                img { page-break-inside: avoid; break-inside: avoid; max-width:100%; }
+                p, div, li, pre { widows: 3; orphans: 3; }
+                * { -webkit-hyphens: none; -ms-hyphens: none; hyphens: none; }
+              `;
+              const styleEl = document.createElement('style');
+              styleEl.innerHTML = avoidBreakCss;
+              docWrap.appendChild(styleEl);
+
+              // Clonar sólo el contenido del chat (sin encabezado ni resumen)
+              const contentClone = chatOut.cloneNode(true);
+              contentClone.querySelectorAll('textarea, input, button, .chat-input, .chat-send-btn').forEach(n => n.remove());
+              contentClone.style.marginTop = '0';
+              contentClone.style.width = '100%';
+              docWrap.appendChild(contentClone);
+
+              // Opciones: reservamos espacio superior (margin top) para la cabecera
+              // Ajusta top (en mm) según el tamaño de la cabecera. Aquí uso 26 mm.
+              const now = new Date();
+              const filename = `NE-${caseCode || 'case'}_report_${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}.pdf`;
+              const opt = {
+                margin: [26, 10, 14, 10], // top, left, bottom, right (mm) -> top aumentado para espacio cabecera
+                filename: filename,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: {
+                  scale: 2,
+                  useCORS: true,
+                  allowTaint: false,
+                  logging: false,
+                  windowWidth: docWrap.scrollWidth || document.documentElement.clientWidth
+                },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                pagebreak: { mode: ['css', 'legacy'] }
+              };
+
+              // Generar PDF y luego dibujar la cabecera en cada página
+              const worker = html2pdf().set(opt).from(docWrap).toPdf();
+              worker.get('pdf').then(function(pdf) {
+                try {
+                  const total = pdf.internal.getNumberOfPages();
+                  const pageW = pdf.internal.pageSize.getWidth();
+                  const marginLeft = 10;
+                  const marginRight = 10;
+                  const genDateStr = formatDate(now);
+
+                  for (let i = 1; i <= total; i++) {
+                    pdf.setPage(i);
+
+                    // Dibujar cabecera (texto a ~12-16 mm desde el borde superior)
+                    pdf.setFontSize(10);
+                    pdf.setTextColor(34,34,34);
+                    pdf.text(`Caso: ${String(caseCode)}`, marginLeft, 12);
+
+                    pdf.setFontSize(8);
+                    pdf.setTextColor(100,100,100);
+                    pdf.text(`Fecha del caso: ${String(caseDateStr)}`, marginLeft, 16);
+
+                    // Derechos (alineado a la derecha)
+                    pdf.setFontSize(8);
+                    pdf.text(`Generado: ${genDateStr}`, pageW - marginRight, 12, { align: 'right' });
+                    pdf.text(`Ficheros: ${filesCount}`, pageW - marginRight, 16, { align: 'right' });
+
+                    // Línea separadora bajo cabecera
+                    pdf.setDrawColor(220);
+                    pdf.setLineWidth(0.4);
+                    pdf.line(marginLeft, 19, pageW - marginRight, 19);
+                  }
+                } catch (errHead) {
+                  console.warn('No se pudo añadir cabecera por página:', errHead);
+                }
+                pdf.save(filename);
+              }).catch(err => {
+                console.error('html2pdf get(pdf) error:', err);
+                // fallback sin await
+                html2pdf().set(opt).from(docWrap).save().catch(e => {
+                  console.error('Fallback html2pdf.save error:', e);
+                  alert('No se pudo generar el PDF automáticamente. Revisa la consola.');
+                });
+              });
+
+            } catch (err) {
+              console.error('Export error:', err);
+              alert('No se pudo generar el PDF: ' + (err && err.message ? err.message : err));
+            } finally {
+              exportBtn.disabled = false;
+              exportBtn.innerHTML = orig;
+            }
+          });
+        });
+    </script>
+
+
 
                 <script>
 
@@ -301,6 +452,18 @@
                         let __typeToken = 0;
                         let __thinkingToken = 0;
                         let __currentThinking = null;
+
+
+                                let __lastManualScrollAt = 0;
+                                document.addEventListener('scroll', (ev) => {
+                                    try {
+                                        const target = ev.target;
+                                        // si el scroll ocurrió dentro de un contenedor .result-area (o un hijo), lo consideramos manual
+                                        if (target && target.closest && (target.classList && target.classList.contains('result-area') || target.closest('.result-area'))) {
+                                            __lastManualScrollAt = Date.now();
+                                        }
+                                    } catch (e) { /* ignore */ }
+                                }, true);
 
                         function q(sel) { return document.querySelector(sel); }
                         function qa(sel) { return Array.from(document.querySelectorAll(sel)); }
@@ -390,7 +553,7 @@
 
                             const fallbackTimeout = setTimeout(() => {
                                 try { cleanup(); } catch (e) {}
-                            }, 30000);
+                            }, 900000);
 
                             function cleanup() {
                                 try { clearInterval(interval); } catch (e) {}
@@ -520,7 +683,7 @@
                    const casePanel = q('#cfTopPanel');
                    const caseCode = casePanel ? casePanel.dataset.case : '@Model.CaseCode';
                                    // Mensaje que se enviará al controlador (puedes ajustarlo)
-                 const message = 'Generar resumen de los audios del caso — Mi factura';
+                 const message = textarea?.value?.trim();
                  // UI thinking
                  const thinking = startThinking();
                  setBtnLoading(true);
@@ -539,7 +702,7 @@
                     const chatOutputEl = q('#chatOutput');
                     const html = (typeof marked !== 'undefined') ? marked.parse(data.response || '') : (data.response || '');
                     if (chatOutputEl) {
-                        await typeWriteInto(chatOutputEl, html, 6);
+                        await typeWriteInto(chatOutputEl, html, 3);
                     }
 
                     // Limpia / enfoca textarea como en el flujo normal
@@ -571,7 +734,7 @@
                                const casePanel = q('#cfTopPanel');
                                const caseCode = casePanel ? casePanel.dataset.case : '@Model.CaseCode';
                                                // Mensaje que se enviará al controlador (puedes ajustarlo)
-                             const message = 'Generar resumen de los audios del caso — Mi reembolso';
+                             const message  = textarea?.value?.trim();
                              // UI thinking
                              const thinking = startThinking();
                              setBtnLoading(true);
@@ -590,7 +753,7 @@
                                 const chatOutputEl = q('#chatOutput');
                                 const html = (typeof marked !== 'undefined') ? marked.parse(data.response || '') : (data.response || '');
                                 if (chatOutputEl) {
-                                    await typeWriteInto(chatOutputEl, html, 6);
+                                    await typeWriteInto(chatOutputEl, html, 3);
                                 }
 
                                 // Limpia / enfoca textarea como en el flujo normal
@@ -624,7 +787,7 @@
                     const casePanel = q('#cfTopPanel');
                     const caseCode = casePanel ? casePanel.dataset.case : '@Model.CaseCode';
                                     // Mensaje que se enviará al controlador (puedes ajustarlo)
-                  const message = 'Generar resumen de los audios del caso — Mi reembolso';
+                  const message = textarea?.value?.trim();
                   // UI thinking
                   const thinking = startThinking();
                   setBtnLoading(true);
@@ -633,7 +796,7 @@
                      const resp = await fetch('@Url.Action("ChatAjax", "Nexus")', {
                          method: 'POST',
                          headers: { 'Content-Type': 'application/json' },
-                         body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'mi-reembolso' })
+                         body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'nexus-contrato' })
                      });
                      setBtnLoading(false);
                      stopThinking(thinking);
@@ -643,7 +806,7 @@
                      const chatOutputEl = q('#chatOutput');
                      const html = (typeof marked !== 'undefined') ? marked.parse(data.response || '') : (data.response || '');
                      if (chatOutputEl) {
-                         await typeWriteInto(chatOutputEl, html, 6);
+                         await typeWriteInto(chatOutputEl, html, 3);
                      }
 
                      // Limpia / enfoca textarea como en el flujo normal
@@ -697,7 +860,7 @@
                                 });
                             }
 
-                                       async function typeWriteInto(el, html, speed = 6, dividerText = null) {
+        async function typeWriteInto(el, html, speed = 3, dividerText = null) {
             if (!el) return;
             __typeToken++;
             const myToken = __typeToken;
@@ -723,19 +886,44 @@
 
             const parentScroll = el.closest('.result-area') || el.parentElement;
 
+            // --- SCROLL INICIAL UNA ÚNICA VEZ: llevar la vista al punto donde empezará a escribir
+            try {
+                if (parentScroll) {
+                    // único salto inicial para que el cliente note el inicio de la respuesta
+                    parentScroll.scrollTop = parentScroll.scrollHeight;
+                }
+            } catch (e) { /* ignore */ }
+
+            // Ajuste de velocidad: effectiveDelay en ms entre pasos
+            const effectiveDelay = Math.max(1, Math.round((speed) / 2)); // speed=6 -> ~3ms
+            const chunk = Math.max(1, Math.round(6 / Math.max(1, effectiveDelay))); // cuantos caracteres avanzamos por tick
+
             let i = 0;
             return new Promise(resolve => {
                 function step() {
-                    if (myToken !== __typeToken) return resolve(); // cancelado por otro tipeo
-                    i++;
-                    // Nota: esto puede romper tags intermedios si el HTML contiene etiquetas
+                    // cancelado por otro tipeo
+                    if (myToken !== __typeToken) return resolve();
+
+                    // avanzar por "chunks" para que sea perceptiblemente más rápido
+                    i = Math.min(html.length, i + chunk);
+
+                    // Mantener la aproximación original: slice del HTML
                     container.innerHTML = html.slice(0, i);
-                    try { if (parentScroll) parentScroll.scrollTop = parentScroll.scrollHeight; } catch (e) {}
-                    if (i < html.length) setTimeout(step, speed); else resolve();
+
+                    // **NO** forzamos scroll mientras escribe ni al finalizar (solo el salto inicial ya hecho)
+                    if (i < html.length) {
+                        setTimeout(step, effectiveDelay);
+                    } else {
+                        resolve();
+                    }
                 }
                 step();
             });
         }
+
+
+
+
 
 
                             function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
@@ -755,7 +943,7 @@
                                     const resp = await fetch('@Url.Action("ChatAjax", "Nexus")', {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ caseCode: '@Model.CaseCode', message: text })
+                                        body: JSON.stringify({ caseCode: '@Model.CaseCode', message: text,origin: 'chat-nexus' })
                                     });
 
                                     stopThinking(thinking);
@@ -888,7 +1076,8 @@
             previewContent.innerHTML = '';
             previewContent.scrollTop = 0;
             // evitar scroll horizontal accidental
-            previewContent.style.overflowX = 'hidden';
+                    previewContent.style.overflow = 'auto';
+        previewContent.style.webkitOverflowScrolling = 'touch';
             previewContent.style.boxSizing = 'border-box';
 
             if (!url) {
@@ -1202,7 +1391,7 @@
                     })();
                 </script>
 
-                    <script>
+                <script>
             (function () {
                 const panel = document.getElementById('cfTopPanel');
                 if (!panel) return;
@@ -1573,6 +1762,299 @@
         })();
 
     </script>
+    <script>
+
+        (function() {
+            const previewContent = document.getElementById('previewContent');
+            const zoomInBtn      = document.getElementById('btnZoomIn');
+            const zoomOutBtn     = document.getElementById('btnZoomOut');
+            const zoomResetBtn   = document.getElementById('btnZoomReset');
+            const zoomLabel      = document.getElementById('zoomLabel');
+
+            if (!previewContent) return;
+
+            // Constantes
+            const MIN_SCALE = 0.2;
+            const MAX_SCALE = 4.0;
+            const STEP      = 0.1;
+            let currentScale = 1.0;
+
+            // helpers
+            function findPrimary() {
+                const wrapper = previewContent.querySelector('.preview-zoom-wrapper');
+                if (wrapper) return { el: wrapper.firstElementChild, isWrapper: true, wrapper };
+                const img = previewContent.querySelector('img.preview-image, img');
+                if (img) return { el: img, isImage: true };
+                const frame = previewContent.querySelector('iframe, embed, object');
+                if (frame) return { el: frame, isFrame: true };
+                return { el: previewContent.firstElementChild || previewContent, isWrapper: false };
+            }
+
+            function ensureWrapperIfNeeded() {
+                const first = previewContent.firstElementChild;
+                if (!first) return null;
+
+                // Si ya está envuelto, retornamos el wrapper
+                if (first.classList && first.classList.contains('preview-zoom-wrapper')) {
+                    return first;
+                }
+
+                // Crear wrapper y mover el contenido dentro
+                const wrapper = document.createElement('div');
+                wrapper.className = 'preview-zoom-wrapper is-grab';
+                // permitimos scroll/pan dentro del wrapper
+                wrapper.style.overflow = 'auto';
+                wrapper.style.width = '100%';
+                wrapper.style.boxSizing = 'border-box';
+                wrapper.style.touchAction = 'none';
+
+                // mover hijos dentro del wrapper (manteniendo el orden)
+                while (previewContent.firstChild) {
+                    wrapper.appendChild(previewContent.firstChild);
+                }
+                previewContent.appendChild(wrapper);
+
+                // keep consistent defaults for images
+                const img = wrapper.querySelector('img');
+                if (img) {
+                    img.style.width = '100%';
+                    img.style.height = 'auto';
+                    img.style.maxWidth = '100%';
+                    img.style.display = 'block';
+                    img.style.transformOrigin = 'top left';
+                }
+
+                return wrapper;
+            }
+
+            function updateZoomLabel() {
+                if (zoomLabel) zoomLabel.textContent = Math.round(currentScale * 100) + '%';
+            }
+
+            // Aplicar escala (mantiene comportamiento previo para frames/otros y mejora imágenes)
+            function applyScale(scale) {
+                currentScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
+                updateZoomLabel();
+
+                const primary = findPrimary();
+                if (!primary || !primary.el) return;
+
+                // --- Imagenes: aplicamos transform scale y ajustamos wrapper para permitir panning ---
+
+
+        // --- Imágenes: escalamos cambiando el width (no transform) para que el layout genere scroll natural ---
+        if (primary.isImage) {
+            let img = primary.el;
+            // Asegurar wrapper
+            let wrapper = img && img.parentElement && img.parentElement.classList && img.parentElement.classList.contains('preview-zoom-wrapper')
+                ? img.parentElement
+                : ensureWrapperIfNeeded();
+
+            if (!img || !wrapper) return;
+
+            // Guardar medidas y scroll previos (para preservar posición)
+            const prevScrollLeft = wrapper.scrollLeft || 0;
+            const prevScrollTop = wrapper.scrollTop || 0;
+            const prevScrollWidth = wrapper.scrollWidth || 1;
+            const prevScrollHeight = wrapper.scrollHeight || 1;
+            const visibleW = wrapper.clientWidth || previewContent.clientWidth || 1;
+            const visibleH = wrapper.clientHeight || previewContent.clientHeight || 1;
+
+            // Asegurarnos estado base (sin transform) para medir correctamente
+            img.style.transition = 'none';
+            img.style.transform = 'none';
+            img.style.maxWidth = '100%';
+            img.style.height = 'auto';
+            img.style.display = 'block';
+            img.style.boxSizing = 'border-box';
+
+            // Forzar reflow y obtener tamaño base (ancho/alto visibles ahora)
+            const baseRect = img.getBoundingClientRect();
+            const baseW = Math.max(1, Math.round(baseRect.width));
+            const baseH = Math.max(1, Math.round(baseRect.height));
+
+            // Si volvemos a scale = 1, restauramos comportamiento responsive
+            if (currentScale === 1) {
+                img.style.width = '';          // vuelve a responsive (max-width:100% toma efecto)
+                img.style.maxWidth = '100%';
+                img.style.height = 'auto';
+                wrapper.style.width = '';
+                wrapper.style.height = '';
+                wrapper.style.overflow = '';   // hereda de CSS/previewContent
+                // Restaurar scroll proporcionalmente (si acaso)
+                try {
+                    const prevMaxX = Math.max(0, prevScrollWidth - visibleW);
+                    const newMaxX  = Math.max(0, wrapper.scrollWidth - visibleW);
+                    const ratioX = prevMaxX > 0 ? (prevScrollLeft / prevMaxX) : 0;
+                    wrapper.scrollLeft = Math.round(ratioX * newMaxX);
+
+                    const prevMaxY = Math.max(0, prevScrollHeight - visibleH);
+                    const newMaxY  = Math.max(0, wrapper.scrollHeight - visibleH);
+                    const ratioY = prevMaxY > 0 ? (prevScrollTop / prevMaxY) : 0;
+                    wrapper.scrollTop = Math.round(ratioY * newMaxY);
+                } catch (e) { /* ignore */ }
+                return;
+            }
+
+            // Calcular nuevo ancho/alto basado en la vista actual (esto evita el salto)
+            const newW = Math.max(40, Math.round(baseW * currentScale));
+            const newH = Math.max(40, Math.round(baseH * currentScale));
+
+            // Aplicar ancho en píxeles (esto cambia layout y genera scroll natural)
+            img.style.width = newW + 'px';
+            img.style.maxWidth = 'none';
+            img.style.height = 'auto';
+
+            // Asegurar que el wrapper sea lo suficientemente grande para scrollear
+            wrapper.style.width = newW + 'px';
+            // No fijamos wrapper.height a newH obligatoriamente: permitir que el flujo determine altura,
+            // pero si quieres forzar el scroll vertical, utiliza la línea siguiente (opcional)
+            wrapper.style.height = newH + 'px';
+            wrapper.style.overflow = 'auto';
+            wrapper.style.boxSizing = 'border-box';
+
+            // Restaurar scroll proporcional al nuevo tamaño (mantiene el punto de vista)
+            try {
+                const prevMaxX = Math.max(0, prevScrollWidth - visibleW);
+                const newMaxX  = Math.max(0, wrapper.scrollWidth - visibleW);
+                const ratioX = prevMaxX > 0 ? (prevScrollLeft / prevMaxX) : 0;
+                wrapper.scrollLeft = Math.round(ratioX * newMaxX);
+
+                const prevMaxY = Math.max(0, prevScrollHeight - visibleH);
+                const newMaxY  = Math.max(0, wrapper.scrollHeight - visibleH);
+                const ratioY = prevMaxY > 0 ? (prevScrollTop / prevMaxY) : 0;
+                wrapper.scrollTop = Math.round(ratioY * newMaxY);
+            } catch (e) { /* ignore */ }
+
+            return;
+        }
+
+
+                // --- Iframes / objetos: mantén la lógica previa (escalado del wrapper) ---
+                if (primary.isFrame || primary.isWrapper) {
+                    let wrapper = previewContent.querySelector('.preview-zoom-wrapper');
+                    if (!wrapper) wrapper = ensureWrapperIfNeeded();
+                    if (!wrapper) return;
+
+                    // Para iframes/embeds, escalamos el wrapper (no usar transform en el iframe)
+                    wrapper.style.width  = (currentScale * 100) + '%';
+                    wrapper.style.height = 'auto';
+
+                    const inner = wrapper.firstElementChild;
+                    if (inner && (inner.tagName === 'IFRAME' || inner.tagName === 'EMBED' || inner.tagName === 'OBJECT')) {
+                        inner.style.width  = '100%';
+                        inner.style.height = '100%';
+                        inner.style.transform = 'none';
+                    } else if (inner) {
+                        // si el inner es contenido HTML, aplicamos transform para que escale proporcionalmente
+                        inner.style.transform      = `scale(${currentScale})`;
+                        inner.style.transformOrigin = 'top left';
+                        const rect = inner.getBoundingClientRect();
+                        wrapper.style.width  = (rect.width * currentScale) + 'px';
+                        wrapper.style.height = (rect.height * currentScale) + 'px';
+                    }
+                    return;
+                }
+
+                // --- Fallback: si no encaja, intentamos escalar wrapper si existe ---
+                let wrapper = previewContent.querySelector('.preview-zoom-wrapper');
+                if (!wrapper) wrapper = ensureWrapperIfNeeded();
+                if (!wrapper) return;
+                wrapper.style.width  = (currentScale * 100) + '%';
+                wrapper.style.height = 'auto';
+            }
+
+            // Acciones de zoom
+            function zoomIn()    { applyScale(currentScale + STEP); }
+            function zoomOut()   { applyScale(currentScale - STEP); }
+            function zoomReset() { applyScale(1.0); }
+
+            // Handlers para rueda+Ctrl y teclas
+            function wheelHandler(e) {
+                if (!e.ctrlKey) return;
+                e.preventDefault();
+                (e.deltaY < 0) ? zoomIn() : zoomOut();
+            }
+
+            function keyHandler(e) {
+                const tag = (document.activeElement && document.activeElement.tagName) || '';
+                if (['INPUT','TEXTAREA','SELECT'].includes(tag)) return;
+                if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); }
+                else if (e.key === '-') { e.preventDefault(); zoomOut(); }
+                else if (e.key === '0') { e.preventDefault(); zoomReset(); }
+            }
+
+            // Panning (drag) — funciona con wrapper (overflow: auto)
+                   let isDown = false, startX = 0, startY = 0, scrollLeft = 0, scrollTop = 0, panWrapper = null;
+
+        function startPan(e) {
+            const wrapper = previewContent.querySelector('.preview-zoom-wrapper');
+            if (!wrapper) return;
+            panWrapper = wrapper;
+            isDown = true;
+            previewContent.classList.add('is-dragging');
+            wrapper.classList.remove('is-grab');
+            wrapper.classList.add('is-grabbing');
+
+            startX = (e.pageX || (e.touches && e.touches[0] && e.touches[0].pageX)) || 0;
+            startY = (e.pageY || (e.touches && e.touches[0] && e.touches[0].pageY)) || 0;
+            scrollLeft = panWrapper.scrollLeft;
+            scrollTop  = panWrapper.scrollTop;
+
+            e.preventDefault && e.preventDefault();
+        }
+
+                  function movePan(e) {
+            if (!isDown || !panWrapper) return;
+            const x = (e.pageX || (e.touches && e.touches[0] && e.touches[0].pageX)) || 0;
+            const y = (e.pageY || (e.touches && e.touches[0] && e.touches[0].pageY)) || 0;
+            panWrapper.scrollLeft = scrollLeft - (x - startX);
+            panWrapper.scrollTop  = scrollTop  - (y - startY);
+        }
+
+        function endPan() {
+            if (!isDown) return;
+            isDown = false;
+            const wrapper = panWrapper || previewContent.querySelector('.preview-zoom-wrapper');
+            if (wrapper) {
+                wrapper.classList.remove('is-grabbing');
+                wrapper.classList.add('is-grab');
+            }
+            previewContent.classList.remove('is-dragging');
+            panWrapper = null;
+        }
+
+            // Listeners
+            if (zoomInBtn)    zoomInBtn.addEventListener('click', (e) => { e.preventDefault(); zoomIn(); });
+            if (zoomOutBtn)   zoomOutBtn.addEventListener('click', (e) => { e.preventDefault(); zoomOut(); });
+            if (zoomResetBtn) zoomResetBtn.addEventListener('click', (e) => { e.preventDefault(); zoomReset(); });
+
+            previewContent.addEventListener('wheel', wheelHandler, { passive: false });
+            window.addEventListener('keydown', keyHandler, false);
+
+            // Mouse panning
+            previewContent.addEventListener('mousedown', (e) => { if (e.button === 0) startPan(e); });
+            previewContent.addEventListener('mousemove', movePan);
+            window.addEventListener('mouseup', endPan);
+
+            // Touch panning
+            previewContent.addEventListener('touchstart', (e) => startPan(e), { passive: false });
+            previewContent.addEventListener('touchmove',  (e) => movePan(e), { passive: false });
+            previewContent.addEventListener('touchend',   endPan);
+
+            // API pública (conservadora: si ya existe la dejamos)
+            window.NexusPreviewZoom = window.NexusPreviewZoom || {};
+            window.NexusPreviewZoom.setScale = (s) => applyScale(s);
+            window.NexusPreviewZoom.zoomIn = zoomIn;
+            window.NexusPreviewZoom.zoomOut = zoomOut;
+            window.NexusPreviewZoom.reset = zoomReset;
+            window.NexusPreviewZoom.getScale = () => currentScale;
+
+            updateZoomLabel();
+        })();
+    </script>
+
+
 }
 
 @functions {

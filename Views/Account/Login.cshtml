@@ -24,20 +24,17 @@
         }
 
         @@keyframes gradientShift {
-            0%
+            0% {
+                background-position: 0% 50%;
+            }
 
-        {
-            background-position: 0% 50%;
-        }
+            50% {
+                background-position: 100% 50%;
+            }
 
-        50% {
-            background-position: 100% 50%;
-        }
-
-        100% {
-            background-position: 0% 50%;
-        }
-
+            100% {
+                background-position: 0% 50%;
+            }
         }
         /* Título degradado */
         .gradient-text {
@@ -50,16 +47,13 @@
         }
 
         @@keyframes textGradientMove {
-            0%
+            0% {
+                background-position: 0% 50%;
+            }
 
-        {
-            background-position: 0% 50%;
-        }
-
-        100% {
-            background-position: 100% 50%;
-        }
-
+            100% {
+                background-position: 100% 50%;
+            }
         }
 
         .btn-primary, .bg-primary {
@@ -168,6 +162,28 @@
         .card-postit:hover {
             transform: scale(1.05);
         }
+
+        /* ===== ÚNICA ADICIÓN: empujar "Últimas Mejoras" hacia abajo (no cambia nada más) ===== */
+        /* pega esto y solo esto para separar la sección sin tocar tamaños ni estructura */
+        .improvements-block {
+            margin-top: 8rem !important; /* espacio grande en desktop; cámbialo si quieres */
+        }
+
+        /* responsive: menos espacio en móviles para no dejar hueco gigante */
+        @@media (max-width: 768px) {
+            .improvements-block {
+                margin-top: 2.2rem !important;
+            }
+
+            .gradient-text {
+                font-size: 2.8rem;
+            }
+
+            .postit-blue, .postit-yellow, .postit-green, .postit-pink {
+                width: 90% !important;
+                transform: none !important;
+            }
+        }
     </style>
 </head>
 <body class="d-flex align-items-center justify-content-center text-dark vh-100">
@@ -178,7 +194,7 @@
             @* img src="~/img/nexusaiauditoricono.jpg" alt="Nexus AI Auditor Logo" style="width:100px; margin-bottom:1rem;"> *@
             <h1 class="gradient-text fw-bold">Nexus AI Auditor</h1>
         </div>
-        <div class="row justify-content-center align-items-center gy-4" style="min-height:350px;">
+        <div class="row justify-content-center.align-items-center gy-4" style="min-height:350px;">
             <!-- Card: Introducción y Problema -->
             <div class="col-auto">
                 <div class="card-postit postit-blue">
@@ -248,6 +264,29 @@
             </div>
         </div>
     </div>
+
+    <div class="container mt-5 improvements-block">
+        <div class="card shadow-lg border-0 rounded-4 bg-white">
+            <div class="card-header bg-primary text-white rounded-top-4">
+                <h5 class="mb-0"><i class="bi bi-stars me-2"></i> Últimas Mejoras</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled mb-0">
+                    <ul class="list-unstyled mb-0">
+                        <li class="mb-2"><i class="bi bi-check-circle-fill text-success me-2"></i> Optimización del rendimiento en auditorías.</li>
+                        <li class="mb-2"><i class="bi bi-check-circle-fill text-success me-2"></i> Mejora en la precisión del clasificador.</li>
+                        <li class="mb-2"><i class="bi bi-check-circle-fill text-success me-2"></i> Reportes descargables en PDF.</li>
+
+                        <!-- Nuevas mejoras -->
+                        <li class="mb-2"><i class="bi bi-check-circle-fill text-success me-2"></i> Nueva opción de <strong>zoom en imágenes y PDF</strong> para una revisión más precisa de los documentos.</li>
+                        <li class="mb-2"><i class="bi bi-check-circle-fill text-success me-2"></i> Función de <strong>reprocesamiento</strong> si un documento no logra clasificarse por error.</li>
+                    </ul>
+
+                </ul>
+            </div>
+        </div>
+    </div>
+
     <!-- GSAP Animations -->
     <script>
         gsap.from('.gradient-text', { y:-40, opacity:0, duration:1 });

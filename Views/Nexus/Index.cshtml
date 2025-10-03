@@ -132,7 +132,7 @@
                                                 </td>
                                                 <!-- Acciones -->
                                                 <td>
-                                                    @if (done)
+                                                    @if (done && resumenCategoria != "No Definido")
                                                     {
                                                         <a href="/Nexus/Details1?caseCode=@c.CaseCode" onclick="cargando()" class="btn btn-outline-primary btn-sm  icon-action rounded-circle"><i class="fa fa-eye"></i></a>
                                                     }
@@ -396,8 +396,12 @@
                     
                                 tipoCell.innerHTML = `<i class="fas fa-${tipoIconClass} fa-lg me-1"></i> <span>${tipoNombre}</span>`;
 
-                    
-                                row.children[4].innerHTML = `<a href='/Nexus/Details1?caseCode=${btn.dataset.casecode}' class='btn btn-outline-primary btn-sm rounded-circle'><i class='fas fa-eye'></i></a>`;
+
+                                        if (tipoNombre.toLowerCase().includes('no definido')) {
+                                                row.children[4].innerHTML = `<button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-casecode="${btn.dataset.casecode}"><i class="fa fa-play"></i></button>`;
+                                            } else {
+                                                row.children[4].innerHTML = `<a href="/Nexus/Details1?caseCode=${btn.dataset.casecode}" class="btn btn-outline-primary btn-sm rounded-circle"><i class="fas fa-eye"></i></a>`;
+                                            }
                 
                             } 
                             catch {

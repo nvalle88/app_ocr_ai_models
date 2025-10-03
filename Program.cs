@@ -28,6 +28,7 @@ namespace app_ocr_ai_models
             builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = false)
                 .AddEntityFrameworkStores<ApplicationDbContext>();
 
+
             builder.Services.AddApplicationInsightsTelemetry();
 
             builder.Services.ConfigureApplicationCookie(options =>
