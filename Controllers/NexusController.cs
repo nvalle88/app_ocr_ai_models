@@ -1,31 +1,20 @@
 #region Using
 
-using app_ocr_ai_models.Utils;
-using app_tramites.Extensions;
+using app_ocr_ai_models.Data;
+using app_tramites.Models.Dto;
+using app_tramites.Models.ModelAi;
+using app_tramites.Models.ViewModel;
+using Azure;
+using Azure.AI.DocumentIntelligence;
+using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Azure.AI.DocumentIntelligence;
-using Azure;
+using System.Globalization;
 using System.Text;
-using Azure.Storage.Blobs;
-using app_tramites.Models.ViewModel;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Microsoft.AspNetCore.Mvc.Rendering;
-using app_tramites.Models.ModelAi;
-using app_ocr_ai_models.Data;
-using Microsoft.ApplicationInsights;
-using Usage = app_tramites.Models.ModelAi.Usage;
-using System;
-using AspNetCoreGeneratedDocument;
-using Microsoft.AspNetCore.Identity;
-using System.Globalization;
-using Azure.Identity;
-using Azure.Messaging;
-using Azure;
-
-using Azure.Identity;
 
 
 #endregion
@@ -236,7 +225,7 @@ namespace SmartAdmin.Web.Controllers
             return View(processCase);
         }
 
-        public async Task<IActionResult> Details1(Guid caseCode)
+        public async Task<IActionResult> Details1(Guid caseCode, string agentProcessId)
         {
             var processCase = await _db.ProcessCase
                                        .Include(pc => pc.FinalResponseResults).Include(pc => pc.DataFile)
@@ -250,10 +239,12 @@ namespace SmartAdmin.Web.Controllers
 
         public async Task<IActionResult> Index()
         {
-            var vm = new QueryInput { ProcessCode = "A-HOSP" };
+            var vm = new QueryInput { ProcessCode = "A-HOSP" };            
             var today = DateTime.ParseExact("2025-09-12 17:10:00", "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
-            var casos = await _db.ProcessCase.Include(x => x.FinalResponseResults).Where(x => x.StartDate > today)
+            var casos = await _db.ProcessCase.Include(x => x.FinalResponseResults)
+                .Include(x => x.DefinitionCodeNavigation)
+                .Where(x => x.StartDate > today)
                                  .OrderByDescending(pc => pc.StartDate)
                                  .ToListAsync();
             ViewBag.ProcessCases = casos;
@@ -305,14 +296,14 @@ namespace SmartAdmin.Web.Controllers
             // Cargar caso, archivos y definición
             var processCase = await _db.ProcessCase
                 .Include(pc => pc.DataFile)
-                .Include(pc => pc.DefinitionCodeNavigation)
+                .Include(pc => pc.DefinitionCodeNavigation)                    
                     .ThenInclude(pd => pd.ProcessStep)
                 .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode);
             if (processCase == null) return null;
 
             var dataFiles = processCase.DataFile.ToList();
             var processDefinition = processCase.DefinitionCodeNavigation;
-
+            
             // Configuración final
             var finalConfig = await _db.FinalResponseConfig
                 .FirstOrDefaultAsync(cfg =>
@@ -358,7 +349,7 @@ namespace SmartAdmin.Web.Controllers
                     ? processDefinition.ProcessStep.Select(s => s.StepOrder).ToList()
                     : finalConfig.IncludedStepOrders
                         .Split(',').Select(int.Parse).ToList();
-
+           
                 foreach (var stepOrder in orders)
                 {
                     combined.AppendLine($"## Paso {stepOrder}");
@@ -595,9 +586,15 @@ namespace SmartAdmin.Web.Controllers
 
                 var ocrResults = await Task.WhenAll(ocrTasks);
 
-                var processDef = await _db.Process
+                //el proceso a partir del AgentProcess
+                int agentProcessId = Int16.Parse(input.ProcessCode);
+                var agentProcess = await _db.AgentProcesses
+                    .Include(ap => ap.Process).ThenInclude(p => p.ProcessStep.OrderBy(s => s.StepOrder))
+                    .FirstOrDefaultAsync(ap => ap.Id == agentProcessId);
+
+                var processDef = agentProcess?.Process; /*await _db.Process
                     .Include(p => p.ProcessStep.OrderBy(s => s.StepOrder))
-                    .FirstOrDefaultAsync(p => p.Code == input.ProcessCode);
+                    .FirstOrDefaultAsync(p => p.Code == input.ProcessCode);*/
                 if (processDef == null)
                     return NotFound("Proceso no encontrado.");
 
@@ -786,6 +783,172 @@ namespace SmartAdmin.Web.Controllers
             await blobClient.UploadAsync(fileStream, overwrite: true);
 
             return blobClient.Uri.ToString();
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetProcessesByUser(string userCode)
+        {
+
+            // Validar que el usuario esté autenticado
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null)
+            {
+                return Unauthorized(new { success = false, message = "Usuario no autenticado." });
+            }
+
+            // Obtener los roles del usuario
+            var roles = await _userManager.GetRolesAsync(user);
+
+            // Consultar las políticas asociadas al usuario
+            var userPolicies = await _db.PolicyUsers
+                .Include(pu => pu.Policys)
+                    .ThenInclude(p => p.AccessAgentPolicies)
+                    .ThenInclude(aap => aap.AgentProcess)
+                    .ThenInclude(ap => ap!.Process)
+                .Where(pu => pu.UserId == user.Id)
+                .ToListAsync();
+
+            // Consultar los procesos relacionados con las políticas del usuario
+            var processesFromPolicies = userPolicies
+               .SelectMany(pu => pu.Policys.AccessAgentPolicies)
+               .Select(aap => new
+               {
+                   aap.AgentProcess.Process,
+                   ProcessAgentId = (int?)aap.AgentProcess.Id // Obtener el ProcessAgentId
+               })
+               .Distinct()
+               .ToList();
+
+            // Consultar los procesos relacionados con los roles del usuario
+            var processesFromRoles = await _db.RolProcesses
+                .Include(rp => rp.Process)
+                .Include(rp => rp.Rol)
+                .Where(rp => roles.Contains(rp.Rol.Name)) // Filtrar por roles del usuario
+                .Select(rp => new
+                {
+                    rp.Process,
+                    ProcessAgentId = (int?)null // No hay un ProcessAgentId en esta consulta
+                })
+                .Distinct()
+                .ToListAsync();
+
+            // Combinar los procesos de políticas y roles, eliminando duplicados
+            var allProcesses = processesFromPolicies
+                .Union(processesFromRoles)
+                .Distinct()
+                .Where(p => p.ProcessAgentId != null)
+                .Select(p => new
+                {
+                    ProcessId = p.Process.Code,
+                    ProcessName = p.Process.Name,
+                    p.Process.Description,
+                    p.ProcessAgentId
+                })
+                .ToList();
+
+            // Devolver los procesos como JSON
+            return Json(new { success = true, processes = allProcesses });
+
+        }
+
+        //deberia ser un servicio
+        private AgentProcess? BuscarPromptPorAgenteProceso(PromptRequest req, Process process)
+        {
+            //lógica para buscar el prompt asociado al AgenteProceso
+            if (req.Origin == 3)//chat
+            {
+                return null;
+            }
+            else if (req.Origin == 4) //botones
+            {
+                return null;
+            }
+            else
+            {
+               return _db.AgentProcesses
+                    .Include(ap => ap.Agent)
+                    .ThenInclude(a => a.OPAIModelPrompt)
+                    .ThenInclude(op => op.PromptCodeNavigation)
+                    .Where(ap => ap.DefinitionCode == process.Code && ap.Agent.IsActive)
+                    .FirstOrDefault(ap => ap.Agent.OPAIModelPrompt
+                    .Any(op => op.TypeAgent == 1 && op.IsDefault));
+
+            }
+        }
+
+        private async Task<FinalResponseResult> EjecutarPrompt([FromBody] PromptRequest req)
+        {
+            // Cargar caso, archivos y definición
+            var processCase = await _db.ProcessCase
+                .Include(pc => pc.DataFile)
+                .Include(pc => pc.DefinitionCodeNavigation)
+                .FirstOrDefaultAsync(pc => pc.CaseCode == req.CaseCode);
+            if (processCase == null) return null!;
+
+            var dataFiles = processCase.DataFile.ToList();
+            var processDefinition = processCase.DefinitionCodeNavigation; //proceso
+
+            //según el origen de la llamada hay que buscar el pront asociado al AgenteProceso (por defecto, chat ó botones)
+            //aqui toca ver que AgenteProceso tiene marcado por defecto
+            var agenteProceso = BuscarPromptPorAgenteProceso(req, processDefinition);
+            if (agenteProceso == null || agenteProceso.Agent == null) return null!;
+
+            //en el agente aumentar un campo para poner la metadata que antes estaba en FinalResoponseConfig
+
+            //de aqui en adelante esto ya no va y empezar a realizar con el prompt y agente encontrado todos los reemplazos
+
+            
+            //el prompt al inicio no va lo de reemplazar count y steps, pasos seguro no va porque no se hace por pasos
+            //hay que ver si el prompt tiene esos marcadores en agenteProceso.Agent?.OPAIModelPrompt?.First().PromptCodeNavigation y si no los tiene no hacer nada            
+
+            var promptModel = agenteProceso.Agent?.OPAIModelPrompt?.First().PromptCodeNavigation;
+            string prompt = promptModel?.Content ?? "";
+
+            if (string.IsNullOrWhiteSpace(prompt))
+                return null!;
+
+            var metadata = !string.IsNullOrWhiteSpace(agenteProceso.Agent!.MetadataJson)
+                ? JsonSerializer.Deserialize<FinalResponseMetadata>(agenteProceso.Agent!.MetadataJson)!
+                : new FinalResponseMetadata();
+            if (!string.IsNullOrWhiteSpace(metadata.CustomInstructions))
+                prompt += metadata.CustomInstructions;
+
+            // Combinar texto
+            var combined = new StringBuilder();
+            foreach (var df in dataFiles)
+            {
+                var fileName = Path.GetFileName(df.FileUri);
+                var ext = Path.GetExtension(df.FileUri)?.ToLower().TrimStart('.') ?? "";
+                combined.AppendLine($"documento: {fileName}.{ext}---{df.Text}---");
+            }
+            
+
+            // Llamada a OpenAI
+            var finalResp = await CallOpenAiAsync(
+                agenteProceso.Agent,
+                prompt,
+                combined.ToString(),
+                dataFiles.First().Id,
+                stepOrder: 999,
+                maxTokens: metadata.MaxTokens ?? 100000,
+                temperature: metadata.Temperature ?? 0.2,
+                topP: 1.0);
+
+            var final = new FinalResponseResult
+            {
+                CaseCode = req.CaseCode,
+                FileId = null,                
+                ResponseText = finalResp.ResultText,
+                ExecutionSummary = $"Files:{dataFiles.Count};Steps:*",
+                CreatedDate = DateTime.Now,
+                RequestText = req.Message,
+                //*guardar la preugnta que hiso la persona cuando existe, si no hay pregunta guardar la descripción dle agente
+            };
+            // Guardar resultado
+            _db.FinalResponseResult.Add(final);
+            //*guardar el usage
+            await _db.SaveChangesAsync();
+            return final;
         }
 
 

@@ -20,6 +20,8 @@ public partial class Agent
 
     public DateTime ModifiedDate { get; set; }
 
+    public string? MetadataJson { get; set; }
+
     public bool IsActive { get; set; }
 
     public virtual OPAIConfiguration AgentConfig { get; set; } = null!;
@@ -29,4 +31,5 @@ public partial class Agent
     public virtual ICollection<ProcessStep> ProcessStep { get; set; } = new List<ProcessStep>();
 
     public virtual ICollection<StepExecution> StepExecution { get; set; } = new List<StepExecution>();
+    public virtual ICollection<AgentProcess> AgentProcesses { get; set; } = new List<AgentProcess>();
 }

@@ -1,15 +1,17 @@
 using app_ocr_ai_models.Data;
 using app_ocr_ai_models.Services;
+using app_tramites.Data;
 using Core;
 using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace app_ocr_ai_models
 {
     public class Program
     {
-        public static void Main(string[] args)
+        public static async Task Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
 
@@ -26,6 +28,7 @@ namespace app_ocr_ai_models
             builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
             builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = false)
+                .AddRoles<IdentityRole>()
                 .AddEntityFrameworkStores<ApplicationDbContext>();
 
 
@@ -40,7 +43,7 @@ namespace app_ocr_ai_models
             builder.Services.Configure<IdentityOptions>(options =>
             {
                 // Other settings can go here
-                options.ClaimsIdentity.UserIdClaimType = "/Account/Login";
+                options.ClaimsIdentity.UserIdClaimType = ClaimTypes.NameIdentifier; ;
             });
             builder.Services.AddControllersWithViews();
 
@@ -78,6 +81,34 @@ namespace app_ocr_ai_models
                 name: "default",
                 pattern: "{controller=Home}/{action=Index}/{id?}");
             app.MapRazorPages();
+
+            // =======================================================
+            // === BLOQUE DE INICIALIZACIÓN DE DATOS (SEEDING) =======
+            // =======================================================
+
+            // Utilizamos un bloque try-catch para manejar errores durante la inicialización
+            try
+            {
+                var scope = app.Services.CreateScope();
+                var services = scope.ServiceProvider;
+
+                // Ejecutar la inicialización de roles y usuarios de forma asíncrona
+                await DataSeeder.SeedRolesAsync(services);
+                await DataSeeder.SeedAdminUserAsync(services);
+
+                // Opcional: Registrar que el Seeding fue exitoso
+                LoggerService.LogInformation("Seeding de datos y roles completado con éxito.");
+            }
+            catch (Exception ex)
+            {
+                // Capturar y registrar cualquier error de inicialización
+                LoggerService.LogErrorMensaje("Ocurrió un error durante el Seeding de datos.");
+            }
+
+            // =======================================================
+            // === FIN DEL BLOQUE DE INICIALIZACIÓN ==================
+            // =======================================================
+
 
             app.Run();
         }

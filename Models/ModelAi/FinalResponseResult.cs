@@ -30,6 +30,8 @@ namespace app_tramites.Models.ModelAi
 
         public DateTime CreatedDate { get; set; }
 
+        public string RequestText { get; set; } = null!;
+
         [ForeignKey("CaseCode")]
         public virtual ProcessCase ProcessCase { get; set; } = null!;
 

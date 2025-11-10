@@ -47,6 +47,12 @@ public partial class OCRDbContext : DbContext
     public virtual DbSet<FinalResponseConfig> FinalResponseConfig { get; set; }
 
     public virtual DbSet<FinalResponseResult> FinalResponseResult { get; set; }
+
+    public virtual DbSet<AgentProcess> AgentProcesses { get; set; }
+    public virtual DbSet<Policys> Policies { get; set; }
+    public virtual DbSet<AccessAgentPolicy> AccessAgentPolicies { get; set; }
+    public virtual DbSet<PolicyUser> PolicyUsers { get; set; }
+    public virtual DbSet<RolProcess> RolProcesses { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Agent>(entity =>
@@ -433,6 +439,163 @@ public partial class OCRDbContext : DbContext
             entity.HasIndex(e => e.CaseCode);
             entity.HasIndex(e => e.ConfigCode);
             entity.HasIndex(e => e.FileId);
+        });
+
+        modelBuilder.Entity<Policys>(entity =>
+        {
+            // Nombre de la tabla
+            entity.ToTable("Policys");
+
+            // Clave Primaria (varchar)
+            entity.HasKey(p => p.Code);
+
+            // Propiedades
+            entity.Property(p => p.Code)
+                .HasColumnType("varchar(30)")
+                .IsRequired(); // Ya implícito por HasKey
+
+            entity.Property(p => p.PolicyName)
+                .HasColumnType("NVARCHAR(100)")
+                .IsUnicode(false)
+                .IsRequired();
+
+            // Constraint Único
+            entity.HasIndex(p => p.PolicyName)
+                .IsUnique(); // SQL: UNIQUE (PolicyName)
+        });
+
+        modelBuilder.Entity<AgentProcess>(entity =>
+        {
+            entity.ToTable("AgentProcess");
+
+            // Clave Primaria (int IDENTITY)
+            entity.HasKey(ap => ap.Id);
+            entity.Property(ap => ap.Id).ValueGeneratedOnAdd(); // SQL: IDENTITY
+
+            // Propiedades
+            entity.Property(ap => ap.DefinitionCode).HasColumnType("varchar(30)").IsRequired();
+            entity.Property(ap => ap.AgentCode).HasColumnType("varchar(50)").IsRequired();
+
+            // Constraint Único Compuesto
+            entity.HasIndex(ap => new { ap.DefinitionCode, ap.AgentCode })
+                .IsUnique(); // SQL: UK_ProcesoAgente
+
+            // Relación FK a Process (basada en una clave NO primaria)
+            entity.HasOne(ap => ap.Process)
+                .WithMany(p => p.AgentProcesses)
+                .HasForeignKey(ap => ap.DefinitionCode) // FK en esta tabla
+                .HasPrincipalKey(p => p.Code); // PK (o clave principal) en la tabla 'Process'
+
+            // Relación FK a Agent (basada en una clave NO primaria)
+            entity.HasOne(ap => ap.Agent)
+                .WithMany(a => a.AgentProcesses)
+                .HasForeignKey(ap => ap.AgentCode) // FK en esta tabla
+                .HasPrincipalKey(a => a.Code); // PK (o clave principal) en la tabla 'Agent'
+        });
+
+        modelBuilder.Entity<AccessAgentPolicy>(entity =>
+        {
+            entity.ToTable("AccessAgentPolicy");
+
+            // Clave Primaria (int IDENTITY)
+            entity.HasKey(aap => aap.Id);
+            entity.Property(aap => aap.Id).ValueGeneratedOnAdd(); // SQL: IDENTITY
+
+            // Propiedades
+            entity.Property(aap => aap.PolicyCode).HasColumnType("varchar(30)").IsRequired();
+            entity.Property(aap => aap.AgentProcessId).IsRequired();
+
+            entity.Property(aap => aap.Status)
+                .IsRequired()
+                .HasDefaultValue(true); // SQL: DEFAULT 1
+
+            // Constraint Único Compuesto
+            entity.HasIndex(aap => new { aap.PolicyCode, aap.AgentProcessId })
+                .IsUnique(); // SQL: UK_PoliticaAgenteAcceso
+
+            // Índice simple
+            entity.HasIndex(aap => aap.AgentProcessId); // SQL: IX_AccessAgentPolicy_AgentProcessID
+
+            // Relación FK a Policys (basada en una clave NO primaria)
+            entity.HasOne(aap => aap.Policy)
+                .WithMany(p => p.AccessAgentPolicies)
+                .HasForeignKey(aap => aap.PolicyCode) // FK en esta tabla
+                .HasPrincipalKey(p => p.Code); // PK (o clave principal) en la tabla 'Policys'
+
+            // Relación FK a AgentProcess (basada en la PK estándar)
+            entity.HasOne(aap => aap.AgentProcess)
+                .WithMany(ap => ap.AccessAgentPolicies)
+                .HasForeignKey(aap => aap.AgentProcessId); // FK en esta tabla (EF lo infiere, pero es bueno ser explícito)
+        });
+
+        // --- Mapeo de PolicyUser ---
+        modelBuilder.Entity<PolicyUser>(entity =>
+        {
+            entity.ToTable("PolicyUser");
+            // 1. Clave Primaria (PK_PolicyUser)
+            // Usamos la columna 'Id' como PK simple (Identity)
+            entity.HasKey(e => e.Id)
+                  .HasName("PK_PolicyUser");
+
+            // 2. Restricción ÚNICA (UK_PolicyUser)
+            // Asegura que no haya duplicados de la combinación PolicyCode y UserId
+            entity.HasIndex(e => new { e.PolicyCode, e.UserId })
+                  .IsUnique()
+                  .HasDatabaseName("UK_PolicyUser"); // Opcional: Nombre de restricción
+
+            // 3. Clave Foránea a AspNetUsers (FK_PolicyUser_User)
+            entity.HasOne(e => e.User)
+                  .WithMany() // Muchos PolicyUser pueden estar relacionados con un User
+                  .HasForeignKey(e => e.UserId)
+                  .OnDelete(DeleteBehavior.Cascade) // Comportamiento al borrar
+                  .HasConstraintName("FK_PolicyUser_User");
+
+            // 4. Clave Foránea a Policys (FK_PolicyUsedr_Policy)
+            entity.HasOne(e => e.Policys)
+                  .WithMany() // Muchos PolicyUser pueden estar relacionados con una Policy
+                  .HasForeignKey(e => e.PolicyCode)
+                  .OnDelete(DeleteBehavior.Restrict) // Comportamiento al borrar
+                  .HasConstraintName("FK_PolicyUsedr_Policy");
+
+            // 5. Mapeo de Columnas (Opcional, si los nombres de C# no coinciden con la DB)
+            entity.Property(e => e.PolicyCode).HasColumnType("VARCHAR(30)");
+            // Las propiedades de IdentityUser.Id ya están configuradas a nvarchar(450) por defecto
+        });
+
+        modelBuilder.Entity<RolProcess>(entity =>
+        {
+            entity.ToTable("RolProcess");
+            // 1. Clave Primaria (PK_RolProcess)
+            // Usamos la columna 'Id' como PK simple (Identity)
+            entity.HasKey(e => e.Id)
+                  .HasName("PK_RolProcess");
+
+            // 2. Restricción ÚNICA (UK_RolProcess)
+            entity.HasIndex(e => new { e.ProcessCode, e.RolId })
+                  .IsUnique()
+                  .HasDatabaseName("UK_RolProcess");
+
+            // 3. Clave Foránea a AspNetRoles (FK_RolProcess_Roles)
+            entity.HasOne(e => e.Rol)
+                  .WithMany()
+                  .HasForeignKey(e => e.RolId)
+                  .OnDelete(DeleteBehavior.Cascade)
+                  .HasConstraintName("FK_RolProcess_Roles");
+
+            // 4. Clave Foránea a Process (FK_RolProcess_Process)
+            entity.HasOne(e => e.Process)
+                  .WithMany()
+                  .HasForeignKey(e => e.ProcessCode)
+                  .OnDelete(DeleteBehavior.Restrict)
+                  .HasConstraintName("FK_RolProcess_Process");
+
+            // 5. Mapeo de Columnas
+            entity.Property(e => e.ProcessCode).HasColumnType("VARCHAR(30)");
+        });
+
+        modelBuilder.Entity<AspNetRole>(entity =>
+        {
+            entity.ToTable("AspNetRoles"); // Mapea a la tabla AspNetRoles
         });
 
         OnModelCreatingPartial(modelBuilder);

@@ -28,7 +28,7 @@
                 <div>
                     <div class="widget-body p-4">
                         <form id="ocrForm" novalidate autocomplete="off">
-                            <input type="hidden" asp-for="ProcessCode" value="A-HOSP" />
+                            <input type="hidden" asp-for="ProcessCode" value="" />
                             <div class="row g-4">
                                 <div class="col-12 col-md-4 position-relative">
                                     <div id="uploadArea"
@@ -74,6 +74,13 @@
             </div>
         </article>
 
+        <article id="process-buttons" class="col-lg-12 mb-4">
+            <h3 class="text-primary">Selecciona un Proceso</h3>
+            <div id="processContainer" class="d-flex flex-wrap gap-3">
+                <!-- Botones dinámicos se renderizan aquí -->
+            </div>
+        </article>
+
         <!-- Widget Tabla Casos -->
         <article class="col-lg-12">
             <div class="jarviswidget jarviswidget-color-darken border-0 shadow rounded-4" id="wid-id-table" data-widget-editbutton="false" data-widget-deletebutton="false">
@@ -89,6 +96,7 @@
                                     <tr>
                                         <th>Código</th>
                                         <th>Fecha de recepci&oacute;n</th>
+                                        <th>Proceso </th>
                                         <th>Estado de la evaluación </th>
                                         <th>Tipo</th>
                                         <th>Acciones</th>
@@ -116,6 +124,8 @@
                                                 <td class="fw-bold"><b> NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))</b></td>
                                                 <!-- Fecha -->
                                                 <td>@date</td>
+                                                <!-- Fecha -->
+                                                <td>@c.DefinitionCodeNavigation?.Name</td>
                                                 <!-- Estado ícono solamente -->
                                                 <td class="text-left">
                                                     <i class="fa @(done ? "fa-check-circle text-success" : "fa-hourglass-start text-warning") fa-lg"></i>
@@ -123,22 +133,25 @@
                                                 <!-- Tipo -->
                                                 <td class="fw-bold">
                                                     <i class="fa @(   !done ? "fa-clock text-muted" :
-                     resumenCategoria == "No Definido" ? "fa-question text-danger" :
-                     resumenCategoria == "Hospital del Día" ? "fa-hospital text-primary" :
-                     resumenCategoria == "Hospitalario" ? "fa-briefcase-medical text-info" :
-                     resumenCategoria == "Ambulatorio" ? "fa-stethoscope text-warning" :
-                     "fa-file-medical text-secondary") me-1"></i>
+                                                     resumenCategoria == "No Definido" ? "fa-question text-danger" :
+                                                     resumenCategoria == "Hospital del Día" ? "fa-hospital text-primary" :
+                                                     resumenCategoria == "Hospitalario" ? "fa-briefcase-medical text-info" :
+                                                     resumenCategoria == "Ambulatorio" ? "fa-stethoscope text-warning" :
+                                                     "fa-file-medical text-secondary") me-1"></i>
                                                     @resumenCategoria
                                                 </td>
                                                 <!-- Acciones -->
                                                 <td>
                                                     @if (done && resumenCategoria != "No Definido")
                                                     {
-                                                        <a href="/Nexus/Details1?caseCode=@c.CaseCode" onclick="cargando()" class="btn btn-outline-primary btn-sm  icon-action rounded-circle"><i class="fa fa-eye"></i></a>
+                                                        //<a href="/Nexus/Details1?caseCode=@c.CaseCode" onclick="cargando()" class="btn btn-outline-primary btn-sm  icon-action rounded-circle"><i class="fa fa-eye"></i></a>
+                                                        <button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails" data-casecode="@c.CaseCode" data-processcode="" onclick="handleViewDetails(this)">
+                                                            <i class="fa fa-eye"></i>
+                                                        </button>
                                                     }
                                                     else
                                                     {
-                                                        <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-casecode="@c.CaseCode"><i class="fa fa-play"></i></button>
+                                                        <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-casecode="@c.CaseCode" data-processcode=""><i class="fa fa-play"></i></button>
                                                     }
                                                 </td>
                                             </tr>
@@ -242,9 +255,14 @@
 
 
             // Envío OCR y agregar fila
-                           document.getElementById('ocrForm').addEventListener('submit', async e => {
+            document.getElementById('ocrForm').addEventListener('submit', async e => {
                 e.preventDefault();
                 if (!filesInput.files.length) return alert('Selecciona al menos un archivo.');
+                const processCode = document.querySelector('input[name="ProcessCode"]').value;
+                if (!processCode) {
+                    alert('Selecciona un proceso antes de continuar.');
+                    return;
+                }
                 mostrarLoadingPanel();
 
                 const filesToSend = await Promise.all(Array.from(filesInput.files).map(f => new Promise(res => {
@@ -261,7 +279,7 @@
                     const resp = await fetch('/Nexus/CreateCaseProcess', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ ProcessCode: 'A-HOSP', Query: '', Files: filesToSend })
+                        body: JSON.stringify({ ProcessCode: processCode, Query: '', Files: filesToSend })
                     });
 
                     if (!resp.ok) throw new Error(resp.statusText);
@@ -318,8 +336,14 @@
             }
 
             // Procesar caso
-                    async function processCase(btn) {
+            async function processCase(btn) {
                 btn.disabled = true;
+                const process = btn.dataset.processcode;
+                console.log(process);
+                if (!process) {
+                    btn.disabled = false;
+                    return alert('Selecciona un proceso.');
+                }
                 const orig = btn.innerHTML;
                 btn.innerHTML = `<i class='fa fa-spinner fa-spin'></i>`;
                 const row = btn.closest('tr');
@@ -332,7 +356,7 @@
 
                         tipoCell.innerHTML = `<span class="typing-animation">Analizando...</span>`;
 
-        // Lista de mensajes
+                // Lista de mensajes
                 const mensajes = [
                   "Extrayendo...",
                   "Resumiendo...",
@@ -362,6 +386,7 @@
                 try {
                     const form = new FormData();
                     form.append('caseCode', btn.dataset.casecode);
+                    form.append('processAgentCode',btn.dataset.processcode);
 
                     const res = await fetch('/Nexus/ProcessCaseAjax', {
                         method: 'POST',
@@ -371,56 +396,134 @@
                     const json = await res.json();
 
                     const cat = (json.typeCase || 'Generado').trim().toLowerCase();
-
+                    
                     // Icono de estado
                     estadoEl.className = 'fas fa-check-circle text-success fa-lg';
 
                     // Seleccionar icono y texto para FA6
                     let tipoIconClass = 'file-medical text-secondary';
                     let tipoNombre = 'Generado';
-                          if (cat.includes('no definido')) {
-                                    tipoIconClass = 'question text-danger';
-                                tipoNombre = 'No Definido';
-                          }
-                                else if (cat.includes('hospital del día')) {
-                                    tipoIconClass = 'hospital text-primary';
-                                    tipoNombre = 'Hospital del Día';
-                                }
-                                else if (cat.includes('hospitalario')) {
-                                    tipoIconClass = 'briefcase-medical text-info';
-                                    tipoNombre = 'Hospitalario';
-                                } else if (cat.includes('ambulatorio')) {
-                                    tipoIconClass = 'stethoscope text-warning';
-                                    tipoNombre = 'Ambulatorio';
-                                }
+
+                    if (cat.includes('no definido')) {
+                        tipoIconClass = 'question text-danger';
+                        tipoNombre = 'No Definido';
+                    }
+                    else if (cat.includes('hospital del día')) {
+                        tipoIconClass = 'hospital text-primary';
+                        tipoNombre = 'Hospital del Día';
+                    }
+                    else if (cat.includes('hospitalario')) {
+                        tipoIconClass = 'briefcase-medical text-info';
+                        tipoNombre = 'Hospitalario';
+                    } else if (cat.includes('ambulatorio')) {
+                        tipoIconClass = 'stethoscope text-warning';
+                        tipoNombre = 'Ambulatorio';
+                    }
                     
-                                tipoCell.innerHTML = `<i class="fas fa-${tipoIconClass} fa-lg me-1"></i> <span>${tipoNombre}</span>`;
+                    tipoCell.innerHTML = `<i class="fas fa-${tipoIconClass} fa-lg me-1"></i> <span>${tipoNombre}</span>`;
 
 
-                                        if (tipoNombre.toLowerCase().includes('no definido')) {
-                                                row.children[4].innerHTML = `<button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-casecode="${btn.dataset.casecode}"><i class="fa fa-play"></i></button>`;
-                                            } else {
-                                                row.children[4].innerHTML = `<a href="/Nexus/Details1?caseCode=${btn.dataset.casecode}" class="btn btn-outline-primary btn-sm rounded-circle"><i class="fas fa-eye"></i></a>`;
-                                            }
+                    if (tipoNombre.toLowerCase().includes('no definido')) {
+                            row.children[4].innerHTML = `<button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}"><i class="fa fa-play"></i></button>`;
+                    } else {
+                        row.children[4].innerHTML = `<button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}" onclick="handleViewDetails(this)"><i class="fa fa-eye"></i></button>`;
+                    }
                 
-                            } 
-                            catch {
-                                estadoEl.className = 'fas fa-times-circle text-danger fa-lg';
+                } 
+                catch {
+                    estadoEl.className = 'fas fa-times-circle text-danger fa-lg';
                     
-                                tipoCell.innerHTML = `<i class="fas fa-exclamation-circle text-danger fa-lg"></i>`;
+                    tipoCell.innerHTML = `<i class="fas fa-exclamation-circle text-danger fa-lg"></i>`;
                     
-                                btn.innerHTML = orig;
+                    btn.innerHTML = orig;
                     
-                                btn.disabled = false;
+                    btn.disabled = false;
                 
-                            }
+                }
             }
 
-            // Eventos globales
+        // Cargar los botones dinámicamente
+        async function loadProcessButtons() {
+            try {
+                const response = await fetch(`/Nexus/GetProcessesByUser`);
+                if (!response.ok) throw new Error("Error al cargar los procesos.");
+                const processes = await response.json();
+
+                const container = document.getElementById('processContainer');
+                container.innerHTML = ''; // Limpiar botones existentes
+
+                processes.processes.forEach(process => {
+                    const button = document.createElement('button');
+                    button.className = 'btn btn-primary btn-lg rounded-pill d-flex align-items-center gap-2 btnProcessAgent';
+                    button.textContent = process.processName;
+                    button.dataset.processId = process.processId;
+                    button.dataset.agentId = process.processAgentId;
+
+                    // Evento para setear el atributo del modelo
+                    button.addEventListener('click', () => {
+                        document.querySelector('input[name="ProcessCode"]').value = process.processAgentId;
+                        // Actualizar el atributo data-processcode en todos los botones con la clase btnProcessRow
+                        const allButtons = document.querySelectorAll('.btnProcessRow');
+                        allButtons.forEach(btn => {
+                            btn.setAttribute('data-processcode', process.processAgentId);
+                        });
+
+                        const allDetailsButtons = document.querySelectorAll('.btnViewDetails');
+                        allDetailsButtons.forEach(btn => {
+                            btn.setAttribute('data-processcode', process.processAgentId);
+                        });
+
+                        const allProcessButtons = document.querySelectorAll('.btnProcessAgent');
+                        allProcessButtons.forEach(btn => {
+                            btn.classList.remove('btn-success');
+                            btn.classList.add('btn-primary');
+                        });
+
+                        button.classList.remove('btn-primary');
+                        button.classList.add('btn-success');
+                        
+                    });
+
+                    container.appendChild(button);
+                });
+            } catch (error) {
+                console.error(error);
+                alert("No se pudieron cargar los procesos.");
+            }
+        }
+
+        function handleViewDetails(button) {
+            // Obtener el valor de data-casecode
+            const caseCode = button.dataset.casecode;
+
+            // Validar que el caseCode exista
+            if (!caseCode) {
+                alert('No se encontró un código de caso válido.');
+                return;
+            }
+
+            // Realizar otras validaciones si es necesario
+            const processCode = document.querySelector('input[name="ProcessCode"]').value;
+            if (!processCode) {
+                alert('Selecciona un proceso antes de continuar.');
+                return;
+            }
+
+            cargando();
+            // Redirigir a la URL con el caseCode
+            window.location.href = `/Nexus/Details1?caseCode=${caseCode}&agentProcessId=${processCode}`;
+        }
+
+        // Llamar a la función al cargar la página
+        document.addEventListener('DOMContentLoaded', () => {
+            loadProcessButtons();
+        });
+
+        // Eventos globales           
            
-            document.addEventListener('click', e => {
-                const b = e.target.closest('.btnProcessRow'); if (b) processCase(b);
-            });
+        document.addEventListener('click', e => {
+            const b = e.target.closest('.btnProcessRow'); if (b) processCase(b);
+        });
 
 
 
@@ -455,6 +558,30 @@
 
         #previewGallery img {
             margin: .25rem;
+        }
+
+        #processContainer button {
+            transition: all 0.3s ease;
+        }
+
+        #processContainer button:hover {
+            background-color: #0b5ed7; /* Color más oscuro al pasar el cursor */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        #processContainer button:focus {
+            outline: 2px solid #0d6efd;
+            outline-offset: 2px;
+        }
+
+        #process-buttons {
+            margin-bottom: 2rem; /* Espaciado entre secciones */
+        }
+
+        #processContainer {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem; /* Espaciado entre botones */
         }
 
         /* Badges de tipo iniciales */
@@ -514,32 +641,43 @@
                 border: 1px solid rgba(0,0,0,0.04);
             }
 
-                /* Imagen dentro de la miniatura: cubrir recortando (mejor aspecto) */
-                #previewGallery .preview-item img {
-                    width: 100%;
-                    height: 100%;
-                    object-fit: cover; /* importante para ocupar todo el recuadro */
-                    display: block;
-                }
+            /* Imagen dentro de la miniatura: cubrir recortando (mejor aspecto) */
+            #previewGallery .preview-item img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover; /* importante para ocupar todo el recuadro */
+                display: block;
+            }
 
-                /* Iconos para PDF u otros: centrados y más grandes */
-                #previewGallery .preview-item .file-icon {
-                    font-size: 2.1rem;
-                    color: #d63333; /* rojo para pdf, puedes cambiar */
-                }
+            /* Iconos para PDF u otros: centrados y más grandes */
+            #previewGallery .preview-item .file-icon {
+                font-size: 2.1rem;
+                color: #d63333; /* rojo para pdf, puedes cambiar */
+            }
 
-                /* Texto pequeño debajo (opcional) */
-                #previewGallery .preview-item .filename {
-                    display: block;
-                    font-size: 0.85rem;
-                    color: #495057;
-                    margin-top: .35rem;
-                    text-align: center;
-                    max-width: 130px;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                }
+            /* Texto pequeño debajo (opcional) */
+            #previewGallery .preview-item .filename {
+                display: block;
+                font-size: 0.85rem;
+                color: #495057;
+                margin-top: .35rem;
+                text-align: center;
+                max-width: 130px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .btn-success {
+                background-color: #28a745 !important; /* Verde éxito */
+                border-color: #28a745 !important;
+                color: #fff !important;
+            }
+
+            .btn-success:hover {
+                background-color: #218838 !important; /* Verde más oscuro al pasar el cursor */
+                border-color: #1e7e34 !important;
+            }
 
     </style>
 }

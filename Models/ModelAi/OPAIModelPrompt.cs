@@ -12,6 +12,10 @@ public partial class OPAIModelPrompt
 
     public int Order { get; set; }
 
+    public bool IsDefault { get; set; }
+
+    public int TypeAgent { get; set; }
+
     public virtual Agent ModelCodeNavigation { get; set; } = null!;
 
     public virtual OPAIPrompt PromptCodeNavigation { get; set; } = null!;
