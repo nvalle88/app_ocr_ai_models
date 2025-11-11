@@ -32,5 +32,4 @@ public partial class StepExecution
 
     public virtual Agent ModelCodeNavigation { get; set; } = null!;
 
-    public virtual ICollection<Usage> Usage { get; set; } = new List<Usage>();
 }

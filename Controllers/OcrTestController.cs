@@ -358,10 +358,7 @@ namespace SmartAdmin.Web.Controllers
                         db.FinalResponseResult.Add(new FinalResponseResult
                         {
                             CaseCode = caseCode,
-                            FileId = null,
-                            ConfigCode = finalConfig.ConfigCode,
                             ResponseText = finalResponse.ResultText,
-                            ExecutionSummary = $"Files:{dataFiles.Count};Steps:{finalConfig.IncludedStepOrders}",
                             CreatedDate = DateTime.UtcNow
                         });
                         await db.SaveChangesAsync();

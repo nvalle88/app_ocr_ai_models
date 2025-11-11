@@ -53,6 +53,7 @@ public partial class OCRDbContext : DbContext
     public virtual DbSet<AccessAgentPolicy> AccessAgentPolicies { get; set; }
     public virtual DbSet<PolicyUser> PolicyUsers { get; set; }
     public virtual DbSet<RolProcess> RolProcesses { get; set; }
+    public DbSet<Catalog> Catalog { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Agent>(entity =>
@@ -101,6 +102,25 @@ public partial class OCRDbContext : DbContext
             entity.Property(e => e.ContainerName)
                 .HasMaxLength(100)
                 .IsUnicode(false);
+        });
+
+        modelBuilder.Entity<Catalog>(entity =>
+        {
+            entity.ToTable("Catalog");
+            entity.HasKey(e => e.Id).HasName("PK_Catalog");
+            entity.HasIndex(e => e.Code, "UK_Catalog").IsUnique();
+            entity.Property(e => e.Code)
+                .HasMaxLength(30)
+                .IsUnicode(false);
+            entity.Property(e => e.CodeType)
+                .HasMaxLength(30)
+                .IsUnicode(false);
+            entity.Property(e => e.Description)
+                .HasMaxLength(200)
+                .IsUnicode(false);
+            entity.Property(e => e.CreatedDate)
+                .HasDefaultValueSql("(getutcdate())")
+                .HasColumnType("datetime");
         });
 
         modelBuilder.Entity<DataFile>(entity =>
@@ -384,10 +404,10 @@ public partial class OCRDbContext : DbContext
                 .HasDefaultValueSql("(getdate())")
                 .HasColumnType("datetime");
 
-            entity.HasOne(d => d.Execution).WithMany(p => p.Usage)
+            /*entity.HasOne(d => d.Execution).WithMany(p => p.Usage)
                 .HasForeignKey(d => d.ExecutionId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK_Usage_StepExecution");
+                .HasConstraintName("FK_Usage_StepExecution");*/
         });
 
         modelBuilder.Entity<FinalResponseConfig>(entity =>
@@ -432,13 +452,10 @@ public partial class OCRDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.ResponseText)
                   .IsRequired();
-            entity.Property(e => e.ExecutionSummary)
-                  .HasMaxLength(1000);
             entity.Property(e => e.CreatedDate)
                   .HasDefaultValueSql("SYSUTCDATETIME()");
             entity.HasIndex(e => e.CaseCode);
-            entity.HasIndex(e => e.ConfigCode);
-            entity.HasIndex(e => e.FileId);
+            
         });
 
         modelBuilder.Entity<Policys>(entity =>

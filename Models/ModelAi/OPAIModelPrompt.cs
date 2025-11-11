@@ -1,6 +1,4 @@
-﻿using app_tramites.Models.ViewModel;
-using System;
-using System.Collections.Generic;
+﻿using System.ComponentModel.DataAnnotations.Schema;
 
 namespace app_tramites.Models.ModelAi;
 
@@ -16,7 +14,12 @@ public partial class OPAIModelPrompt
 
     public int TypeAgent { get; set; }
 
+    public string? MetadataJson { get; set; }
+
     public virtual Agent ModelCodeNavigation { get; set; } = null!;
 
     public virtual OPAIPrompt PromptCodeNavigation { get; set; } = null!;
+
+    [ForeignKey("TypeAgent")]
+    public virtual Catalog TypeAgentNavigation { get; set; } = null!;
 }

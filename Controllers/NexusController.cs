@@ -4,6 +4,7 @@ using app_ocr_ai_models.Data;
 using app_tramites.Models.Dto;
 using app_tramites.Models.ModelAi;
 using app_tramites.Models.ViewModel;
+using app_tramites.Services.NexusProcess;
 using Azure;
 using Azure.AI.DocumentIntelligence;
 using Azure.Storage.Blobs;
@@ -15,6 +16,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Usage = app_tramites.Models.ModelAi.Usage;
 
 
 #endregion
@@ -22,17 +24,18 @@ using System.Text.RegularExpressions;
 namespace SmartAdmin.Web.Controllers
 {
     [Authorize]
-    public class NexusController : Controller
+    public class NexusController(OCRDbContext db, UserManager<IdentityUser> userManager, INexusService nexusService) : Controller
     {
-        private readonly OCRDbContext _db;
+        /*private readonly OCRDbContext _db;
         private readonly UserManager<IdentityUser> _userManager;
+        private readonly INexusService nexusService;
 
 
         public NexusController(OCRDbContext context, UserManager<IdentityUser> userManager)
         {
             _userManager = userManager;
             _db = context;
-        }
+        }*/
 
 
 
@@ -44,7 +47,7 @@ namespace SmartAdmin.Web.Controllers
             if (string.IsNullOrWhiteSpace(caseCode))
                 return BadRequest(new { success = false, error = "caseCode requerido" });
 
-            var notes = await _db.Note
+            var notes = await db.Note
                 .Where(n => n.CaseCode ==Guid.Parse(caseCode))
                 .OrderByDescending(n => n.CreatedAt)
                 .Select(n => new
@@ -82,13 +85,13 @@ namespace SmartAdmin.Web.Controllers
 
             if (dto.id > 0)
             {
-                var existing = await _db.Note.FindAsync(dto.id);
+                var existing = await db.Note.FindAsync(dto.id);
                 if (existing == null) return NotFound(new { success = false, error = "Nota no encontrada" });
 
                 existing.Title = dto.title;
                 existing.Detail = dto.detail;
                 // opcional: mantener updatedAt/updatedBy si lo necesitas
-                await _db.SaveChangesAsync();
+                await db.SaveChangesAsync();
 
                 return Ok(new
                 {
@@ -116,10 +119,10 @@ namespace SmartAdmin.Web.Controllers
                     
                 };
 
-                _db.Note.Add(note);
+                db.Note.Add(note);
                 try
                 {
-                    await _db.SaveChangesAsync();
+                    await db.SaveChangesAsync();
                 }
                 catch (Exception ex)
                 {
@@ -155,11 +158,11 @@ namespace SmartAdmin.Web.Controllers
         {
             if (dto == null || dto.id <= 0) return BadRequest(new { success = false, error = "id inválido" });
 
-            var note = await _db.Note.FindAsync(dto.id);
+            var note = await db.Note.FindAsync(dto.id);
             if (note == null) return NotFound(new { success = false, error = "Nota no encontrada" });
 
-            _db.Note.Remove(note);
-            await _db.SaveChangesAsync();
+            db.Note.Remove(note);
+            await db.SaveChangesAsync();
             return Ok(new { success = true });
         }
 
@@ -184,7 +187,7 @@ namespace SmartAdmin.Web.Controllers
 
             try
             {
-                var user = await _userManager.GetUserAsync(User); // Usuario logeado
+                var user = await userManager.GetUserAsync(User); // Usuario logeado
                 var userName = user?.UserName ?? "Sistema";
                 var entity = new CaseReview
                 {
@@ -196,8 +199,8 @@ namespace SmartAdmin.Web.Controllers
 
                 };
 
-                _db.CaseReview.Add(entity);
-                await _db.SaveChangesAsync();
+                db.CaseReview.Add(entity);
+                await db.SaveChangesAsync();
 
                 return Ok(new { success = true, message = "Reseña guardada" });
             }
@@ -215,7 +218,7 @@ namespace SmartAdmin.Web.Controllers
 
         public async Task<IActionResult> Details(Guid caseCode)
         {
-            var processCase = await _db.ProcessCase
+            var processCase = await db.ProcessCase
                                        .Include(pc => pc.FinalResponseResults).Include(pc => pc.DataFile)
                                        .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode);
 
@@ -227,7 +230,7 @@ namespace SmartAdmin.Web.Controllers
 
         public async Task<IActionResult> Details1(Guid caseCode, string agentProcessId)
         {
-            var processCase = await _db.ProcessCase
+            var processCase = await db.ProcessCase
                                        .Include(pc => pc.FinalResponseResults).Include(pc => pc.DataFile)
                                        .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode);
 
@@ -242,7 +245,7 @@ namespace SmartAdmin.Web.Controllers
             var vm = new QueryInput { ProcessCode = "A-HOSP" };            
             var today = DateTime.ParseExact("2025-09-12 17:10:00", "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
-            var casos = await _db.ProcessCase.Include(x => x.FinalResponseResults)
+            var casos = await db.ProcessCase.Include(x => x.FinalResponseResults)
                 .Include(x => x.DefinitionCodeNavigation)
                 .Where(x => x.StartDate > today)
                                  .OrderByDescending(pc => pc.StartDate)
@@ -256,7 +259,16 @@ namespace SmartAdmin.Web.Controllers
         [HttpPost]
         public async Task<IActionResult> ProcessCaseAjax([FromForm] Guid caseCode)
         {
-            var final = await EjecutarFinalResponse(caseCode);
+            PromptRequest req = new PromptRequest
+            {
+                CaseCode = caseCode,
+                Message = string.Empty,
+                FileUrls = new List<string>(),
+                Origin = 1
+            };
+
+            //var final = await EjecutarFinalResponse(caseCode);
+            var final = await EjecutarPrompt(req);
             var txt = string.Join(" ", final.ResponseText.ToLower());
 
             // Detectar tipo de caso
@@ -277,7 +289,7 @@ namespace SmartAdmin.Web.Controllers
         [HttpPost]
         public async Task<IActionResult> ProcessPending()
         {
-            var pendientes = await _db.ProcessCase
+            var pendientes = await db.ProcessCase
                 .Include(pc => pc.FinalResponseResults)
                 .Where(pc => !pc.FinalResponseResults.Any())
                 .ToListAsync();
@@ -294,7 +306,7 @@ namespace SmartAdmin.Web.Controllers
         private async Task<FinalResponseResult> EjecutarFinalResponse(Guid caseCode)
         {
             // Cargar caso, archivos y definición
-            var processCase = await _db.ProcessCase
+            var processCase = await db.ProcessCase
                 .Include(pc => pc.DataFile)
                 .Include(pc => pc.DefinitionCodeNavigation)                    
                     .ThenInclude(pd => pd.ProcessStep)
@@ -305,12 +317,12 @@ namespace SmartAdmin.Web.Controllers
             var processDefinition = processCase.DefinitionCodeNavigation;
             
             // Configuración final
-            var finalConfig = await _db.FinalResponseConfig
+            var finalConfig = await db.FinalResponseConfig
                 .FirstOrDefaultAsync(cfg =>
                     cfg.ProcessCode == processDefinition.Code && cfg.IsEnabled);
             if (finalConfig == null) return null;
 
-            var finalAgent = await _db.Agent
+            var finalAgent = await db.Agent
                 .Include(a => a.AgentConfig)
                 .FirstOrDefaultAsync(a => a.Code == finalConfig.AgentCode);
             if (finalAgent == null) return null;
@@ -353,7 +365,7 @@ namespace SmartAdmin.Web.Controllers
                 foreach (var stepOrder in orders)
                 {
                     combined.AppendLine($"## Paso {stepOrder}");
-                    var stepResults = await _db.StepExecution
+                    var stepResults = await db.StepExecution
                         .Where(e => e.CaseCode == caseCode && e.StepOrder == stepOrder)
                         .OrderBy(e => e.DataFileId)
                         .Select(e => e.ResponseContent)
@@ -362,7 +374,7 @@ namespace SmartAdmin.Web.Controllers
                 }
             }
             // Llamada a OpenAI
-            var finalResp = await CallOpenAiAsync(
+            var finalResp = await nexusService.CallOpenAiAsync(
                 finalAgent,
                 prompt,
                 combined.ToString(),
@@ -375,15 +387,12 @@ namespace SmartAdmin.Web.Controllers
             var final = new FinalResponseResult
             {
                 CaseCode = caseCode,
-                FileId = null,
-                ConfigCode = finalConfig.ConfigCode,
                 ResponseText = finalResp.ResultText,
-                ExecutionSummary = $"Files:{dataFiles.Count};Steps:{finalConfig.IncludedStepOrders}",
                 CreatedDate = DateTime.Now
             };
             // Guardar resultado
-            _db.FinalResponseResult.Add(final);
-            await _db.SaveChangesAsync();
+            db.FinalResponseResult.Add(final);
+            await db.SaveChangesAsync();
             return final;
         }
 
@@ -392,14 +401,6 @@ namespace SmartAdmin.Web.Controllers
         {
             public string OriginalText { get; set; } = string.Empty;
             public List<string> GeneratedSteps { get; set; } = new();
-        }
-
-        public class FinalResponseMetadata
-        {
-            public int? MaxTokens { get; set; }
-            public double? Temperature { get; set; }
-            public string? Language { get; set; }
-            public string? CustomInstructions { get; set; }
         }
 
         public class ChatRequest
@@ -428,13 +429,13 @@ namespace SmartAdmin.Web.Controllers
                 return BadRequest("Datos inválidos.");
 
             // 1) Recupera el caso y sus archivos
-            var processCase = await _db.ProcessCase
+            var processCase = await db.ProcessCase
                 .Include(pc => pc.DataFile)
                 .FirstOrDefaultAsync(pc => pc.CaseCode == req.CaseCode);
             if (processCase == null)
                 return NotFound("Caso no encontrado.");
 
-            var usuario = await _userManager.GetUserAsync(User);
+            var usuario = await userManager.GetUserAsync(User);
 
             // 2) Lógica para elegir prompt / agent según req.Origin
             //    Si Origin está vacío -> usar el prompt / agente por defecto ("chat-nexus")
@@ -447,49 +448,49 @@ namespace SmartAdmin.Web.Controllers
             {
                 // comportamiento actual por defecto
                 // Updated line to handle possible null value by using the null-coalescing operator
-                config = _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled)
+                config = db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled)
                          ?? throw new InvalidOperationException("FinalResponseConfig not found for ProcessCode 'A-HOSP'.");
                 // Updated line to handle possible null value by using the null-coalescing operator
-                prompt = await _db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == "chat-nexus")
+                prompt = await db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == "chat-nexus")
                          ?? throw new InvalidOperationException("Prompt with code 'chat-nexus' not found.");
 
                 // Updated the line to handle possible null value by using the null-coalescing operator
-                config = _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled)
+                config = db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled)
                          ?? throw new InvalidOperationException("FinalResponseConfig not found for ProcessCode 'A-HOSP'.");
                 // Updated line to handle possible null value by using the null-coalescing operator
-                agent = await _db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode)
+                agent = await db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode)
                         ?? throw new InvalidOperationException($"Agent not found for AgentCode '{config.AgentCode}'.");
 
             }
             else
             {
                 // Intentar localizar un prompt con el código enviado en Origin
-                prompt = await _db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == req.Origin);
+                prompt = await db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == req.Origin);
 
                 if (prompt != null)
                 {
                     // Encontramos un prompt específico: usamos su contenido
                     // (aún usamos el config/agent por defecto salvo que tengas mapping adicional)
-                    config = _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
-                    promtModel = _db.OPAIModelPrompt.FirstOrDefault(x => x.PromptCode ==prompt.Code);
-                    agent = await _db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == promtModel.ModelCode);
+                    config = db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
+                    promtModel = db.OPAIModelPrompt.FirstOrDefault(x => x.PromptCode ==prompt.Code);
+                    agent = await db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == promtModel.ModelCode);
                 }
                 else
                 {
                     // Si no hay prompt, intentar buscar un Agent con ese código
-                    agent = await _db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == req.Origin);
+                    agent = await db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == req.Origin);
                     if (agent != null)
                     {
                         // Si existe un Agent con ese código, intentar obtener la FinalResponseConfig relacionado
-                        config = _db.FinalResponseConfig.FirstOrDefault(x => x.AgentCode == agent.Code && x.IsEnabled)
-                                 ?? _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
+                        config = db.FinalResponseConfig.FirstOrDefault(x => x.AgentCode == agent.Code && x.IsEnabled)
+                                 ?? db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
                     }
                     else
                     {
                         // Fallback: usamos el prompt/agent por defecto
-                        prompt = await _db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == "chat-nexus");
-                        config = _db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
-                        agent = await _db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode);
+                        prompt = await db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == "chat-nexus");
+                        config = db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
+                        agent = await db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode);
                     }
                 }
             }
@@ -529,7 +530,7 @@ namespace SmartAdmin.Web.Controllers
                 : new FinalResponseMetadata();
 
 
-            var aiDto = await CallOpenAiAsync(
+            var aiDto = await nexusService.CallOpenAiAsync(
                 agent: agent,
                 systemContent: systemPrompt,
                 userText: userContent,
@@ -544,14 +545,11 @@ namespace SmartAdmin.Web.Controllers
             var final = new FinalResponseResult
             {
                 CaseCode = req.CaseCode,
-                FileId = null,
-                ConfigCode = config?.ConfigCode ?? "DEFAULT",
                 ResponseText = aiDto.ResultText,
-                ExecutionSummary = $"Pregunta usuario directa {usuario?.Email}",
                 CreatedDate = DateTime.Now
             };
-            _db.FinalResponseResult.Add(final);
-            await _db.SaveChangesAsync();
+            db.FinalResponseResult.Add(final);
+            await db.SaveChangesAsync();
 
             // 6) Devolver la respuesta
             return Json(new
@@ -572,12 +570,12 @@ namespace SmartAdmin.Web.Controllers
 
                 if (input == null || string.IsNullOrWhiteSpace(input.ProcessCode))
                     return BadRequest("ProcessCode es obligatorio.");
-                var ocrSetting = await _db.OCRSetting
+                var ocrSetting = await db.OCRSetting
                     .FirstOrDefaultAsync(x => x.SettingCode == "DEFAULT" && x.PlatformCode == "AZURE");
                 if (ocrSetting == null)
                     return NotFound("Configuración OCR no encontrada.");
 
-                var blobCfg = await _db.AzureBlobConf.AsNoTracking().FirstOrDefaultAsync()
+                var blobCfg = await db.AzureBlobConf.AsNoTracking().FirstOrDefaultAsync()
                   ?? throw new InvalidOperationException("AzureBlobConf no encontrada.");
 
                 var ocrTasks = input.Files.Select(f =>
@@ -588,7 +586,7 @@ namespace SmartAdmin.Web.Controllers
 
                 //el proceso a partir del AgentProcess
                 int agentProcessId = Int16.Parse(input.ProcessCode);
-                var agentProcess = await _db.AgentProcesses
+                var agentProcess = await db.AgentProcesses
                     .Include(ap => ap.Process).ThenInclude(p => p.ProcessStep.OrderBy(s => s.StepOrder))
                     .FirstOrDefaultAsync(ap => ap.Id == agentProcessId);
 
@@ -606,8 +604,8 @@ namespace SmartAdmin.Web.Controllers
                     StartDate = DateTime.Now,
                     State = "Started"
                 };
-                _db.ProcessCase.Add(processCase);
-                await _db.SaveChangesAsync();
+                db.ProcessCase.Add(processCase);
+                await db.SaveChangesAsync();
 
 
 
@@ -619,8 +617,8 @@ namespace SmartAdmin.Web.Controllers
                     Text = r.Text,
                     CreatedDate = DateTime.Now
                 }).ToList();
-                _db.DataFile.AddRange(dataFiles);
-                await _db.SaveChangesAsync();
+                db.DataFile.AddRange(dataFiles);
+                await db.SaveChangesAsync();
 
                 return Ok(new
                 {
@@ -640,76 +638,63 @@ namespace SmartAdmin.Web.Controllers
             }
         }
 
-        private async Task<OpenAiResponseDto> CallOpenAiAsync(
-            Agent agent,
-            string systemContent,
-            string userText,
-            int dataFileId,
-            int stepOrder,
-            int maxTokens = 1000,
-            double temperature = 0.2,
-            double topP = 1.0)
-        {
-            var messages = new[]
-            {
-                new { role = "system", content = systemContent },
-                new { role = "user",   content = userText     }
-            };
+        //private async Task<OpenAiResponseDto> CallOpenAiAsync(
+        //    Agent agent,
+        //    string systemContent,
+        //    string userText,
+        //    int dataFileId,
+        //    int stepOrder,
+        //    int maxTokens = 1000,
+        //    double temperature = 0.2,
+        //    double topP = 1.0)
+        //{
+        //    var messages = new[]
+        //    {
+        //        new { role = "system", content = systemContent },
+        //        new { role = "user",   content = userText     }
+        //    };
 
-            var requestBody = new
-            {
-                messages,
-                max_tokens = maxTokens,
-                temperature,
-                top_p = topP
-            };
+        //    var requestBody = new
+        //    {
+        //        messages,
+        //        max_tokens = maxTokens,
+        //        temperature,
+        //        top_p = topP
+        //    };
 
-            var requestJson = JsonSerializer.Serialize(requestBody);
-            var startedAt = DateTime.Now;
+        //    var requestJson = JsonSerializer.Serialize(requestBody);
+        //    var startedAt = DateTime.Now;
 
-            using var httpClient = new HttpClient();
-            httpClient.DefaultRequestHeaders.Add("api-key", agent.AgentConfig.ApiKey);
-            var response = await httpClient.PostAsync(
-                agent.AgentConfig.EndpointUrl,
-                new StringContent(requestJson, Encoding.UTF8, "application/json"));
+        //    using var httpClient = new HttpClient();
+        //    httpClient.DefaultRequestHeaders.Add("api-key", agent.AgentConfig.ApiKey);
+        //    var response = await httpClient.PostAsync(
+        //        agent.AgentConfig.EndpointUrl,
+        //        new StringContent(requestJson, Encoding.UTF8, "application/json"));
 
-            var resultJson = await response.Content.ReadAsStringAsync();
-            var ai = JsonSerializer.Deserialize<ResultOpenAi>(resultJson);
-            var rawText = ai?.choices?.FirstOrDefault()?.message?.content ?? "";
-            var matchResult = Regex.Match(rawText, @"```(?:\w*\n)?(.*?)```", RegexOptions.Singleline);
-            var cleaned = matchResult.Success
-                ? matchResult.Groups[1].Value.Trim()
-                : rawText.Trim();
+        //    var resultJson = await response.Content.ReadAsStringAsync();
+        //    var ai = JsonSerializer.Deserialize<ResultOpenAi>(resultJson);
+        //    var rawText = ai?.choices?.FirstOrDefault()?.message?.content ?? "";
+        //    var matchResult = Regex.Match(rawText, @"```(?:\w*\n)?(.*?)```", RegexOptions.Singleline);
+        //    var cleaned = matchResult.Success
+        //        ? matchResult.Groups[1].Value.Trim()
+        //        : rawText.Trim();
 
-            var finishedAt = DateTime.Now;
+        //    var finishedAt = DateTime.Now;
 
-            return new OpenAiResponseDto
-            {
-                DataFileId = dataFileId,
-                StepOrder = stepOrder,
-                RequestJson = requestJson,
-                ResultText = cleaned,
-                PromptTokens = ai?.usage?.prompt_tokens ?? 0,
-                CompletionTokens = ai?.usage?.completion_tokens ?? 0,
-                StartedAt = startedAt,
-                FinishedAt = finishedAt
-            };
-        }
+        //    return new OpenAiResponseDto
+        //    {
+        //        DataFileId = dataFileId,
+        //        StepOrder = stepOrder,
+        //        RequestJson = requestJson,
+        //        ResultText = cleaned,
+        //        PromptTokens = ai?.usage?.prompt_tokens ?? 0,
+        //        CompletionTokens = ai?.usage?.completion_tokens ?? 0,
+        //        StartedAt = startedAt,
+        //        FinishedAt = finishedAt
+        //    };
+        //}
 
-        public class OpenAiResponseDto
-        {
-            public int DataFileId { get; set; }
-            public int StepOrder { get; set; }
-            public string RequestJson { get; set; } = null!;
-            public string ResultText { get; set; } = null!;
-            public int PromptTokens { get; set; }
-            public int CompletionTokens { get; set; }
-            public DateTime StartedAt { get; set; }
-            public DateTime FinishedAt { get; set; }
-        }
-
-
-        private async Task<(string Url, string Text)> ProcessFileAsync(
+    private async Task<(string Url, string Text)> ProcessFileAsync(
      OcrFile file,
      OCRSetting ocrSetting,
      AzureBlobConf blobCfg,
@@ -770,7 +755,7 @@ namespace SmartAdmin.Web.Controllers
         }
         public async Task<string> UploadFileAsync(Stream fileStream, string extension)
         {
-            var config = await _db.AzureBlobConf
+            var config = await db.AzureBlobConf
                 .FirstOrDefaultAsync();
 
             var blobServiceClient = new BlobServiceClient(config.ConnectionString);
@@ -790,17 +775,17 @@ namespace SmartAdmin.Web.Controllers
         {
 
             // Validar que el usuario esté autenticado
-            var user = await _userManager.GetUserAsync(User);
+            var user = await userManager.GetUserAsync(User);
             if (user == null)
             {
                 return Unauthorized(new { success = false, message = "Usuario no autenticado." });
             }
 
             // Obtener los roles del usuario
-            var roles = await _userManager.GetRolesAsync(user);
+            var roles = await userManager.GetRolesAsync(user);
 
             // Consultar las políticas asociadas al usuario
-            var userPolicies = await _db.PolicyUsers
+            var userPolicies = await db.PolicyUsers
                 .Include(pu => pu.Policys)
                     .ThenInclude(p => p.AccessAgentPolicies)
                     .ThenInclude(aap => aap.AgentProcess)
@@ -820,7 +805,7 @@ namespace SmartAdmin.Web.Controllers
                .ToList();
 
             // Consultar los procesos relacionados con los roles del usuario
-            var processesFromRoles = await _db.RolProcesses
+            var processesFromRoles = await db.RolProcesses
                 .Include(rp => rp.Process)
                 .Include(rp => rp.Rol)
                 .Where(rp => roles.Contains(rp.Rol.Name)) // Filtrar por roles del usuario
@@ -852,107 +837,36 @@ namespace SmartAdmin.Web.Controllers
         }
 
         //deberia ser un servicio
-        private AgentProcess? BuscarPromptPorAgenteProceso(PromptRequest req, Process process)
-        {
-            //lógica para buscar el prompt asociado al AgenteProceso
-            if (req.Origin == 3)//chat
-            {
-                return null;
-            }
-            else if (req.Origin == 4) //botones
-            {
-                return null;
-            }
-            else
-            {
-               return _db.AgentProcesses
-                    .Include(ap => ap.Agent)
-                    .ThenInclude(a => a.OPAIModelPrompt)
-                    .ThenInclude(op => op.PromptCodeNavigation)
-                    .Where(ap => ap.DefinitionCode == process.Code && ap.Agent.IsActive)
-                    .FirstOrDefault(ap => ap.Agent.OPAIModelPrompt
-                    .Any(op => op.TypeAgent == 1 && op.IsDefault));
+        //private AgentProcess? BuscarPromptPorAgenteProceso(PromptRequest req, Process process)
+        //{
+        //    //lógica para buscar el prompt asociado al AgenteProceso
+        //    if (req.Origin == 2)//chat
+        //    {
+        //        return null;
+        //    }
+        //    else if (req.Origin == 3) //botones
+        //    {
+        //        return null;
+        //    }
+        //    else
+        //    {
+        //       return db.AgentProcesses
+        //            .Include(ap => ap.Agent)                    
+        //            .ThenInclude(a => a.OPAIModelPrompt)
+        //            .ThenInclude(op => op.PromptCodeNavigation)
+        //            .Include(ap => ap.Agent.AgentConfig)
+        //            .Where(ap => ap.DefinitionCode == process.Code && ap.Agent.IsActive)
+        //            .FirstOrDefault(ap => ap.Agent.OPAIModelPrompt
+        //            .Any(op => op.TypeAgent == 1 && op.IsDefault));
 
-            }
-        }
+        //    }
+        //}
 
+        [HttpPost]
         private async Task<FinalResponseResult> EjecutarPrompt([FromBody] PromptRequest req)
         {
-            // Cargar caso, archivos y definición
-            var processCase = await _db.ProcessCase
-                .Include(pc => pc.DataFile)
-                .Include(pc => pc.DefinitionCodeNavigation)
-                .FirstOrDefaultAsync(pc => pc.CaseCode == req.CaseCode);
-            if (processCase == null) return null!;
 
-            var dataFiles = processCase.DataFile.ToList();
-            var processDefinition = processCase.DefinitionCodeNavigation; //proceso
-
-            //según el origen de la llamada hay que buscar el pront asociado al AgenteProceso (por defecto, chat ó botones)
-            //aqui toca ver que AgenteProceso tiene marcado por defecto
-            var agenteProceso = BuscarPromptPorAgenteProceso(req, processDefinition);
-            if (agenteProceso == null || agenteProceso.Agent == null) return null!;
-
-            //en el agente aumentar un campo para poner la metadata que antes estaba en FinalResoponseConfig
-
-            //de aqui en adelante esto ya no va y empezar a realizar con el prompt y agente encontrado todos los reemplazos
-
-            
-            //el prompt al inicio no va lo de reemplazar count y steps, pasos seguro no va porque no se hace por pasos
-            //hay que ver si el prompt tiene esos marcadores en agenteProceso.Agent?.OPAIModelPrompt?.First().PromptCodeNavigation y si no los tiene no hacer nada            
-
-            var promptModel = agenteProceso.Agent?.OPAIModelPrompt?.First().PromptCodeNavigation;
-            string prompt = promptModel?.Content ?? "";
-
-            if (string.IsNullOrWhiteSpace(prompt))
-                return null!;
-
-            var metadata = !string.IsNullOrWhiteSpace(agenteProceso.Agent!.MetadataJson)
-                ? JsonSerializer.Deserialize<FinalResponseMetadata>(agenteProceso.Agent!.MetadataJson)!
-                : new FinalResponseMetadata();
-            if (!string.IsNullOrWhiteSpace(metadata.CustomInstructions))
-                prompt += metadata.CustomInstructions;
-
-            // Combinar texto
-            var combined = new StringBuilder();
-            foreach (var df in dataFiles)
-            {
-                var fileName = Path.GetFileName(df.FileUri);
-                var ext = Path.GetExtension(df.FileUri)?.ToLower().TrimStart('.') ?? "";
-                combined.AppendLine($"documento: {fileName}.{ext}---{df.Text}---");
-            }
-            
-
-            // Llamada a OpenAI
-            var finalResp = await CallOpenAiAsync(
-                agenteProceso.Agent,
-                prompt,
-                combined.ToString(),
-                dataFiles.First().Id,
-                stepOrder: 999,
-                maxTokens: metadata.MaxTokens ?? 100000,
-                temperature: metadata.Temperature ?? 0.2,
-                topP: 1.0);
-
-            var final = new FinalResponseResult
-            {
-                CaseCode = req.CaseCode,
-                FileId = null,                
-                ResponseText = finalResp.ResultText,
-                ExecutionSummary = $"Files:{dataFiles.Count};Steps:*",
-                CreatedDate = DateTime.Now,
-                RequestText = req.Message,
-                //*guardar la preugnta que hiso la persona cuando existe, si no hay pregunta guardar la descripción dle agente
-            };
-            // Guardar resultado
-            _db.FinalResponseResult.Add(final);
-            //*guardar el usage
-            await _db.SaveChangesAsync();
-            return final;
+            return await nexusService.EjecutarPrompt(req);
         }
-
-
-
-
     }
 }

@@ -1,6 +1,7 @@
 using app_ocr_ai_models.Data;
 using app_ocr_ai_models.Services;
 using app_tramites.Data;
+using app_tramites.Services.NexusProcess;
 using Core;
 using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Identity;
@@ -48,6 +49,7 @@ namespace app_ocr_ai_models
             builder.Services.AddControllersWithViews();
 
             builder.Services.AddTransient<IEmailSender, EmailSender>();
+            builder.Services.AddTransient<INexusService, NexusService>();
 
             var app = builder.Build();
 

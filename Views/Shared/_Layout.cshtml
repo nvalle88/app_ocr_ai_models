@@ -12,6 +12,8 @@
     <!-- Basic Styles -->
     @{ await Html.RenderPartialAsync("_StylesheetsPartial"); }
 
+    <link href="~/css/sweetalert2.min.css" rel="stylesheet" />
+
     <!-- FAVICONS -->
     <link rel="shortcut icon" href="~/img/logo_saludsa_home.svg" type="image/x-icon" />
     <link rel="icon" href="~/img/logo_saludsa_home.svg" type="image/x-icon" />
@@ -91,5 +93,7 @@
     <span class="hide" id="span_mensaje">@TempData["Mensaje"]</span>
     <span class="hide" id="span_mensaje_timer">@TempData["MensajeTimer"]</span>
     @RenderSection("Scripts", required: false)
+    <script src="~/js/sweetalert2.all.min.js"></script>
+    <script src="~/js/global.js"></script>
 </body>
 </html>

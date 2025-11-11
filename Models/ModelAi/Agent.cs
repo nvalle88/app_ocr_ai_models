@@ -20,8 +20,6 @@ public partial class Agent
 
     public DateTime ModifiedDate { get; set; }
 
-    public string? MetadataJson { get; set; }
-
     public bool IsActive { get; set; }
 
     public virtual OPAIConfiguration AgentConfig { get; set; } = null!;
