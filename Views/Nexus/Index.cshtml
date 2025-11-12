@@ -169,6 +169,9 @@
     </div>
 </section>
 
+@section Styles {
+        <link rel="stylesheet" href="~/css/app/nexus.index.css" / >
+}
 @section Scripts {
     <script>
             // Mostrar y ocultar loading
@@ -308,7 +311,7 @@
                         <tr>
                            <td class='fw-bold'>${'NE-' + ((data.caseCode || '').split('-')[0].replace(/^NE/i, ''))}</td>
                             <td>${dateStr}</td>
-                            <td> Pendiente </td>
+                            <td>${data.nameProccess}</td>
                             <td class='text-left'>
                                 <i class='fa fa-hourglass-start text-warning fa-lg'></i>
                             </td>                            
@@ -316,7 +319,7 @@
                                 <i class='fa fa-clock text-muted me-1'></i> Pendiente
                             </td>
                             <td>
-                                <button class='btn btn-success btn-sm rounded-circle btnProcessRow' data-casecode='${data.caseCode}'>
+                                <button class='btn btn-success btn-sm rounded-circle btnProcessRow' data-casecode='${data.caseCode}' data-processcode="" data-nameproccess='${'NE-' + ((data.caseCode || '').split('-')[0].replace(/^NE/i, ''))}'>
                                     <i class='fa fa-play'></i>
                                 </button>
                             </td>
@@ -363,7 +366,7 @@
                         text: 'Selecciona un proceso.',
                     });
                 }*/
-                const proccessName = btn.dataset.namePproccess || 'el proceso seleccionado';
+                const proccessName = btn.dataset.nameproccess || 'el proceso seleccionado';
                 const orig = btn.innerHTML;
                 btn.innerHTML = `<i class='fa fa-spinner fa-spin'></i>`;
                 const row = btn.closest('tr');
@@ -470,9 +473,9 @@
 
 
                     if (tipoNombre.toLowerCase().includes('no definido')) {
-                            row.children[5].innerHTML = `<button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}" data-nameproccess="${btn.dataset.nameproccess}"><i class="fa fa-play"></i></button>`;
+                            row.children[5].innerHTML = `<button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}" data-nameproccess="${proccessName}"><i class="fa fa-play"></i></button>`;
                     } else {
-                        row.children[5].innerHTML = `<button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}" data-nameproccess="${btn.dataset.nameproccess}" onclick="handleViewDetails(this)"><i class="fa fa-eye"></i></button>`;
+                        row.children[5].innerHTML = `<button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}" data-nameproccess="${proccessName}" onclick="handleViewDetails(this)"><i class="fa fa-eye"></i></button>`;
                     }
                 
                 } 
@@ -601,7 +604,7 @@
 
     </script>
 
-    <style>
+   @*  <style>
         .btnProcessRow,
         .btnViewDetails,
         .icon-action {
@@ -751,5 +754,5 @@
                 border-color: #1e7e34 !important;
             }
 
-    </style>
+    </style> *@
 }

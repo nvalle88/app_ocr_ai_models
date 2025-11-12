@@ -580,6 +580,7 @@ namespace SmartAdmin.Web.Controllers
                     .Include(ap => ap.Process).ThenInclude(p => p.ProcessStep.OrderBy(s => s.StepOrder))
                     .FirstOrDefaultAsync(ap => ap.Id == agentProcessId);
 
+                var nameProccess = agentProcess?.Process.Name;
                 var processDef = agentProcess?.Process; /*await _db.Process
                     .Include(p => p.ProcessStep.OrderBy(s => s.StepOrder))
                     .FirstOrDefaultAsync(p => p.Code == input.ProcessCode);*/
@@ -615,7 +616,8 @@ namespace SmartAdmin.Web.Controllers
                     caseCode = processCase.CaseCode,
                     definitionCode = processCase.DefinitionCode,
                     startDate = processCase.StartDate,
-                    state = processCase.State
+                    state = processCase.State,
+                    nameProccess
                 });
             }
             catch (Exception ex)
