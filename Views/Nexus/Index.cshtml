@@ -143,14 +143,13 @@
                                                 <td>
                                                     @if (done && resumenCategoria != "No Definido")
                                                     {
-                                                        //<a href="/Nexus/Details1?caseCode=@c.CaseCode" onclick="cargando()" class="btn btn-outline-primary btn-sm  icon-action rounded-circle"><i class="fa fa-eye"></i></a>
-                                                        <button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails" data-casecode="@c.CaseCode" data-processcode="" onclick="handleViewDetails(this)">
+                                                        <button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails" data-nameproccess="NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))" data-casecode="@c.CaseCode" data-processcode="" onclick="handleViewDetails(this)">
                                                             <i class="fa fa-eye"></i>
                                                         </button>
                                                     }
                                                     else
                                                     {
-                                                        <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-casecode="@c.CaseCode" data-processcode=""><i class="fa fa-play"></i></button>
+                                                        <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-nameproccess="NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))" data-casecode="@c.CaseCode" data-processcode=""><i class="fa fa-play"></i></button>
                                                     }
                                                 </td>
                                             </tr>
@@ -364,6 +363,7 @@
                         text: 'Selecciona un proceso.',
                     });
                 }*/
+                const proccessName = btn.dataset.namePproccess || 'el proceso seleccionado';
                 const orig = btn.innerHTML;
                 btn.innerHTML = `<i class='fa fa-spinner fa-spin'></i>`;
                 const row = btn.closest('tr');
@@ -470,9 +470,9 @@
 
 
                     if (tipoNombre.toLowerCase().includes('no definido')) {
-                            row.children[4].innerHTML = `<button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}"><i class="fa fa-play"></i></button>`;
+                            row.children[5].innerHTML = `<button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}" data-nameproccess="${btn.dataset.nameproccess}"><i class="fa fa-play"></i></button>`;
                     } else {
-                        row.children[4].innerHTML = `<button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}" onclick="handleViewDetails(this)"><i class="fa fa-eye"></i></button>`;
+                        row.children[5].innerHTML = `<button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}" data-nameproccess="${btn.dataset.nameproccess}" onclick="handleViewDetails(this)"><i class="fa fa-eye"></i></button>`;
                     }
                 
                 } 
@@ -557,7 +557,7 @@
             }
 
             // Realizar otras validaciones si es necesario
-            const processCode = document.querySelector('input[name="ProcessCode"]').value;
+            /*const processCode = document.querySelector('input[name="ProcessCode"]').value;
             if (!processCode) {
                 Swal.fire({
                     icon: 'warning',
@@ -565,11 +565,11 @@
                     text: 'Selecciona un proceso antes de continuar.',
                 });
                 return;
-            }
+            }*/
 
             Swal.fire({
                 title: '¿Estás seguro?',
-                text: `Vas a ver los detalles del caso ${caseCode}.`,
+                text: `Vas a ver los detalles del caso ${button.dataset.nameproccess}.`,
                 icon: 'question',
                 showCancelButton: true,
                 confirmButtonColor: '#3085d6',
@@ -580,7 +580,7 @@
                 if (result.isConfirmed) {
                     cargando();
                     // Redirigir a la URL con el caseCode
-                    window.location.href = `/Nexus/Details1?caseCode=${caseCode}&agentProcessId=${processCode}`;
+                    window.location.href = `/Nexus/Details1?caseCode=${caseCode}`;
                 }
             });
 

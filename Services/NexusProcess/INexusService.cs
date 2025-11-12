@@ -1,5 +1,7 @@
 ﻿using app_tramites.Models.Dto;
 using app_tramites.Models.ModelAi;
+using app_tramites.Models.ViewModel;
+using Microsoft.AspNetCore.Identity;
 
 namespace app_tramites.Services.NexusProcess
 {
@@ -16,5 +18,8 @@ namespace app_tramites.Services.NexusProcess
             int maxTokens = 1000,
             double temperature = 0.2,
             double topP = 1.0);
+        Task<ProcessCase?> ObtenerProcessCase(Guid caseCode);
+        Task<List<ProcessCase>?> ObtenerProcesos();
+        Task<ViewProcessUser> GetProcessesByUser(IdentityUser? user, IList<string>? roles);
     }
 }

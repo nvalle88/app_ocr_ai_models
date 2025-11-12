@@ -142,15 +142,23 @@
                             }
                             else
                             {
-                                var allMarkdown = string.Join("\n\n---\n\n",
-                                Model.FinalResponseResults.OrderBy(r => r.CreatedDate).Select(r => r.ResponseText ?? ""));
+                                var entries = Model.FinalResponseResults
+                                .OrderBy(r => r.CreatedDate)
+                                .Select(r =>
+                                {
+                                    var req = string.IsNullOrWhiteSpace(r.RequestText) ? null : r.RequestText.Trim();
+                                    var resp = string.IsNullOrWhiteSpace(r.ResponseText) ? null : r.ResponseText.Trim();
+                                    return req == null ? (resp ?? "") : (resp == null ? req : req + "\n\n" + resp);
+                                })
+                                .ToList();
+                                var allMarkdown = string.Join("\n\n---\n\n",entries);
                                 var html = RenderMarkdown(allMarkdown);
                                             <div id="chatOutput" data-content='@Html.Raw(html.Replace("\"", "&quot;"))' style="font-size:15px; line-height:1.6; color:#222;"></div>
                             }
                         </div>
                     </div>
 
-                    <!-- Chat input container: quedará fixed sobre footer (NO movido en DOM) -->
+                    <!-- Chat input container: quedará fixed sobre footer (NO movido en DOM) VALIDAR PARA BORRAR-->
                     <div class="chat-input-wrapper" id="chatInputWrapper" aria-hidden="false">
                         <div class="chat-input-inner" id="chatInputInner" role="region" aria-label="Chat input area">
                             <textarea id="chatInput" class="chat-input form-control" rows="2" placeholder="Comienza a escribir... (Enter = enviar, Shift+Enter = nueva línea)"></textarea>
@@ -173,7 +181,7 @@
                     <small class="text-muted"></small>
                 </div>
                 <div class="card-body d-flex flex-column panel-body panel-height studio-panel-body">
-                    <!-- START: Studio tiles -->
+                    <!-- START: Studio tiles Botones dibujar y ocultar-->
                     <div class="studio-grid" aria-hidden="false">
                         <button id="studioAudio" class="studio-tile tile-audio" title="Validación contractual" type="button" aria-label="Validación contractual">
                             <div class="tile-top">
@@ -427,13 +435,21 @@
                 // fallback sin await
                 html2pdf().set(opt).from(docWrap).save().catch(e => {
                   console.error('Fallback html2pdf.save error:', e);
-                  alert('No se pudo generar el PDF automáticamente. Revisa la consola.');
+                  Swal.fire({
+                        icon: 'warning',
+                        title: 'Advertencia',
+                        text: 'No se pudo generar el PDF automáticamente. Revisa la consola. ',
+                    });
                 });
               });
 
             } catch (err) {
-              console.error('Export error:', err);
-              alert('No se pudo generar el PDF: ' + (err && err.message ? err.message : err));
+              console.error('Export error:', err);              
+              Swal.fire({
+                        icon: 'warning',
+                        title: 'Advertencia',
+                        text: 'No se pudo generar el PDF: ' + (err && err.message ? err.message : err),
+                    });
             } finally {
               exportBtn.disabled = false;
               exportBtn.innerHTML = orig;
@@ -467,6 +483,14 @@
 
                         function q(sel) { return document.querySelector(sel); }
                         function qa(sel) { return Array.from(document.querySelectorAll(sel)); }
+
+                        function combineRequestResponseMd(data) {
+                            if (!data) return '';
+                            const req = (data.request ?? data.requestText ?? data.RequestText ?? '').toString().trim();
+                            const resp = (data.response ?? data.responseText ?? data.ResponseText ?? '').toString().trim();
+                            // mantener orden: primero request (si existe), luego response en nueva línea
+                            return [req, resp].filter(Boolean).join('\n\n');
+                        }
 
 
                         function setBtnLoading(on) {
@@ -674,7 +698,7 @@
 
                                          const studioMindBtn = q('#studioMind');if (!studioMindBtn) return;
 
-               studioMindBtn.addEventListener('click', async (ev) => {
+            studioMindBtn.addEventListener('click', async (ev) => {
                    ev.preventDefault();
                    const btn = studioMindBtn;
                    btn.disabled = true;
@@ -689,10 +713,10 @@
                  setBtnLoading(true);
                  try {
                      await stabilizePositionDuringTransition(900);
-                    const resp = await fetch('@Url.Action("ChatAjax", "Nexus")', {
+                    const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'nexus-facturas' })
+                        body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'CHAT' })
                     });
                     setBtnLoading(false);
                     stopThinking(thinking);
@@ -700,7 +724,8 @@
                     const data = await resp.json();
                     // Convierte la respuesta (markdown) a HTML y la escribe en el panel con la misma animación
                     const chatOutputEl = q('#chatOutput');
-                    const html = (typeof marked !== 'undefined') ? marked.parse(data.response || '') : (data.response || '');
+                    const combinedMd = combineRequestResponseMd(data);
+                    const html = (typeof marked !== 'undefined') ? marked.parse(combinedMd || '') : (combinedMd || '');
                     if (chatOutputEl) {
                         await typeWriteInto(chatOutputEl, html, 3);
                     }
@@ -715,8 +740,12 @@
                 } catch (err) {
                     console.error('studioMind error', err);
                     stopThinking();
-                    setBtnLoading(false);
-                    alert('Error al generar el resumen: ' + (err && err.message ? err.message : 'Error en la petición'));
+                    setBtnLoading(false);                    
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Advertencia',
+                        text: 'Error al generar el resumen: ' + (err && err.message ? err.message : 'Error en la petición'),
+                    });
                 } finally {
                     btn.disabled = false;
                     btn.classList.remove('loading');
@@ -740,10 +769,10 @@
                              setBtnLoading(true);
                              try {
                                  await stabilizePositionDuringTransition(900);
-                                const resp = await fetch('@Url.Action("ChatAjax", "Nexus")', {
+                                const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'nexus-alerta' })
+                                        body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'CHAT' })//nexus-alerta
                                 });
                                 setBtnLoading(false);
                                 stopThinking(thinking);
@@ -751,7 +780,8 @@
                                 const data = await resp.json();
                                 // Convierte la respuesta (markdown) a HTML y la escribe en el panel con la misma animación
                                 const chatOutputEl = q('#chatOutput');
-                                const html = (typeof marked !== 'undefined') ? marked.parse(data.response || '') : (data.response || '');
+                                const combinedMd = combineRequestResponseMd(data);
+                                const html = (typeof marked !== 'undefined') ? marked.parse(combinedMd || '') : (combinedMd || '');
                                 if (chatOutputEl) {
                                     await typeWriteInto(chatOutputEl, html, 3);
                                 }
@@ -766,8 +796,12 @@
                             } catch (err) {
                                 console.error('studioVideo error', err);
                                 stopThinking();
-                                setBtnLoading(false);
-                                alert('Error al generar el resumen: ' + (err && err.message ? err.message : 'Error en la petición'));
+                                setBtnLoading(false);                                
+                                Swal.fire({
+                                    icon: 'warning',
+                                    title: 'Advertencia',
+                                    text: 'Error al generar el resumen: ' + (err && err.message ? err.message : 'Error en la petición'),
+                                });
                             } finally {
                                 btn.disabled = false;
                                 btn.classList.remove('loading');
@@ -793,10 +827,10 @@
                   setBtnLoading(true);
                   try {
                       await stabilizePositionDuringTransition(900);
-                     const resp = await fetch('@Url.Action("ChatAjax", "Nexus")', {
+                     const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
                          method: 'POST',
                          headers: { 'Content-Type': 'application/json' },
-                         body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'nexus-contrato' })
+                         body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'CHAT' })//nexus-contrato
                      });
                      setBtnLoading(false);
                      stopThinking(thinking);
@@ -804,7 +838,8 @@
                      const data = await resp.json();
                      // Convierte la respuesta (markdown) a HTML y la escribe en el panel con la misma animación
                      const chatOutputEl = q('#chatOutput');
-                     const html = (typeof marked !== 'undefined') ? marked.parse(data.response || '') : (data.response || '');
+                     const combinedMd = combineRequestResponseMd(data);
+                     const html = (typeof marked !== 'undefined') ? marked.parse(combinedMd || '') : (combinedMd || '');
                      if (chatOutputEl) {
                          await typeWriteInto(chatOutputEl, html, 3);
                      }
@@ -819,8 +854,12 @@
                  } catch (err) {
                      console.error('studioAudio error', err);
                      stopThinking();
-                     setBtnLoading(false);
-                     alert('Error al generar el resumen: ' + (err && err.message ? err.message : 'Error en la petición'));
+                     setBtnLoading(false);                     
+                     Swal.fire({
+                        icon: 'warning',
+                        title: 'Advertencia',
+                        text: 'Error al generar el resumen: ' + (err && err.message ? err.message : 'Error en la petición'),
+                     });
                  } finally {
                      btn.disabled = false;
                      btn.classList.remove('loading');
@@ -940,10 +979,10 @@
                                     await sleep(randomDelay);
 
                                     await stabilizePositionDuringTransition(900);
-                                    const resp = await fetch('@Url.Action("ChatAjax", "Nexus")', {
+                                    const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ caseCode: '@Model.CaseCode', message: text,origin: 'chat-nexus' })
+                                        body: JSON.stringify({ caseCode: '@Model.CaseCode', message: text,origin: 'CHAT' })//chat-nexus
                                     });
 
                                     stopThinking(thinking);
@@ -952,7 +991,8 @@
                                     if (!resp.ok) throw new Error(resp.statusText);
                                     const data = await resp.json();
 
-                                    const html = marked.parse(data.response || '');
+                                    const combinedMd = combineRequestResponseMd(data);
+                                    const html = (typeof marked !== 'undefined') ? marked.parse(combinedMd || '') : (combinedMd || '');
                                     await typeWriteInto(chatOutputEl, html, 6);
 
                                     textarea.value = ''; autoResize(textarea);
@@ -960,8 +1000,12 @@
                                 } catch (err) {
                                     console.error(err);
                                     stopThinking(thinking);
-                                    setBtnLoading(false);
-                                    alert('Error: ' + (err && err.message ? err.message : 'Error en la petición'));
+                                    setBtnLoading(false);                                    
+                                    Swal.fire({
+                                        icon: 'warning',
+                                        title: 'Advertencia',
+                                        text: 'Error: ' + (err && err.message ? err.message : 'Error en la petición'),
+                                    });
                                 } finally {
                                     positionChatInput();
                                 }
@@ -1061,9 +1105,9 @@
                             }
 
                             if (btnBackToList) btnBackToList.addEventListener('click', backToList);
-                            if (btnOpenInViewer) btnOpenInViewer.addEventListener('click', () => { if (!currentPreview.url) return alert('No hay documento en vista previa.'); window.open(currentPreview.url, '_blank'); });
-                            if (btnDownloadPreview) btnDownloadPreview.addEventListener('click', () => { if (!currentPreview.url) return alert('No hay documento seleccionado.'); const a = document.createElement('a'); a.href = currentPreview.url; a.download = currentPreview.url.split('/').pop() || 'download'; document.body.appendChild(a); a.click(); a.remove(); });
-                            if (btnFlagPreview) btnFlagPreview.addEventListener('click', () => { const selRow = q('.source-row.selected'); if (!selRow) return alert('Selecciona un documento primero.'); selRow.classList.toggle('marked'); });
+                            if (btnOpenInViewer) btnOpenInViewer.addEventListener('click', () => { if (!currentPreview.url) return Swal.fire({icon: 'error',title: 'Advertencia',text: 'No hay documento en vista previa.',}); window.open(currentPreview.url, '_blank'); });
+                            if (btnDownloadPreview) btnDownloadPreview.addEventListener('click', () => { if (!currentPreview.url) return Swal.fire({icon: 'error',title: 'Advertencia',text: 'No hay documento seleccionado.',}); const a = document.createElement('a'); a.href = currentPreview.url; a.download = currentPreview.url.split('/').pop() || 'download'; document.body.appendChild(a); a.click(); a.remove(); });
+                            if (btnFlagPreview) btnFlagPreview.addEventListener('click', () => { const selRow = q('.source-row.selected'); if (!selRow) return Swal.fire({icon: 'error',title: 'Advertencia',text: 'Selecciona un documento primero.',}); selRow.classList.toggle('marked'); });
 
                                     async function renderPreview(url, type) {
             // token para cancelar renders anteriores

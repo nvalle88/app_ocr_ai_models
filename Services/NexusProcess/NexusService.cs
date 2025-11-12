@@ -2,7 +2,9 @@
 using app_tramites.Models.Dto;
 using app_tramites.Models.ModelAi;
 using app_tramites.Models.ViewModel;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -25,16 +27,9 @@ public class NexusService(OCRDbContext db) : INexusService
         var dataFiles = processCase.DataFile.ToList();
         var processDefinition = processCase.DefinitionCodeNavigation; //proceso
 
-        //según el origen de la llamada hay que buscar el pront asociado al AgenteProceso (por defecto, chat ó botones)
-        //aqui toca ver que AgenteProceso tiene marcado por defecto
+        
         var agenteProceso = BuscarPromptPorAgenteProceso(req, processDefinition);
-        if (agenteProceso == null || agenteProceso.Agent == null) return null!;
-
-        //en el agentePrompt aumentar un campo para poner la metadata que antes estaba en FinalResoponseConfig
-
-        //de aqui en adelante esto ya no va y empezar a realizar con el prompt y agente encontrado todos los reemplazos
-
-        //hay que ver si el prompt tiene esos marcadores en agenteProceso.Agent?.OPAIModelPrompt?.First().PromptCodeNavigation y si no los tiene no hacer nada            
+        if (agenteProceso == null || agenteProceso.Agent == null) return null!;        
 
         var promptModel = agenteProceso.Agent.OPAIModelPrompt?.First().PromptCodeNavigation;
         var agentPrompt = agenteProceso.Agent.OPAIModelPrompt?.First();
@@ -77,6 +72,7 @@ public class NexusService(OCRDbContext db) : INexusService
         };
 
         var requestText = string.IsNullOrEmpty(req.Message) ? agenteProceso.Agent.Description : req.Message;
+        requestText = $"<div style=\"text-align: right;font-weight:bold;\">{requestText}</div>";
 
         var final = new FinalResponseResult
         {
@@ -106,27 +102,19 @@ public class NexusService(OCRDbContext db) : INexusService
     //deberia ser un servicio
     public AgentProcess? BuscarPromptPorAgenteProceso(PromptRequest req, Process process)
     {
-        //lógica para buscar el prompt asociado al AgenteProceso
-        if (req.Origin == 2)//chat
-        {
-            return null;
-        }
-        else if (req.Origin == 3) //botones
-        {
-            return null;
-        }
-        else
-        {
-            return db.AgentProcesses
-                 .Include(ap => ap.Agent)
-                 .ThenInclude(a => a.OPAIModelPrompt)
-                 .ThenInclude(op => op.PromptCodeNavigation)
-                 .Include(ap => ap.Agent.AgentConfig)
-                 .Where(ap => ap.DefinitionCode == process.Code && ap.Agent.IsActive)
-                 .FirstOrDefault(ap => ap.Agent.OPAIModelPrompt
-                 .Any(op => op.TypeAgent == 1 && op.IsDefault));
+        
+        var data =  db.AgentProcesses
+                .Include(ap => ap.Agent)
+                .ThenInclude(a => a.OPAIModelPrompt)
+                .ThenInclude(op => op.PromptCodeNavigation)
+                .Include(ap => ap.Agent.AgentConfig)
+                .Where(ap => ap.DefinitionCode == process.Code && ap.Agent.IsActive)
+                .FirstOrDefault(ap => ap.Agent.OPAIModelPrompt
+                .Any(op => op.TypeAgentNavigation.Code == req.Origin && op.IsDefault));
 
-        }
+        return data;
+
+        
     }
 
     public async Task<OpenAiResponseDto> CallOpenAiAsync(
@@ -183,5 +171,79 @@ public class NexusService(OCRDbContext db) : INexusService
             StartedAt = startedAt,
             FinishedAt = finishedAt
         };
+    }
+
+    public async Task<ProcessCase?> ObtenerProcessCase(Guid caseCode)
+    {
+        return await db.ProcessCase
+            .Include(pc => pc.FinalResponseResults).Include(pc => pc.DataFile)
+            .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode);
+    }
+
+    public async Task<List<ProcessCase>?> ObtenerProcesos()
+    {
+        var today = DateTime.ParseExact("2025-09-12 17:10:00", "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        return await db.ProcessCase.Include(x => x.FinalResponseResults)
+                .Include(x => x.DefinitionCodeNavigation)
+                .Where(x => x.StartDate > today)
+                                 .OrderByDescending(pc => pc.StartDate)
+                                 .ToListAsync();
+    }
+
+    public async Task<ViewProcessUser> GetProcessesByUser(IdentityUser? user, IList<string>? roles)
+    {
+
+        // Consultar las políticas asociadas al usuario
+        var userPolicies = await db.PolicyUsers
+            .Include(pu => pu.Policys)
+                .ThenInclude(p => p.AccessAgentPolicies)
+                .ThenInclude(aap => aap.AgentProcess)
+                .ThenInclude(ap => ap!.Process)
+            .Where(pu => pu.UserId == user!.Id)
+            .ToListAsync();
+
+        // Consultar los procesos relacionados con las políticas del usuario
+        var processesFromPolicies = userPolicies
+           .SelectMany(pu => pu.Policys.AccessAgentPolicies)
+           .Select(aap => new
+           {
+               aap.AgentProcess.Process,
+               ProcessAgentId = (int?)aap.AgentProcess.Id // Obtener el ProcessAgentId
+           })
+           //.Distinct()
+           .ToList();
+
+        // Consultar los procesos relacionados con los roles del usuario
+        var processesFromRoles = await db.RolProcesses
+            .Include(rp => rp.Process)
+            .Include(rp => rp.Rol)
+            .Where(rp => roles!.Contains(rp.Rol.Name)) // Filtrar por roles del usuario
+            .Select(rp => new
+            {
+                rp.Process,
+                ProcessAgentId = (int?)null // No hay un ProcessAgentId en esta consulta
+            })
+            //.Distinct()
+            .ToListAsync();
+
+        List<ViewAgentProcess> allProcesses = [.. processesFromPolicies
+            .Concat(processesFromRoles)
+            .Where(p => p.Process != null && !string.IsNullOrWhiteSpace(p.Process.Code))
+            .GroupBy(p => (p.Process.Code ?? "").Trim(), StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Any(x => x.ProcessAgentId.HasValue))
+            .Select(g =>
+            {
+                // Priorizar entradas con ProcessAgentId (vienen de policies), si hay varias elegir la primera
+                var chosen = g
+                    .OrderByDescending(x => x.ProcessAgentId.HasValue)
+                    .ThenBy(x => x.Process.Name ?? "")
+                    .First();
+
+                return new ViewAgentProcess { ProcessId = chosen.Process.Code, ProcessName = chosen.Process.Name,  Description = chosen.Process.Description,ProcessAgentId = chosen.ProcessAgentId };
+            })];
+
+        
+        return new ViewProcessUser { Success = true, Processes = allProcesses };
+        //return  Json(new { success = true, processes = allProcesses });
     }
 }
