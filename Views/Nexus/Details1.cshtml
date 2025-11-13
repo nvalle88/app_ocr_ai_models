@@ -1,4 +1,4 @@
-﻿@model app_tramites.Models.ModelAi.ProcessCase
+﻿@model app_tramites.Models.ViewModel.ViewCaseDetails
 @using Markdig
 @{
     Layout = "_Layout"; // o el layout que uses
@@ -13,7 +13,7 @@
                 <div class="card-header d-flex align-items-center justify-content-between small-header left-header">
                     <div class="d-flex align-items-center gap-2">
                         <i class="fa fa-folder-open me-2"></i>
-                        <strong id="leftHeaderTitle">Fuentes: <small class="text-muted" id="leftCount">@((Model.DataFile?.Count() ?? 0))</small></strong>
+                        <strong id="leftHeaderTitle">Fuentes: <small class="text-muted" id="leftCount">@((Model.ProcessCase.DataFile?.Count() ?? 0))</small></strong>
                     </div>
                 </div>
 
@@ -21,8 +21,8 @@
                     <div id="sourcesWrapper" style="display:block; flex:1 1 auto;">
                         <table id="sourcesTable" class="table table-borderless table-hover mb-0" style="width:100%;">
                             <thead class="d-none"></thead>
-                            <tbody>
-                                @foreach (var file in Model.DataFile)
+                            <tbody> 
+                                @foreach (var file in Model.ProcessCase.DataFile)
                                 {
                                     var origName = file.IsFileUri ? file.FileUri : file.FileUri;
                                     var ext = System.IO.Path.GetExtension(origName)?.ToLower().TrimStart('.') ?? "";
@@ -118,10 +118,10 @@
 
                 <div class="card-body d-flex flex-column panel-body panel-height">
                     <div class="mb-2 text-muted medium">
-                        <b>NE-@(((Model.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))</b>
-                        @if (Model.FinalResponseResults?.Any() == true)
+                        <b>NE-@(((Model.ProcessCase.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))</b>
+                        @if (Model.ProcessCase.FinalResponseResults?.Any() == true)
                         {
-                            var lastDate = Model.FinalResponseResults.OrderByDescending(r => r.CreatedDate).FirstOrDefault()?.CreatedDate;
+                            var lastDate = Model.ProcessCase.FinalResponseResults.OrderByDescending(r => r.CreatedDate).FirstOrDefault()?.CreatedDate;
                             if (lastDate != null)
                             {
                                 <span class="mx-2">·</span>
@@ -134,7 +134,7 @@
                     <!-- RESULT AREA -->
                     <div class="flex-grow-1 result-area mb-2">
                         <div class="result-panel p-3 h-100">
-                            @if (!Model.FinalResponseResults.Any())
+                            @if (!Model.ProcessCase.FinalResponseResults.Any())
                             {
                                 <div class="alert alert-warning text-center mb-0">
                                     <i class="fa fa-info-circle me-2"></i>No hay resultados disponibles para este caso.
@@ -142,7 +142,7 @@
                             }
                             else
                             {
-                                var entries = Model.FinalResponseResults
+                                var entries = Model.ProcessCase.FinalResponseResults
                                 .OrderBy(r => r.CreatedDate)
                                 .Select(r =>
                                 {
@@ -263,7 +263,7 @@
                     <!-- END: Notes list -->
 
                     <div class="mt-auto">
-                        <div id="cfTopPanel" class="cf-top-panel mt-2" data-case="@Model.CaseCode">
+                        <div id="cfTopPanel" class="cf-top-panel mt-2" data-case="@Model.ProcessCase.CaseCode">
                             <div class="cf-question fw-semibold mb-2">¿Nexus facilitó tu auditoría de este caso?</div>
                             <div class="cf-toggle d-flex gap-2 mb-3" role="radiogroup" aria-label="¿Nexus facilitó tu auditoría de este caso?">
                                 <br />
@@ -320,9 +320,9 @@
           const exportBtn = document.getElementById('btnExportPdf');
           if (!exportBtn) return;
 
-          const caseCode = '@Model.CaseCode';
-          const caseDateStr = '@((Model.FinalResponseResults != null && Model.FinalResponseResults.Any()) ? Model.FinalResponseResults.OrderByDescending(r => r.CreatedDate).FirstOrDefault()?.CreatedDate.ToLocalTime().ToString("dd/MM/yyyy, HH:mm") : "")';
-          const filesCount = @(Model.DataFile?.Count() ?? 0);
+          const caseCode = '@Model.ProcessCase.CaseCode';
+          const caseDateStr = '@((Model.ProcessCase.FinalResponseResults != null && Model.ProcessCase.FinalResponseResults.Any()) ? Model.ProcessCase.FinalResponseResults.OrderByDescending(r => r.CreatedDate).FirstOrDefault()?.CreatedDate.ToLocalTime().ToString("dd/MM/yyyy, HH:mm") : "")';
+          const filesCount = @(Model.ProcessCase.DataFile?.Count() ?? 0);
 
           function pad(n){ return String(n).padStart(2,'0'); }
           function formatDate(d){ try { return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch(e){ return d.toString(); } }
@@ -699,7 +699,7 @@
                         btn.classList.add('loading');
                         // Recupera caseCode desde el panel (o inyectado desde Razor)
                         const casePanel = q('#cfTopPanel');
-                        const caseCode = casePanel ? casePanel.dataset.case : '@Model.CaseCode';
+                        const caseCode = casePanel ? casePanel.dataset.case : '@Model.ProcessCase.CaseCode';
                                         // Mensaje que se enviará al controlador (puedes ajustarlo)
                         const message = textarea?.value?.trim();
                         // UI thinking
@@ -756,7 +756,7 @@
                     btn.classList.add('loading');
                     // Recupera caseCode desde el panel (o inyectado desde Razor)
                     const casePanel = q('#cfTopPanel');
-                    const caseCode = casePanel ? casePanel.dataset.case : '@Model.CaseCode';
+                    const caseCode = casePanel ? casePanel.dataset.case : '@Model.ProcessCase.CaseCode';
                     // Mensaje que se enviará al controlador (puedes ajustarlo)
                     const message  = textarea?.value?.trim();
                     // UI thinking
@@ -813,7 +813,7 @@
                     btn.classList.add('loading');
                     // Recupera caseCode desde el panel (o inyectado desde Razor)
                     const casePanel = q('#cfTopPanel');
-                    const caseCode = casePanel ? casePanel.dataset.case : '@Model.CaseCode';
+                    const caseCode = casePanel ? casePanel.dataset.case : '@Model.ProcessCase.CaseCode';
                     // Mensaje que se enviará al controlador (puedes ajustarlo)
                     const message = textarea?.value?.trim();
                     // UI thinking
@@ -971,7 +971,7 @@
                         const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ caseCode: '@Model.CaseCode', message: text,origin: 'CHAT' })//chat-nexus
+                            body: JSON.stringify({ caseCode: '@Model.ProcessCase.CaseCode', message: text,origin: 'CHAT' })//chat-nexus
                         });
 
                         stopThinking(thinking);

@@ -184,6 +184,21 @@ public class NexusService(OCRDbContext db) : INexusService
             .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode);
     }
 
+    public async Task<ViewCaseDetails?> ObtenerDetailsProcessCase(Guid caseCode)
+    {
+        var proccess = await db.ProcessCase
+            .Include(pc => pc.FinalResponseResults).Include(pc => pc.DataFile)
+            .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode);
+        var details = new ViewCaseDetails
+        {
+            HasChat = true,
+            HasButton = true,
+            ProcessCase = proccess!
+        };
+
+        return details;
+    }
+
     public async Task<List<ProcessCase>?> ObtenerProcesos()
     {
         var today = DateTime.ParseExact("2025-09-12 17:10:00", "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);

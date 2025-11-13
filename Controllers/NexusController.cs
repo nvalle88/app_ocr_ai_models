@@ -227,7 +227,7 @@ namespace SmartAdmin.Web.Controllers
 
         public async Task<IActionResult> Details1(Guid caseCode)
         {
-            var processCase = await nexusService.ObtenerProcessCase(caseCode);
+            var processCase = await nexusService.ObtenerDetailsProcessCase(caseCode);
 
             if (processCase == null)
                 return NotFound();
