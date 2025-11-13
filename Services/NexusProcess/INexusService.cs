@@ -21,5 +21,6 @@ namespace app_tramites.Services.NexusProcess
         Task<ProcessCase?> ObtenerProcessCase(Guid caseCode);
         Task<List<ProcessCase>?> ObtenerProcesos();
         Task<ViewProcessUser> GetProcessesByUser(IdentityUser? user, IList<string>? roles);
+        Task<ViewCreateCase> CreateCaseProcess(QueryInput input);
     }
 }

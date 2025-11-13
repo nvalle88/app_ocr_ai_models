@@ -1,13 +1,12 @@
 #region Using
 
 using app_ocr_ai_models.Data;
+using app_tramites.Extensions;
 using app_tramites.Models.Dto;
 using app_tramites.Models.ModelAi;
 using app_tramites.Models.ViewModel;
 using app_tramites.Services.NexusProcess;
 using app_tramites.Utils;
-using Azure;
-using Azure.AI.DocumentIntelligence;
 using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -557,67 +556,78 @@ namespace SmartAdmin.Web.Controllers
         {
             try
             {
+                var respuesta = await nexusService.CreateCaseProcess(input);
+                return Ok(respuesta);
 
-                if (input == null || string.IsNullOrWhiteSpace(input.ProcessCode))
-                    return BadRequest("ProcessCode es obligatorio.");
-                var ocrSetting = await db.OCRSetting
-                    .FirstOrDefaultAsync(x => x.SettingCode == "DEFAULT" && x.PlatformCode == "AZURE");
-                if (ocrSetting == null)
-                    return NotFound("Configuración OCR no encontrada.");
+                //if (input == null || string.IsNullOrWhiteSpace(input.ProcessCode))
+                //    return BadRequest("ProcessCode es obligatorio.");
+                //var ocrSetting = await db.OCRSetting
+                //    .FirstOrDefaultAsync(x => x.SettingCode == "DEFAULT" && x.PlatformCode == "AZURE");
+                //if (ocrSetting == null)
+                //    return NotFound("Configuración OCR no encontrada.");
 
-                var blobCfg = await db.AzureBlobConf.AsNoTracking().FirstOrDefaultAsync()
-                  ?? throw new InvalidOperationException("AzureBlobConf no encontrada.");
+                //var blobCfg = await db.AzureBlobConf.AsNoTracking().FirstOrDefaultAsync()
+                //  ?? throw new InvalidOperationException("AzureBlobConf no encontrada.");
 
-                var ocrTasks = input.Files.Select(f =>
-                    ProcessFileAsync(f, ocrSetting, blobCfg)
-                );
+                //var ocrTasks = input.Files.Select(f =>
+                //    ProcessFileAsync(f, ocrSetting, blobCfg)
+                //);
 
-                var ocrResults = await Task.WhenAll(ocrTasks);
+                //var ocrResults = await Task.WhenAll(ocrTasks);
 
-                //el proceso a partir del AgentProcess
-                int agentProcessId = Int16.Parse(input.ProcessCode);
-                var agentProcess = await db.AgentProcesses
-                    .Include(ap => ap.Process).ThenInclude(p => p.ProcessStep.OrderBy(s => s.StepOrder))
-                    .FirstOrDefaultAsync(ap => ap.Id == agentProcessId);
+                ////el proceso a partir del AgentProcess
+                //int agentProcessId = Int16.Parse(input.ProcessCode);
+                //var agentProcess = await db.AgentProcesses
+                //    .Include(ap => ap.Process).ThenInclude(p => p.ProcessStep.OrderBy(s => s.StepOrder))
+                //    .FirstOrDefaultAsync(ap => ap.Id == agentProcessId);
 
-                var nameProccess = agentProcess?.Process.Name;
-                var processDef = agentProcess?.Process; /*await _db.Process
-                    .Include(p => p.ProcessStep.OrderBy(s => s.StepOrder))
-                    .FirstOrDefaultAsync(p => p.Code == input.ProcessCode);*/
-                if (processDef == null)
-                    return NotFound("Proceso no encontrado.");
+                //var nameProccess = agentProcess?.Process.Name;
+                //var processDef = agentProcess?.Process; /*await _db.Process
+                //    .Include(p => p.ProcessStep.OrderBy(s => s.StepOrder))
+                //    .FirstOrDefaultAsync(p => p.Code == input.ProcessCode);*/
+                //if (processDef == null)
+                //    return NotFound("Proceso no encontrado.");
 
-                var caseCode = Guid.NewGuid();
-                var processCase = new ProcessCase
+                //var caseCode = Guid.NewGuid();
+                //var processCase = new ProcessCase
+                //{
+                //    CaseCode = caseCode,
+                //    DefinitionCode = processDef.Code,
+                //    StartDate = DateTime.Now,
+                //    State = "Started"
+                //};
+                //db.ProcessCase.Add(processCase);
+                //await db.SaveChangesAsync();
+
+
+
+                //var dataFiles = ocrResults.Select(r => new DataFile
+                //{
+                //    CaseCode = caseCode,
+                //    IsFileUri = !string.IsNullOrEmpty(r.Url),
+                //    FileUri = r.Url,
+                //    Text = r.Text,
+                //    CreatedDate = DateTime.Now
+                //}).ToList();
+                //db.DataFile.AddRange(dataFiles);
+                //await db.SaveChangesAsync();
+
+                //return Ok(new
+                //{
+                //    caseCode = processCase.CaseCode,
+                //    definitionCode = processCase.DefinitionCode,
+                //    startDate = processCase.StartDate,
+                //    state = processCase.State,
+                //    nameProccess
+                //});
+            }
+            catch(NegocioException e)
+            {
+                return NotFound(new
                 {
-                    CaseCode = caseCode,
-                    DefinitionCode = processDef.Code,
-                    StartDate = DateTime.Now,
-                    State = "Started"
-                };
-                db.ProcessCase.Add(processCase);
-                await db.SaveChangesAsync();
-
-
-
-                var dataFiles = ocrResults.Select(r => new DataFile
-                {
-                    CaseCode = caseCode,
-                    IsFileUri = !string.IsNullOrEmpty(r.Url),
-                    FileUri = r.Url,
-                    Text = r.Text,
-                    CreatedDate = DateTime.Now
-                }).ToList();
-                db.DataFile.AddRange(dataFiles);
-                await db.SaveChangesAsync();
-
-                return Ok(new
-                {
-                    caseCode = processCase.CaseCode,
-                    definitionCode = processCase.DefinitionCode,
-                    startDate = processCase.StartDate,
-                    state = processCase.State,
-                    nameProccess
+                    error = true,
+                    message = e.Message,
+                    errorCode = e.ErrorCode
                 });
             }
             catch (Exception ex)
@@ -686,55 +696,55 @@ namespace SmartAdmin.Web.Controllers
         //    };
         //}
 
-    private async Task<(string Url, string Text)> ProcessFileAsync(
-     OcrFile file,
-     OCRSetting ocrSetting,
-     AzureBlobConf blobCfg,
-     int timeoutMilliseconds = 90000) // 30 segundos por defecto
-        {
-            using var cts = new CancellationTokenSource(timeoutMilliseconds);
+        //private async Task<(string Url, string Text)> ProcessFileAsync(
+        // OcrFile file,
+        // OCRSetting ocrSetting,
+        // AzureBlobConf blobCfg,
+        // int timeoutMilliseconds = 90000) // 30 segundos por defecto
+        //{
+        //    using var cts = new CancellationTokenSource(timeoutMilliseconds);
 
-            try
-            {
-                // Subir blob
-                var blobUrl = await UploadBlobAsync(file, blobCfg);
+        //    try
+        //    {
+        //        // Subir blob
+        //        var blobUrl = await UploadBlobAsync(file, blobCfg);
 
-                // Ejecutar OCR con timeout
-                var clientOcr = new DocumentIntelligenceClient(
-                    new Uri(ocrSetting.Endpoint),
-                    new AzureKeyCredential(ocrSetting.ApiKey));
+        //        // Ejecutar OCR con timeout
+        //        var clientOcr = new DocumentIntelligenceClient(
+        //            new Uri(ocrSetting.Endpoint),
+        //            new AzureKeyCredential(ocrSetting.ApiKey));
 
-                var operation = await clientOcr.AnalyzeDocumentAsync(
-                    WaitUntil.Completed,
-                    ocrSetting.ModelId,
-                    new Uri(blobUrl),
-                    cancellationToken: cts.Token);
+        //        var operation = await clientOcr.AnalyzeDocumentAsync(
+        //            WaitUntil.Completed,
+        //            ocrSetting.ModelId,
+        //            new Uri(blobUrl),
+        //            cancellationToken: cts.Token);
 
-                return (Url: blobUrl, Text: operation.Value.Content);
-            }
-            catch (TaskCanceledException ex)
-            {
-                throw new TimeoutException($"El procesamiento del archivo superó el tiempo límite de {timeoutMilliseconds} ms.");
-            }
-        }
+        //        return (Url: blobUrl, Text: operation.Value.Content);
+        //    }
+        //    catch (TaskCanceledException ex)
+        //    {
+        //        throw new TimeoutException($"El procesamiento del archivo superó el tiempo límite de {timeoutMilliseconds} ms.");
+        //    }
+        //}
 
 
-        private async Task<string> UploadBlobAsync(
-            OcrFile file,
-            AzureBlobConf blobCfg)
-        {
-            var blobServiceClient = new BlobServiceClient(blobCfg.ConnectionString);
-            var containerClient = blobServiceClient.GetBlobContainerClient(blobCfg.ContainerName);
-            await containerClient.CreateIfNotExistsAsync();
+        //private async Task<string> UploadBlobAsync(
+        //    OcrFile file,
+        //    AzureBlobConf blobCfg)
+        //{
+        //    var blobServiceClient = new BlobServiceClient(blobCfg.ConnectionString);
+        //    var containerClient = blobServiceClient.GetBlobContainerClient(blobCfg.ContainerName);
+        //    await containerClient.CreateIfNotExistsAsync();
 
-            var blobName = $"{Guid.NewGuid()}{file.Extension}";
-            var blobClient = containerClient.GetBlobClient(blobName);
+        //    var blobName = $"{Guid.NewGuid()}{file.Extension}";
+        //    var blobClient = containerClient.GetBlobClient(blobName);
 
-            await using var ms = new MemoryStream(Convert.FromBase64String(file.Content));
-            await blobClient.UploadAsync(ms, overwrite: true);
+        //    await using var ms = new MemoryStream(Convert.FromBase64String(file.Content));
+        //    await blobClient.UploadAsync(ms, overwrite: true);
 
-            return blobClient.Uri.ToString();
-        }
+        //    return blobClient.Uri.ToString();
+        //}
 
 
 
