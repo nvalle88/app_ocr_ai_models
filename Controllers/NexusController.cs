@@ -227,7 +227,9 @@ namespace SmartAdmin.Web.Controllers
 
         public async Task<IActionResult> Details1(Guid caseCode)
         {
-            var processCase = await nexusService.ObtenerDetailsProcessCase(caseCode);
+
+            var user = await userManager.GetUserAsync(User);          
+            var processCase = await nexusService.ObtenerDetailsProcessCase(caseCode, user);
 
             if (processCase == null)
                 return NotFound();
@@ -883,9 +885,11 @@ namespace SmartAdmin.Web.Controllers
         [HttpPost]
         public async Task<IActionResult> EjecutarPrompt([FromBody] PromptRequest req)
         {
+            var user = await userManager.GetUserAsync(User);
             if (req == null || req.CaseCode == Guid.Empty || string.IsNullOrEmpty(req.Origin))
                 return BadRequest("Datos inválidos.");
 
+            req.Usuario = user?.UserName ?? "Sistema";
             var respuesta =  await nexusService.EjecutarPrompt(req);
 
             if (respuesta == null)

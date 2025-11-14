@@ -3,6 +3,7 @@ using app_tramites.Extensions;
 using app_tramites.Models.Dto;
 using app_tramites.Models.ModelAi;
 using app_tramites.Models.ViewModel;
+using app_tramites.Utils;
 using Azure;
 using Azure.AI.DocumentIntelligence;
 using Azure.Storage.Blobs;
@@ -48,6 +49,13 @@ public class NexusService(OCRDbContext db) : INexusService
         if (!string.IsNullOrWhiteSpace(metadata.CustomInstructions))
             prompt += metadata.CustomInstructions;
 
+        var userContent = req.Message ?? "";
+        //verificar si hay archivos en req y si hay mensaje       
+        if (req.FileUrls != null && req.FileUrls.Count > 0)
+        {
+            userContent += "\n\nArchivos remitidos por el cliente:\n" + string.Join("\n", req.FileUrls);
+        }
+
         // Combinar texto
         var combined = new StringBuilder();
         foreach (var df in dataFiles)
@@ -57,12 +65,23 @@ public class NexusService(OCRDbContext db) : INexusService
             combined.AppendLine($"documento: {fileName}.{ext}---{df.Text}---");
         }
 
+        var context = string.Empty;
+        if (req.Origin.Equals(ConstanteTipoAgente.Chat, StringComparison.OrdinalIgnoreCase))
+        {
+            context =  userContent + $"\n\nInformación del Caso número NE-{(processCase.CaseCode.ToString()?.Split('-').FirstOrDefault() ?? "")}: Usuario que consulta: {req.Usuario}\n" +
+                combined.ToString();
+        }
+        else
+        {
+            context = combined.ToString();
+        }
+
 
         // Llamada a OpenAI
         var finalResp = await CallOpenAiAsync(
             agenteProceso.Agent!,
             prompt,
-            combined.ToString(),
+            userText: context,
             dataFiles.First().Id,
             stepOrder: 999,
             maxTokens: metadata.MaxTokens ?? 100000,
@@ -114,11 +133,10 @@ public class NexusService(OCRDbContext db) : INexusService
                 .Include(ap => ap.Agent.AgentConfig)
                 .Where(ap => ap.DefinitionCode == process.Code && ap.Agent.IsActive)
                 .FirstOrDefault(ap => ap.Agent.OPAIModelPrompt
-                .Any(op => op.TypeAgentNavigation.Code == req.Origin && op.IsDefault));
+                .Any(op => op.TypeAgentNavigation.Code == req.Origin));
 
         return data;
 
-        
     }
 
     public async Task<OpenAiResponseDto> CallOpenAiAsync(
@@ -184,15 +202,29 @@ public class NexusService(OCRDbContext db) : INexusService
             .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode);
     }
 
-    public async Task<ViewCaseDetails?> ObtenerDetailsProcessCase(Guid caseCode)
+    public async Task<ViewCaseDetails?> ObtenerDetailsProcessCase(Guid caseCode, IdentityUser? user)
     {
         var proccess = await db.ProcessCase
             .Include(pc => pc.FinalResponseResults).Include(pc => pc.DataFile)
             .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode);
+
+        if (proccess == null)
+            throw new NegocioException("No hay información que mostrar");
+
+        var agents = await GetAgentTypesForUserAndProcessAsync(user, proccess.DefinitionCode);
+        bool hasChat = false;
+        bool hasButton = false;
+
+        if (agents is not null && agents.Count > 0)
+        {
+            hasChat = agents.Any(c => c.Code.Equals(ConstanteTipoAgente.Chat, StringComparison.OrdinalIgnoreCase));
+            hasButton = agents.Any(c => c.Code.Equals(ConstanteTipoAgente.Botones, StringComparison.OrdinalIgnoreCase));
+        }
+
         var details = new ViewCaseDetails
         {
-            HasChat = true,
-            HasButton = true,
+            HasChat = hasChat,
+            HasButton = hasButton,
             ProcessCase = proccess!
         };
 
@@ -207,6 +239,50 @@ public class NexusService(OCRDbContext db) : INexusService
                 .Where(x => x.StartDate > today)
                                  .OrderByDescending(pc => pc.StartDate)
                                  .ToListAsync();
+    }
+
+    private async Task<List<AgentTypeDto>> GetAgentTypesForUserAndProcessAsync(IdentityUser? user, string processCode)
+    {
+        if (user == null || string.IsNullOrWhiteSpace(processCode))
+            return [];
+
+        // Obtener los AgentProcessId a los que el usuario tiene acceso via PolicyUser -> Policys -> AccessAgentPolicies
+        var allowedAgentProcessIds = await db.PolicyUsers
+            .Where(pu => pu.UserId == user.Id)
+            .SelectMany(pu => pu.Policys.AccessAgentPolicies.Select(aap => aap.AgentProcessId))
+            .Distinct()
+            .ToListAsync();
+
+        if (allowedAgentProcessIds.Count == 0)
+        {
+            // Si no tiene policies, devolver vacío (puedes cambiar la lógica para incluir rol/otros accesos)
+            return [];
+        }
+
+        // Consultar AgentProcesses filtrando por processCode y Agent.IsActive, incluyendo las colecciones necesarias
+        var agentProcesses = await db.AgentProcesses
+            .Include(ap => ap.Agent)
+                .ThenInclude(a => a.OPAIModelPrompt)
+                .ThenInclude(op => op.TypeAgentNavigation)
+            .Where(ap => ap.DefinitionCode == processCode && ap.Agent.IsActive && allowedAgentProcessIds.Contains(ap.Id))
+            .ToListAsync();
+
+        // Mapear a AgentTypeDto: por cada AgentProcess y cada prompt tomar el Catalog (TypeAgentNavigation)
+        var result = agentProcesses
+            .SelectMany(ap => (ap.Agent.OPAIModelPrompt ?? Enumerable.Empty<OPAIModelPrompt>())
+                .Select(op => op.TypeAgentNavigation)
+                .Where(cat => cat != null)
+                .Select(cat => new AgentTypeDto
+                {
+                    Code = cat.Code,
+                    CatalogId = cat.Id,
+                    DefinitionCode = ap.DefinitionCode,
+                    AgentCode = ap.AgentCode
+                }))
+            .DistinctBy(d => (d.CatalogId, d.AgentCode, d.DefinitionCode))
+            .ToList();
+
+        return result;
     }
 
     public async Task<ViewProcessUser> GetProcessesByUser(IdentityUser? user, IList<string>? roles)
@@ -262,8 +338,7 @@ public class NexusService(OCRDbContext db) : INexusService
             })];
 
         
-        return new ViewProcessUser { Success = true, Processes = allProcesses };
-        //return  Json(new { success = true, processes = allProcesses });
+        return new ViewProcessUser { Success = true, Processes = allProcesses };        
     }
 
     public async Task<ViewCreateCase> CreateCaseProcess(QueryInput input)

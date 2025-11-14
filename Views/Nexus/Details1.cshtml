@@ -134,7 +134,7 @@
                     <!-- RESULT AREA -->
                     <div class="flex-grow-1 result-area mb-2">
                         <div class="result-panel p-3 h-100">
-                            @if (!Model.ProcessCase.FinalResponseResults.Any())
+                            @if (!Model.ProcessCase!.FinalResponseResults.Any())
                             {
                                 <div class="alert alert-warning text-center mb-0">
                                     <i class="fa fa-info-circle me-2"></i>No hay resultados disponibles para este caso.
@@ -159,14 +159,36 @@
                     </div>
 
                     <!-- Chat input container: quedará fixed sobre footer (NO movido en DOM) VALIDAR PARA BORRAR-->
+                    @{
+                        var hasChat = (Model?.HasChat ?? true);
+                    }
                     <div class="chat-input-wrapper" id="chatInputWrapper" aria-hidden="false">
                         <div class="chat-input-inner" id="chatInputInner" role="region" aria-label="Chat input area">
-                            <textarea id="chatInput" class="chat-input form-control" rows="2" placeholder="Comienza a escribir... (Enter = enviar, Shift+Enter = nueva línea)"></textarea>
+                            @if (hasChat)
+                            {
+                                <textarea id="chatInput" class="chat-input form-control" rows="2"
+                                      placeholder="Comienza a escribir... (Enter = enviar, Shift+Enter = nueva línea)"></textarea>
 
-                            <button id="sendChat" class="chat-send-btn" title="Enviar" aria-label="Enviar" type="button" aria-busy="false">
-                                <span class="send-icon" aria-hidden="true"><i class="fa-solid fa-paper-plane"></i></span>
-                                <span class="spinner-icon visually-hidden" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>
-                            </button>
+                                <button id="sendChat" class="chat-send-btn" title="Enviar" aria-label="Enviar" type="button" aria-busy="false">
+                                    <span class="send-icon" aria-hidden="true"><i class="fa-solid fa-paper-plane"></i></span>
+                                    <span class="spinner-icon visually-hidden" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>
+                                </button>
+                            }
+                            else
+                            {
+                                <textarea id="chatInput" class="chat-input form-control" rows="2"
+                                      placeholder="Opción no disponible"
+                                      disabled="disabled"
+                                      readonly="readonly"
+                                      aria-disabled="true"
+                                      tabindex="-1"></textarea>
+
+                                <button id="sendChat" class="chat-send-btn" title="Enviar" aria-label="Enviar" type="button"
+                                        disabled="disabled" aria-disabled="true" style="pointer-events:none; opacity:.6;">
+                                    <span class="send-icon" aria-hidden="true"><i class="fa-solid fa-paper-plane"></i></span>
+                                    <span class="spinner-icon visually-hidden" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>
+                                </button>
+                            }
                         </div>
                     </div>
                 </div>
@@ -181,39 +203,42 @@
                     <small class="text-muted"></small>
                 </div>
                 <div class="card-body d-flex flex-column panel-body panel-height studio-panel-body">
+                    @{
+                        var showStudioTiles = (Model?.HasButton ?? false);
+                    }
                     <!-- START: Studio tiles Botones dibujar y ocultar-->
-                    <div class="studio-grid" aria-hidden="false">
-                        <button id="studioAudio" class="studio-tile tile-audio" title="Validación contractual" type="button" aria-label="Validación contractual">
-                            <div class="tile-top">
-                                <div class="tile-icon"><i class="fa fa-wave-square"></i></div>
-                                <div class="tile-menu"><i class="fa fa-ellipsis-vertical"></i></div>
-                            </div>
-                            <div class="tile-body">
-                                <div class="tile-title">Contratos</div>
-                            </div>
-                        </button>
+                    <div class="studio-grid" aria-hidden="@(showStudioTiles ? "false" : "true")" data-studio-visible="@showStudioTiles.ToString().ToLower()" style="@(showStudioTiles ? "" : "display:none;")">
+                            <button id="studioAudio" class="studio-tile tile-audio" title="Validación contractual" type="button" aria-label="Validación contractual">
+                                <div class="tile-top">
+                                    <div class="tile-icon"><i class="fa fa-wave-square"></i></div>
+                                    <div class="tile-menu"><i class="fa fa-ellipsis-vertical"></i></div>
+                                </div>
+                                <div class="tile-body">
+                                    <div class="tile-title">Contratos</div>
+                                </div>
+                            </button>
 
-                        <button id="studioVideo" class="studio-tile tile-video" title="Alertas y Hallazgos" type="button" aria-label="Alertas y Hallazgos">
-                            <div class="tile-top">
-                                <div class="tile-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                                <div class="tile-menu"><i class="fa fa-ellipsis-vertical"></i></div>
-                            </div>
-                            <div class="tile-body">
-                                <div class="tile-title">Alertas</div>
-                            </div>
-                        </button>
+                            <button id="studioVideo" class="studio-tile tile-video" title="Alertas y Hallazgos" type="button" aria-label="Alertas y Hallazgos">
+                                <div class="tile-top">
+                                    <div class="tile-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                                    <div class="tile-menu"><i class="fa fa-ellipsis-vertical"></i></div>
+                                </div>
+                                <div class="tile-body">
+                                    <div class="tile-title">Alertas</div>
+                                </div>
+                            </button>
 
-                        <button id="studioMind" class="studio-tile tile-mind" title="Facturas" type="button" aria-label="Facturas">
-                            <div class="tile-top">
-                                <div class="tile-icon"><i class="fa fa-money-bill-wave"></i></div>
-                                <div class="tile-menu"><i class="fa fa-ellipsis-vertical"></i></div>
-                            </div>
-                            <div class="tile-body">
-                                <div class="tile-title">Facturas</div>
-                            </div>
-                        </button>
+                            <button id="studioMind" class="studio-tile tile-mind" title="Facturas" type="button" aria-label="Facturas">
+                                <div class="tile-top">
+                                    <div class="tile-icon"><i class="fa fa-money-bill-wave"></i></div>
+                                    <div class="tile-menu"><i class="fa fa-ellipsis-vertical"></i></div>
+                                </div>
+                                <div class="tile-body">
+                                    <div class="tile-title">Facturas</div>
+                                </div>
+                            </button>
 
-                    </div>
+                        </div>
                     <hr class="my-2" />
 
                     <!-- START: Notes list (colocar entre .studio-grid y el <hr>) -->
@@ -692,175 +717,175 @@
                 const studioVideoBtn = q('#studioVideo');if (!studioVideoBtn) return;
                 const studioMindBtn = q('#studioMind');if (!studioMindBtn) return;
 
-                studioMindBtn.addEventListener('click', async (ev) => {
-                        ev.preventDefault();
-                        const btn = studioMindBtn;
-                        btn.disabled = true;
-                        btn.classList.add('loading');
-                        // Recupera caseCode desde el panel (o inyectado desde Razor)
-                        const casePanel = q('#cfTopPanel');
-                        const caseCode = casePanel ? casePanel.dataset.case : '@Model.ProcessCase.CaseCode';
-                                        // Mensaje que se enviará al controlador (puedes ajustarlo)
-                        const message = textarea?.value?.trim();
-                        // UI thinking
-                        const thinking = startThinking();
-                        setBtnLoading(true);
-                        try {
-                            await stabilizePositionDuringTransition(900);
-                        const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'CHAT' })
-                        });
-                        setBtnLoading(false);
-                        stopThinking(thinking);
-                        if (!resp.ok) throw new Error(resp.statusText || 'Error en la petición');
-                        const data = await resp.json();
-                        // Convierte la respuesta (markdown) a HTML y la escribe en el panel con la misma animación
-                        const chatOutputEl = q('#chatOutput');
-                        const combinedMd = combineRequestResponseMd(data);
-                        const html = (typeof marked !== 'undefined') ? marked.parse(combinedMd || '') : (combinedMd || '');
-                        if (chatOutputEl) {
-                            await typeWriteInto(chatOutputEl, html, 3);
-                        }
+                // studioMindBtn.addEventListener('click', async (ev) => {
+                //         ev.preventDefault();
+                //         const btn = studioMindBtn;
+                //         btn.disabled = true;
+                //         btn.classList.add('loading');
+                //         // Recupera caseCode desde el panel (o inyectado desde Razor)
+                //         const casePanel = q('#cfTopPanel');
+                //         const caseCode = casePanel ? casePanel.dataset.case : '@Model.ProcessCase.CaseCode';
+                //                         // Mensaje que se enviará al controlador (puedes ajustarlo)
+                //         const message = textarea?.value?.trim();
+                //         // UI thinking
+                //         const thinking = startThinking();
+                //         setBtnLoading(true);
+                //         try {
+                //             await stabilizePositionDuringTransition(900);
+                //         const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
+                //             method: 'POST',
+                //             headers: { 'Content-Type': 'application/json' },
+                //             body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'CHAT' })
+                //         });
+                //         setBtnLoading(false);
+                //         stopThinking(thinking);
+                //         if (!resp.ok) throw new Error(resp.statusText || 'Error en la petición');
+                //         const data = await resp.json();
+                //         // Convierte la respuesta (markdown) a HTML y la escribe en el panel con la misma animación
+                //         const chatOutputEl = q('#chatOutput');
+                //         const combinedMd = combineRequestResponseMd(data);
+                //         const html = (typeof marked !== 'undefined') ? marked.parse(combinedMd || '') : (combinedMd || '');
+                //         if (chatOutputEl) {
+                //             await typeWriteInto(chatOutputEl, html, 3);
+                //         }
 
-                        // Limpia / enfoca textarea como en el flujo normal
-                        const ta = q('#chatInput');
-                        if (ta) {
-                            ta.value = '';
-                            try { autoResize(ta); } catch (e) {}
-                            try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
-                        }
-                    } catch (err) {
-                        console.error('studioMind error', err);
-                        stopThinking();
-                        setBtnLoading(false);
-                        Swal.fire({
-                            icon: 'warning',
-                            title: 'Advertencia',
-                            text: 'Error al generar el resumen: ' + (err && err.message ? err.message : 'Error en la petición'),
-                        });
-                    } finally {
-                        btn.disabled = false;
-                        btn.classList.remove('loading');
-                        stopThinking();
-                        positionChatInput();
-                    }
-                });
+                //         // Limpia / enfoca textarea como en el flujo normal
+                //         const ta = q('#chatInput');
+                //         if (ta) {
+                //             ta.value = '';
+                //             try { autoResize(ta); } catch (e) {}
+                //             try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
+                //         }
+                //     } catch (err) {
+                //         console.error('studioMind error', err);
+                //         stopThinking();
+                //         setBtnLoading(false);
+                //         Swal.fire({
+                //             icon: 'warning',
+                //             title: 'Advertencia',
+                //             text: 'Error al generar el resumen: ' + (err && err.message ? err.message : 'Error en la petición'),
+                //         });
+                //     } finally {
+                //         btn.disabled = false;
+                //         btn.classList.remove('loading');
+                //         stopThinking();
+                //         positionChatInput();
+                //     }
+                // });
 
-                studioVideoBtn.addEventListener('click', async (ev) => {
+                // studioVideoBtn.addEventListener('click', async (ev) => {
 
-                    ev.preventDefault();
-                    const btn = studioVideoBtn;
-                    btn.disabled = true;
-                    btn.classList.add('loading');
-                    // Recupera caseCode desde el panel (o inyectado desde Razor)
-                    const casePanel = q('#cfTopPanel');
-                    const caseCode = casePanel ? casePanel.dataset.case : '@Model.ProcessCase.CaseCode';
-                    // Mensaje que se enviará al controlador (puedes ajustarlo)
-                    const message  = textarea?.value?.trim();
-                    // UI thinking
-                    const thinking = startThinking();
-                    setBtnLoading(true);
-                    try {
+                //     ev.preventDefault();
+                //     const btn = studioVideoBtn;
+                //     btn.disabled = true;
+                //     btn.classList.add('loading');
+                //     // Recupera caseCode desde el panel (o inyectado desde Razor)
+                //     const casePanel = q('#cfTopPanel');
+                //     const caseCode = casePanel ? casePanel.dataset.case : '@Model.ProcessCase.CaseCode';
+                //     // Mensaje que se enviará al controlador (puedes ajustarlo)
+                //     const message  = textarea?.value?.trim();
+                //     // UI thinking
+                //     const thinking = startThinking();
+                //     setBtnLoading(true);
+                //     try {
 
-                        await stabilizePositionDuringTransition(900);
-                        const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'CHAT' })//nexus-alerta
-                        });
-                        setBtnLoading(false);
-                        stopThinking(thinking);
-                        if (!resp.ok) throw new Error(resp.statusText || 'Error en la petición');
-                        const data = await resp.json();
-                        // Convierte la respuesta (markdown) a HTML y la escribe en el panel con la misma animación
-                        const chatOutputEl = q('#chatOutput');
-                        const combinedMd = combineRequestResponseMd(data);
-                        const html = (typeof marked !== 'undefined') ? marked.parse(combinedMd || '') : (combinedMd || '');
-                        if (chatOutputEl) {
-                            await typeWriteInto(chatOutputEl, html, 3);
-                        }
+                //         await stabilizePositionDuringTransition(900);
+                //         const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
+                //             method: 'POST',
+                //             headers: { 'Content-Type': 'application/json' },
+                //                 body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'CHAT' })//nexus-alerta
+                //         });
+                //         setBtnLoading(false);
+                //         stopThinking(thinking);
+                //         if (!resp.ok) throw new Error(resp.statusText || 'Error en la petición');
+                //         const data = await resp.json();
+                //         // Convierte la respuesta (markdown) a HTML y la escribe en el panel con la misma animación
+                //         const chatOutputEl = q('#chatOutput');
+                //         const combinedMd = combineRequestResponseMd(data);
+                //         const html = (typeof marked !== 'undefined') ? marked.parse(combinedMd || '') : (combinedMd || '');
+                //         if (chatOutputEl) {
+                //             await typeWriteInto(chatOutputEl, html, 3);
+                //         }
 
-                        // Limpia / enfoca textarea como en el flujo normal
-                        const ta = q('#chatInput');
-                        if (ta) {
-                            ta.value = '';
-                            try { autoResize(ta); } catch (e) {}
-                            try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
-                        }
-                    } catch (err) {
-                        console.error('studioVideo error', err);
-                        stopThinking();
-                        setBtnLoading(false);
-                        Swal.fire({
-                            icon: 'warning',
-                            title: 'Advertencia',
-                            text: 'Error al generar el resumen: ' + (err && err.message ? err.message : 'Error en la petición'),
-                        });
-                    } finally {
-                        btn.disabled = false;
-                        btn.classList.remove('loading');
-                        stopThinking();
-                        positionChatInput();
-                    }
-                });
+                //         // Limpia / enfoca textarea como en el flujo normal
+                //         const ta = q('#chatInput');
+                //         if (ta) {
+                //             ta.value = '';
+                //             try { autoResize(ta); } catch (e) {}
+                //             try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
+                //         }
+                //     } catch (err) {
+                //         console.error('studioVideo error', err);
+                //         stopThinking();
+                //         setBtnLoading(false);
+                //         Swal.fire({
+                //             icon: 'warning',
+                //             title: 'Advertencia',
+                //             text: 'Error al generar el resumen: ' + (err && err.message ? err.message : 'Error en la petición'),
+                //         });
+                //     } finally {
+                //         btn.disabled = false;
+                //         btn.classList.remove('loading');
+                //         stopThinking();
+                //         positionChatInput();
+                //     }
+                // });
 
-                studioAudioBtn.addEventListener('click', async (ev) => {
-                    ev.preventDefault();
-                    const btn = studioAudioBtn;
-                    btn.disabled = true;
-                    btn.classList.add('loading');
-                    // Recupera caseCode desde el panel (o inyectado desde Razor)
-                    const casePanel = q('#cfTopPanel');
-                    const caseCode = casePanel ? casePanel.dataset.case : '@Model.ProcessCase.CaseCode';
-                    // Mensaje que se enviará al controlador (puedes ajustarlo)
-                    const message = textarea?.value?.trim();
-                    // UI thinking
-                    const thinking = startThinking();
-                    setBtnLoading(true);
-                    try {
-                        await stabilizePositionDuringTransition(900);
-                        const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'CHAT' })//nexus-contrato
-                        });
-                        setBtnLoading(false);
-                        stopThinking(thinking);
-                        if (!resp.ok) throw new Error(resp.statusText || 'Error en la petición');
-                        const data = await resp.json();
-                        // Convierte la respuesta (markdown) a HTML y la escribe en el panel con la misma animación
-                        const chatOutputEl = q('#chatOutput');
-                        const combinedMd = combineRequestResponseMd(data);
-                        const html = (typeof marked !== 'undefined') ? marked.parse(combinedMd || '') : (combinedMd || '');
-                        if (chatOutputEl) {
-                            await typeWriteInto(chatOutputEl, html, 3);
-                        }
+                // studioAudioBtn.addEventListener('click', async (ev) => {
+                //     ev.preventDefault();
+                //     const btn = studioAudioBtn;
+                //     btn.disabled = true;
+                //     btn.classList.add('loading');
+                //     // Recupera caseCode desde el panel (o inyectado desde Razor)
+                //     const casePanel = q('#cfTopPanel');
+                //     const caseCode = casePanel ? casePanel.dataset.case : '@Model.ProcessCase.CaseCode';
+                //     // Mensaje que se enviará al controlador (puedes ajustarlo)
+                //     const message = textarea?.value?.trim();
+                //     // UI thinking
+                //     const thinking = startThinking();
+                //     setBtnLoading(true);
+                //     try {
+                //         await stabilizePositionDuringTransition(900);
+                //         const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
+                //             method: 'POST',
+                //             headers: { 'Content-Type': 'application/json' },
+                //             body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'CHAT' })//nexus-contrato
+                //         });
+                //         setBtnLoading(false);
+                //         stopThinking(thinking);
+                //         if (!resp.ok) throw new Error(resp.statusText || 'Error en la petición');
+                //         const data = await resp.json();
+                //         // Convierte la respuesta (markdown) a HTML y la escribe en el panel con la misma animación
+                //         const chatOutputEl = q('#chatOutput');
+                //         const combinedMd = combineRequestResponseMd(data);
+                //         const html = (typeof marked !== 'undefined') ? marked.parse(combinedMd || '') : (combinedMd || '');
+                //         if (chatOutputEl) {
+                //             await typeWriteInto(chatOutputEl, html, 3);
+                //         }
 
-                        // Limpia / enfoca textarea como en el flujo normal
-                        const ta = q('#chatInput');
-                        if (ta) {
-                            ta.value = '';
-                            try { autoResize(ta); } catch (e) {}
-                            try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
-                        }
-                    } catch (err) {
-                        console.error('studioAudio error', err);
-                        stopThinking();
-                        setBtnLoading(false);
-                        Swal.fire({
-                        icon: 'warning',
-                        title: 'Advertencia',
-                        text: 'Error al generar el resumen: ' + (err && err.message ? err.message : 'Error en la petición'),
-                        });
-                    } finally {
-                        btn.disabled = false;
-                        btn.classList.remove('loading');
-                        stopThinking();
-                        positionChatInput();
-                    }
-                });
+                //         // Limpia / enfoca textarea como en el flujo normal
+                //         const ta = q('#chatInput');
+                //         if (ta) {
+                //             ta.value = '';
+                //             try { autoResize(ta); } catch (e) {}
+                //             try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
+                //         }
+                //     } catch (err) {
+                //         console.error('studioAudio error', err);
+                //         stopThinking();
+                //         setBtnLoading(false);
+                //         Swal.fire({
+                //         icon: 'warning',
+                //         title: 'Advertencia',
+                //         text: 'Error al generar el resumen: ' + (err && err.message ? err.message : 'Error en la petición'),
+                //         });
+                //     } finally {
+                //         btn.disabled = false;
+                //         btn.classList.remove('loading');
+                //         stopThinking();
+                //         positionChatInput();
+                //     }
+                // });
 
                 function autoResize(el) {
                     if (!el) return;
@@ -2082,6 +2107,44 @@
             window.NexusPreviewZoom.getScale = () => currentScale;
 
             updateZoomLabel();
+        })();
+    </script>
+
+    <script>
+        // Protecciones extra en cliente para evitar que listeners existentes activen acciones
+        (function () {
+            const hasChat = @(hasChat.ToString().ToLower());
+            if (!hasChat) {
+                const ta = document.getElementById('chatInput');
+                const btn = document.getElementById('sendChat');
+
+                if (ta) {
+                    // asegurar que no se pueda editar por ningún medio y que no reciba eventos útiles
+                    ta.readOnly = true;
+                    ta.disabled = true;
+                    ta.setAttribute('aria-disabled', 'true');
+                    ta.placeholder = 'Opción no disponible';
+                    // bloquear eventos que intenten insertar texto o enviar
+                    const stopAll = e => { e.preventDefault(); e.stopImmediatePropagation(); };
+                    ta.addEventListener('input', e => { e.target.value = ''; }, true);
+                    ta.addEventListener('keydown', stopAll, true);
+                    ta.addEventListener('paste', stopAll, true);
+                    ta.addEventListener('cut', stopAll, true);
+                    ta.addEventListener('drop', stopAll, true);
+                    ta.addEventListener('focus', () => ta.blur(), true);
+                }
+
+                if (btn) {
+                    btn.disabled = true;
+                    btn.setAttribute('aria-disabled', 'true');
+                    btn.style.pointerEvents = 'none';
+                    // Capturamos clicks en fase de captura para evitar que cualquier listener posterior se ejecute
+                    const stopClick = e => { e.preventDefault(); e.stopImmediatePropagation(); };
+                    btn.addEventListener('click', stopClick, true);
+                    btn.addEventListener('mousedown', stopClick, true);
+                    btn.addEventListener('keydown', stopClick, true);
+                }
+            }
         })();
     </script>
 
