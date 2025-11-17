@@ -26,8 +26,8 @@ public partial class Agent
 
     public virtual ICollection<OPAIModelPrompt> OPAIModelPrompt { get; set; } = new List<OPAIModelPrompt>();
 
-    public virtual ICollection<ProcessStep> ProcessStep { get; set; } = new List<ProcessStep>();
+    //public virtual ICollection<ProcessStep> ProcessStep { get; set; } = new List<ProcessStep>();
 
-    public virtual ICollection<StepExecution> StepExecution { get; set; } = new List<StepExecution>();
+    //public virtual ICollection<StepExecution> StepExecution { get; set; } = new List<StepExecution>();
     public virtual ICollection<AgentProcess> AgentProcesses { get; set; } = new List<AgentProcess>();
 }

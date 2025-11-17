@@ -38,13 +38,13 @@ public partial class OCRDbContext : DbContext
 
     public virtual DbSet<Note> Note { get; set; }
 
-    public virtual DbSet<ProcessStep> ProcessStep { get; set; }
+    //public virtual DbSet<ProcessStep> ProcessStep { get; set; }
 
-    public virtual DbSet<StepExecution> StepExecution { get; set; }
+    //public virtual DbSet<StepExecution> StepExecution { get; set; }
 
     public virtual DbSet<Usage> Usage { get; set; }
 
-    public virtual DbSet<FinalResponseConfig> FinalResponseConfig { get; set; }
+    //public virtual DbSet<FinalResponseConfig> FinalResponseConfig { get; set; }
 
     public virtual DbSet<FinalResponseResult> FinalResponseResult { get; set; }
 
@@ -348,7 +348,7 @@ public partial class OCRDbContext : DbContext
                     .HasConstraintName("FK_Notes_ProcessCase");
         });
 
-        modelBuilder.Entity<ProcessStep>(entity =>
+        /*modelBuilder.Entity<ProcessStep>(entity =>
         {
             entity.HasKey(e => new { e.ProcessCode, e.StepOrder }).HasName("PK__ProcessS__6E33D9169CD4811E");
 
@@ -371,9 +371,9 @@ public partial class OCRDbContext : DbContext
                 .HasForeignKey(d => d.ProcessCode)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_ProcessStep_Process");
-        });
+        });*/
 
-        modelBuilder.Entity<StepExecution>(entity =>
+        /*modelBuilder.Entity<StepExecution>(entity =>
         {
             entity.HasKey(e => e.ExecutionId).HasName("PK__StepExec__473088C52A0DECD5");
 
@@ -396,7 +396,7 @@ public partial class OCRDbContext : DbContext
                 .HasForeignKey(d => d.ModelCode)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_StepExecution_Agent");
-        });
+        });*/
 
         modelBuilder.Entity<Usage>(entity =>
         {
@@ -410,7 +410,7 @@ public partial class OCRDbContext : DbContext
                 .HasConstraintName("FK_Usage_StepExecution");*/
         });
 
-        modelBuilder.Entity<FinalResponseConfig>(entity =>
+        /*modelBuilder.Entity<FinalResponseConfig>(entity =>
         {
             entity.ToTable("FinalResponseConfig");
             entity.HasKey(e => e.ConfigCode);
@@ -443,7 +443,7 @@ public partial class OCRDbContext : DbContext
                   .IsRequired(false);
             entity.HasIndex(e => e.ProcessCode);
             entity.HasIndex(e => e.AgentCode);
-        });
+        });*/
 
         // FinalResponseResult
         modelBuilder.Entity<FinalResponseResult>(entity =>

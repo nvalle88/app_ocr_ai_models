@@ -68,7 +68,7 @@ namespace SmartAdmin.Web.Controllers
             {
                 // 1. Definir proceso
                 var processDefinition = await db.Process
-                    .Include(p => p.ProcessStep.OrderBy(s => s.StepOrder))
+                    //.Include(p => p.ProcessStep.OrderBy(s => s.StepOrder))
                     .FirstOrDefaultAsync(p => p.Code == input.ProcessCode);
                 if (processDefinition == null)
                     return NotFound("Proceso no encontrado.");
@@ -287,105 +287,105 @@ namespace SmartAdmin.Web.Controllers
                 //}
 
 
-                var finalConfig = await db.FinalResponseConfig
-                    .FirstOrDefaultAsync(cfg => cfg.ProcessCode == processDefinition.Code && cfg.IsEnabled);
-                if (finalConfig != null)
-                {
-                    // Modo configurado: usa FinalResponseConfig
-                    var finalAgent = await db.Agent.Include(x=>x.AgentConfig)
-                        .FirstOrDefaultAsync(a => a.Code == finalConfig.AgentCode);
-                    if (finalAgent != null)
-                    {
-                        // Construir prompt con placeholders
-                        string prompt = finalConfig.PromptTemplate
-                            .Replace("{FileCount}", finalConfig.IncludeFileCount ? dataFiles.Count.ToString() : "")
-                            .Replace("{StepNames}", finalConfig.IncludeStepNames
-                                ? string.Join(", ", processDefinition.ProcessStep.OrderBy(s => s.StepOrder)
-                                    .Select(s => s.StepName ?? s.StepOrder.ToString()))
-                                : "");
+                //FinalResponseConfig finalConfig = null!; await db.FinalResponseConfig
+                //    .FirstOrDefaultAsync(cfg => cfg.ProcessCode == processDefinition.Code && cfg.IsEnabled);
+                //if (finalConfig != null)
+                //{
+                //    // Modo configurado: usa FinalResponseConfig
+                //    var finalAgent = await db.Agent.Include(x=>x.AgentConfig)
+                //        .FirstOrDefaultAsync(a => a.Code == finalConfig.AgentCode);
+                //    if (finalAgent != null)
+                //    {
+                //        // Construir prompt con placeholders
+                //        string prompt = finalConfig.PromptTemplate
+                //            .Replace("{FileCount}", finalConfig.IncludeFileCount ? dataFiles.Count.ToString() : "")
+                //            .Replace("{StepNames}", finalConfig.IncludeStepNames
+                //                ? string.Join(", ", processDefinition.ProcessStep.OrderBy(s => s.StepOrder)
+                //                    .Select(s => s.StepName ?? s.StepOrder.ToString()))
+                //                : "");
 
-                        // Deserializar metadata JSON
-                        var metadata = !string.IsNullOrWhiteSpace(finalConfig.MetadataJson)
-                            ? JsonSerializer.Deserialize<FinalResponseMetadata>(finalConfig.MetadataJson)!
-                            : new FinalResponseMetadata();
-                        if (!string.IsNullOrWhiteSpace(metadata.CustomInstructions))
-                            prompt += "" + metadata.CustomInstructions;
+                //        // Deserializar metadata JSON
+                //        var metadata = !string.IsNullOrWhiteSpace(finalConfig.MetadataJson)
+                //            ? JsonSerializer.Deserialize<FinalResponseMetadata>(finalConfig.MetadataJson)!
+                //            : new FinalResponseMetadata();
+                //        if (!string.IsNullOrWhiteSpace(metadata.CustomInstructions))
+                //            prompt += "" + metadata.CustomInstructions;
 
-                        // Recopilar resultados según configuración y UseOriginalText
+                //        // Recopilar resultados según configuración y UseOriginalText
 
-                        var combinedResults = new StringBuilder();
+                //        var combinedResults = new StringBuilder();
 
-                        if (finalConfig.UseOriginalText)
-                        {
-                            // Usar texto original de cada DataFile
-                            foreach (var df in dataFiles)
-                            {
-                                combinedResults.AppendLine(df.Text);
-                            }
-                        }
-                        else
-                        {
-                            // Agregar resultados de StepExecution para cada paso incluido
-                            var includedOrders = finalConfig.IncludedStepOrders == "*"
-                                ? processDefinition.ProcessStep.Select(s => s.StepOrder).ToList()
-                                : finalConfig.IncludedStepOrders.Split(',').Select(int.Parse).ToList();
+                //        if (finalConfig.UseOriginalText)
+                //        {
+                //            // Usar texto original de cada DataFile
+                //            foreach (var df in dataFiles)
+                //            {
+                //                combinedResults.AppendLine(df.Text);
+                //            }
+                //        }
+                //        else
+                //        {
+                //            // Agregar resultados de StepExecution para cada paso incluido
+                //            var includedOrders = finalConfig.IncludedStepOrders == "*"
+                //                ? processDefinition.ProcessStep.Select(s => s.StepOrder).ToList()
+                //                : finalConfig.IncludedStepOrders.Split(',').Select(int.Parse).ToList();
 
-                            foreach (var stepOrder in includedOrders)
-                            {
-                                combinedResults.AppendLine($"## Paso {stepOrder}");
-                                var stepResults = await db.StepExecution
-                                    .Where(e => e.CaseCode == caseCode && e.StepOrder == stepOrder)
-                                    .OrderBy(e => e.DataFileId)
-                                    .Select(e => e.ResponseContent)
-                                    .ToListAsync();
-                                combinedResults.AppendLine(string.Join("", stepResults));
-                            }
-                        }
+                //            foreach (var stepOrder in includedOrders)
+                //            {
+                //                combinedResults.AppendLine($"## Paso {stepOrder}");
+                //                var stepResults = await db.StepExecution
+                //                    .Where(e => e.CaseCode == caseCode && e.StepOrder == stepOrder)
+                //                    .OrderBy(e => e.DataFileId)
+                //                    .Select(e => e.ResponseContent)
+                //                    .ToListAsync();
+                //                combinedResults.AppendLine(string.Join("", stepResults));
+                //            }
+                //        }
 
-                        // Llamada final a OpenAI
-                        var finalResponse = await CallOpenAiAsync(
-                            finalAgent,
-                            prompt,
-                            combinedResults.ToString(),
-                            dataFiles.First().Id,
-                            stepOrder: 999,
-                            maxTokens: metadata.MaxTokens ?? 1000,
-                            temperature: metadata.Temperature ?? 0.2,
-                            topP: 1.0
-                        );
+                //        // Llamada final a OpenAI
+                //        var finalResponse = await CallOpenAiAsync(
+                //            finalAgent,
+                //            prompt,
+                //            combinedResults.ToString(),
+                //            dataFiles.First().Id,
+                //            stepOrder: 999,
+                //            maxTokens: metadata.MaxTokens ?? 1000,
+                //            temperature: metadata.Temperature ?? 0.2,
+                //            topP: 1.0
+                //        );
 
-                        // Guardar resultado final
-                        db.FinalResponseResult.Add(new FinalResponseResult
-                        {
-                            CaseCode = caseCode,
-                            ResponseText = finalResponse.ResultText,
-                            CreatedDate = DateTime.UtcNow
-                        });
-                        await db.SaveChangesAsync();
+                //        // Guardar resultado final
+                //        db.FinalResponseResult.Add(new FinalResponseResult
+                //        {
+                //            CaseCode = caseCode,
+                //            ResponseText = finalResponse.ResultText,
+                //            CreatedDate = DateTime.UtcNow
+                //        });
+                //        await db.SaveChangesAsync();
 
-                        sb.AppendLine("## Resumen Final");
-                        sb.AppendLine("```");
-                        sb.AppendLine(finalResponse.ResultText);
-                        sb.AppendLine("```");
-                    }
-                }
-                else
-                {
-                    // Modo por defecto: tomar todas las ejecuciones del último paso
-                    var lastStepOrder = processDefinition.ProcessStep.Max(s => s.StepOrder);
-                    var lastResponses = await db.StepExecution
-                        .Where(e => e.CaseCode == caseCode && e.StepOrder == lastStepOrder)
-                        .OrderBy(e => e.DataFileId)
-                        .ToListAsync();
+                //        sb.AppendLine("## Resumen Final");
+                //        sb.AppendLine("```");
+                //        sb.AppendLine(finalResponse.ResultText);
+                //        sb.AppendLine("```");
+                //    }
+                //}
+                //else
+                //{
+                //    // Modo por defecto: tomar todas las ejecuciones del último paso
+                //    var lastStepOrder = processDefinition.ProcessStep.Max(s => s.StepOrder);
+                //    var lastResponses = await db.StepExecution
+                //        .Where(e => e.CaseCode == caseCode && e.StepOrder == lastStepOrder)
+                //        .OrderBy(e => e.DataFileId)
+                //        .ToListAsync();
 
-                    sb.AppendLine("## Respuestas del último paso");
-                    sb.AppendLine("```");
-                    foreach (var resp in lastResponses)
-                    {
-                        sb.AppendLine($"- Archivo {resp.DataFileId}: {resp.ResponseContent}");
-                    }
-                    sb.AppendLine("```");
-                }
+                //    sb.AppendLine("## Respuestas del último paso");
+                //    sb.AppendLine("```");
+                //    foreach (var resp in lastResponses)
+                //    {
+                //        sb.AppendLine($"- Archivo {resp.DataFileId}: {resp.ResponseContent}");
+                //    }
+                //    sb.AppendLine("```");
+                //}
 
                 // 11. Retornar Nexus + resumen final
                 return Ok(new { caseCode, result = sb.ToString() });

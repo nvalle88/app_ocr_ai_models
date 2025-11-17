@@ -1,8 +1,4 @@
-﻿using app_tramites.Models.ViewModel;
-using System;
-using System.Collections.Generic;
-
-namespace app_tramites.Models.ModelAi;
+﻿namespace app_tramites.Models.ModelAi;
 
 public partial class Process
 {
@@ -14,6 +10,6 @@ public partial class Process
 
     public virtual ICollection<ProcessCase> ProcessCase { get; set; } = new List<ProcessCase>();
 
-    public virtual ICollection<ProcessStep> ProcessStep { get; set; } = new List<ProcessStep>();
+    //public virtual ICollection<ProcessStep> ProcessStep { get; set; } = new List<ProcessStep>();
     public virtual ICollection<AgentProcess> AgentProcesses { get; set; } = new List<AgentProcess>();
 }

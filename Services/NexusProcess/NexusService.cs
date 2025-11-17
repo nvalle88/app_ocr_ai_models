@@ -377,7 +377,7 @@ public class NexusService(OCRDbContext db) : INexusService
         //el proceso a partir del AgentProcess
         int agentProcessId = Int16.Parse(input.ProcessCode);
         var agentProcess = await db.AgentProcesses
-            .Include(ap => ap.Process).ThenInclude(p => p.ProcessStep.OrderBy(s => s.StepOrder))
+            .Include(ap => ap.Process)//.ThenInclude(p => p.ProcessStep.OrderBy(s => s.StepOrder))
             .FirstOrDefaultAsync(ap => ap.Id == agentProcessId);
 
         var nameProccess = agentProcess?.Process.Name;

@@ -1,8 +1,4 @@
-﻿using app_tramites.Models.ViewModel;
-using System;
-using System.Collections.Generic;
-
-namespace app_tramites.Models.ModelAi;
+﻿namespace app_tramites.Models.ModelAi;
 
 public partial class DataFile
 {
