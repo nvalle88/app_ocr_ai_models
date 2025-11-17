@@ -1,5 +1,4 @@
 #region Using
-
 using app_ocr_ai_models.Data;
 using app_tramites.Extensions;
 using app_tramites.Models.Dto;
@@ -7,14 +6,10 @@ using app_tramites.Models.ModelAi;
 using app_tramites.Models.ViewModel;
 using app_tramites.Services.NexusProcess;
 using app_tramites.Utils;
-using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Text;
-using System.Text.Json;
-
 
 #endregion
 
@@ -23,19 +18,6 @@ namespace SmartAdmin.Web.Controllers
     [Authorize]
     public class NexusController(OCRDbContext db, UserManager<IdentityUser> userManager, INexusService nexusService) : Controller
     {
-        /*private readonly OCRDbContext _db;
-        private readonly UserManager<IdentityUser> _userManager;
-        private readonly INexusService nexusService;
-
-
-        public NexusController(OCRDbContext context, UserManager<IdentityUser> userManager)
-        {
-            _userManager = userManager;
-            _db = context;
-        }*/
-
-
-
 
         // GET Nexus/Notes/GetNotes?caseCode=NE-123
         [HttpGet("GetNotes")]
@@ -291,101 +273,7 @@ namespace SmartAdmin.Web.Controllers
         //    }
 
         //    return Json(new { processed = pendientes.Count });
-        //}
-
-        // 4. EjecutarFinalResponse: lógica de prompt, llamada a OpenAI y guardado
-        //private async Task<FinalResponseResult> EjecutarFinalResponse(Guid caseCode)
-        //{
-        //    // Cargar caso, archivos y definición
-        //    var processCase = await db.ProcessCase
-        //        .Include(pc => pc.DataFile)
-        //        .Include(pc => pc.DefinitionCodeNavigation)                    
-        //            .ThenInclude(pd => pd.ProcessStep)
-        //        .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode);
-        //    if (processCase == null) return null;
-
-        //    var dataFiles = processCase.DataFile.ToList();
-        //    var processDefinition = processCase.DefinitionCodeNavigation;
-            
-        //    // Configuración final
-        //    var finalConfig = await db.FinalResponseConfig
-        //        .FirstOrDefaultAsync(cfg =>
-        //            cfg.ProcessCode == processDefinition.Code && cfg.IsEnabled);
-        //    if (finalConfig == null) return null;
-
-        //    var finalAgent = await db.Agent
-        //        .Include(a => a.AgentConfig)
-        //        .FirstOrDefaultAsync(a => a.Code == finalConfig.AgentCode);
-        //    if (finalAgent == null) return null;
-
-        //    // Construir prompt
-        //    string prompt = finalConfig.PromptTemplate
-        //        .Replace("{FileCount}", finalConfig.IncludeFileCount
-        //            ? dataFiles.Count.ToString() : "")
-        //        .Replace("{StepNames}", finalConfig.IncludeStepNames
-        //            ? string.Join(", ",
-        //                processDefinition.ProcessStep
-        //                    .OrderBy(s => s.StepOrder)
-        //                    .Select(s => s.StepName ?? s.StepOrder.ToString()))
-        //            : "");
-
-        //    var metadata = !string.IsNullOrWhiteSpace(finalConfig.MetadataJson)
-        //        ? JsonSerializer.Deserialize<FinalResponseMetadata>(finalConfig.MetadataJson)!
-        //        : new FinalResponseMetadata();
-        //    if (!string.IsNullOrWhiteSpace(metadata.CustomInstructions))
-        //        prompt += metadata.CustomInstructions;
-
-        //    // Combinar texto
-        //    var combined = new StringBuilder();
-        //    if (finalConfig.UseOriginalText)
-        //    {
-        //        foreach (var df in dataFiles)
-        //        {
-        //            var fileName = System.IO.Path.GetFileName(df.FileUri);
-        //            var ext = System.IO.Path.GetExtension(df.FileUri)?.ToLower().TrimStart('.') ?? "";
-        //            combined.AppendLine($"documento: {fileName}.{ext}---{df.Text}---");
-        //        }
-        //    }
-        //    else
-        //    {
-        //        var orders = finalConfig.IncludedStepOrders == "*"
-        //            ? processDefinition.ProcessStep.Select(s => s.StepOrder).ToList()
-        //            : finalConfig.IncludedStepOrders
-        //                .Split(',').Select(int.Parse).ToList();
-           
-        //        foreach (var stepOrder in orders)
-        //        {
-        //            combined.AppendLine($"## Paso {stepOrder}");
-        //            var stepResults = await db.StepExecution
-        //                .Where(e => e.CaseCode == caseCode && e.StepOrder == stepOrder)
-        //                .OrderBy(e => e.DataFileId)
-        //                .Select(e => e.ResponseContent)
-        //                .ToListAsync();
-        //            combined.Append(string.Join(Environment.NewLine, stepResults));
-        //        }
-        //    }
-        //    // Llamada a OpenAI
-        //    var finalResp = await nexusService.CallOpenAiAsync(
-        //        finalAgent,
-        //        prompt,
-        //        combined.ToString(),
-        //        dataFiles.First().Id,
-        //        stepOrder: 999,
-        //        maxTokens: metadata.MaxTokens ?? 100000,
-        //        temperature: metadata.Temperature ?? 0.2,
-        //        topP: 1.0);
-
-        //    var final = new FinalResponseResult
-        //    {
-        //        CaseCode = caseCode,
-        //        ResponseText = finalResp.ResultText,
-        //        CreatedDate = DateTime.Now
-        //    };
-        //    // Guardar resultado
-        //    db.FinalResponseResult.Add(final);
-        //    await db.SaveChangesAsync();
-        //    return final;
-        //}
+        //}        
 
 
         public class OutputHistory
@@ -490,11 +378,6 @@ namespace SmartAdmin.Web.Controllers
         //    string systemPrompt = prompt?.Content ?? "Sistema por defecto ... (revisa configuraciones)";
         //    var userContent = req.Message;
 
-
-
-
-
-
         //    // Adjuntamos el texto de los DataFile del caso
         //    var combined = new StringBuilder();
 
@@ -559,69 +442,7 @@ namespace SmartAdmin.Web.Controllers
             try
             {
                 var respuesta = await nexusService.CreateCaseProcess(input);
-                return Ok(respuesta);
-
-                //if (input == null || string.IsNullOrWhiteSpace(input.ProcessCode))
-                //    return BadRequest("ProcessCode es obligatorio.");
-                //var ocrSetting = await db.OCRSetting
-                //    .FirstOrDefaultAsync(x => x.SettingCode == "DEFAULT" && x.PlatformCode == "AZURE");
-                //if (ocrSetting == null)
-                //    return NotFound("Configuración OCR no encontrada.");
-
-                //var blobCfg = await db.AzureBlobConf.AsNoTracking().FirstOrDefaultAsync()
-                //  ?? throw new InvalidOperationException("AzureBlobConf no encontrada.");
-
-                //var ocrTasks = input.Files.Select(f =>
-                //    ProcessFileAsync(f, ocrSetting, blobCfg)
-                //);
-
-                //var ocrResults = await Task.WhenAll(ocrTasks);
-
-                ////el proceso a partir del AgentProcess
-                //int agentProcessId = Int16.Parse(input.ProcessCode);
-                //var agentProcess = await db.AgentProcesses
-                //    .Include(ap => ap.Process).ThenInclude(p => p.ProcessStep.OrderBy(s => s.StepOrder))
-                //    .FirstOrDefaultAsync(ap => ap.Id == agentProcessId);
-
-                //var nameProccess = agentProcess?.Process.Name;
-                //var processDef = agentProcess?.Process; /*await _db.Process
-                //    .Include(p => p.ProcessStep.OrderBy(s => s.StepOrder))
-                //    .FirstOrDefaultAsync(p => p.Code == input.ProcessCode);*/
-                //if (processDef == null)
-                //    return NotFound("Proceso no encontrado.");
-
-                //var caseCode = Guid.NewGuid();
-                //var processCase = new ProcessCase
-                //{
-                //    CaseCode = caseCode,
-                //    DefinitionCode = processDef.Code,
-                //    StartDate = DateTime.Now,
-                //    State = "Started"
-                //};
-                //db.ProcessCase.Add(processCase);
-                //await db.SaveChangesAsync();
-
-
-
-                //var dataFiles = ocrResults.Select(r => new DataFile
-                //{
-                //    CaseCode = caseCode,
-                //    IsFileUri = !string.IsNullOrEmpty(r.Url),
-                //    FileUri = r.Url,
-                //    Text = r.Text,
-                //    CreatedDate = DateTime.Now
-                //}).ToList();
-                //db.DataFile.AddRange(dataFiles);
-                //await db.SaveChangesAsync();
-
-                //return Ok(new
-                //{
-                //    caseCode = processCase.CaseCode,
-                //    definitionCode = processCase.DefinitionCode,
-                //    startDate = processCase.StartDate,
-                //    state = processCase.State,
-                //    nameProccess
-                //});
+                return Ok(respuesta);                
             }
             catch(NegocioException e)
             {
@@ -789,94 +610,12 @@ namespace SmartAdmin.Web.Controllers
                 return Unauthorized(new { success = false, message = "Usuario sin accesos." });
             }
 
-            var respuesta = await nexusService.GetProcessesByUser(user, roles);
-
-            //// Consultar las políticas asociadas al usuario
-            //var userPolicies = await db.PolicyUsers
-            //    .Include(pu => pu.Policys)
-            //        .ThenInclude(p => p.AccessAgentPolicies)
-            //        .ThenInclude(aap => aap.AgentProcess)
-            //        .ThenInclude(ap => ap!.Process)
-            //    .Where(pu => pu.UserId == user.Id)
-            //    .ToListAsync();
-
-            //// Consultar los procesos relacionados con las políticas del usuario
-            //var processesFromPolicies = userPolicies
-            //   .SelectMany(pu => pu.Policys.AccessAgentPolicies)
-            //   .Select(aap => new
-            //   {
-            //       aap.AgentProcess.Process,
-            //       ProcessAgentId = (int?)aap.AgentProcess.Id // Obtener el ProcessAgentId
-            //   })
-            //   //.Distinct()
-            //   .ToList();
-
-            //// Consultar los procesos relacionados con los roles del usuario
-            //var processesFromRoles = await db.RolProcesses
-            //    .Include(rp => rp.Process)
-            //    .Include(rp => rp.Rol)
-            //    .Where(rp => roles.Contains(rp.Rol.Name)) // Filtrar por roles del usuario
-            //    .Select(rp => new
-            //    {
-            //        rp.Process,
-            //        ProcessAgentId = (int?)null // No hay un ProcessAgentId en esta consulta
-            //    })
-            //    //.Distinct()
-            //    .ToListAsync();
-
-            //var allProcesses = processesFromPolicies
-            //    .Concat(processesFromRoles)
-            //    .Where(p => p.Process != null && !string.IsNullOrWhiteSpace(p.Process.Code))
-            //    .GroupBy(p => (p.Process.Code ?? "").Trim(), StringComparer.OrdinalIgnoreCase)
-            //    .Where(g => g.Any(x => x.ProcessAgentId.HasValue))
-            //    .Select(g =>
-            //    {
-            //        // Priorizar entradas con ProcessAgentId (vienen de policies), si hay varias elegir la primera
-            //        var chosen = g
-            //            .OrderByDescending(x => x.ProcessAgentId.HasValue)
-            //            .ThenBy(x => x.Process.Name ?? "")
-            //            .First();
-
-            //        return new
-            //        {
-            //            ProcessId = chosen.Process.Code,
-            //            ProcessName = chosen.Process.Name,
-            //            chosen.Process.Description,
-            //            chosen.ProcessAgentId
-            //        };
-            //    })
-            //    .ToList();
+            var respuesta = await nexusService.GetProcessesByUser(user, roles);            
 
             // Devolver los procesos como JSON
             return Json(respuesta);
 
-        }
-
-        //deberia ser un servicio
-        //private AgentProcess? BuscarPromptPorAgenteProceso(PromptRequest req, Process process)
-        //{
-        //    //lógica para buscar el prompt asociado al AgenteProceso
-        //    if (req.Origin == 2)//chat
-        //    {
-        //        return null;
-        //    }
-        //    else if (req.Origin == 3) //botones
-        //    {
-        //        return null;
-        //    }
-        //    else
-        //    {
-        //       return db.AgentProcesses
-        //            .Include(ap => ap.Agent)                    
-        //            .ThenInclude(a => a.OPAIModelPrompt)
-        //            .ThenInclude(op => op.PromptCodeNavigation)
-        //            .Include(ap => ap.Agent.AgentConfig)
-        //            .Where(ap => ap.DefinitionCode == process.Code && ap.Agent.IsActive)
-        //            .FirstOrDefault(ap => ap.Agent.OPAIModelPrompt
-        //            .Any(op => op.TypeAgent == 1 && op.IsDefault));
-
-        //    }
-        //}
+        }        
 
         [HttpPost]
         public async Task<IActionResult> EjecutarPrompt([FromBody] PromptRequest req)
