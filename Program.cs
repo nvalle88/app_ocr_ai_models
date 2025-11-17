@@ -47,9 +47,19 @@ namespace app_ocr_ai_models
                 options.ClaimsIdentity.UserIdClaimType = ClaimTypes.NameIdentifier; ;
             });
             builder.Services.AddControllersWithViews();
+            builder.Services.AddControllers(); // <-- registrar controllers para APIs
 
             builder.Services.AddTransient<IEmailSender, EmailSender>();
             builder.Services.AddTransient<INexusService, NexusService>();
+
+            // opcional: CORS para permitir llamadas desde Postman/otros clientes
+            builder.Services.AddCors(options =>
+            {
+                options.AddDefaultPolicy(policy => policy
+                    .AllowAnyOrigin()
+                    .AllowAnyMethod()
+                    .AllowAnyHeader());
+            });
 
             var app = builder.Build();
 
@@ -76,13 +86,15 @@ namespace app_ocr_ai_models
 
             app.UseRouting();
             app.UseAuthentication();
-
             app.UseAuthorization();
+
+            app.UseCors();
 
             app.MapControllerRoute(
                 name: "default",
                 pattern: "{controller=Home}/{action=Index}/{id?}");
             app.MapRazorPages();
+            app.MapControllers(); // <-- mapear rutas de API/Controllers
 
             // =======================================================
             // === BLOQUE DE INICIALIZACIÓN DE DATOS (SEEDING) =======

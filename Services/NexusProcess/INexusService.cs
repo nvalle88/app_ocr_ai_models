@@ -1,4 +1,5 @@
 ﻿using app_tramites.Models.Dto;
+using app_tramites.Models.External;
 using app_tramites.Models.ModelAi;
 using app_tramites.Models.ViewModel;
 using Microsoft.AspNetCore.Identity;
@@ -7,7 +8,7 @@ namespace app_tramites.Services.NexusProcess
 {
     public interface INexusService
     {
-        Task<FinalResponseResult> EjecutarPrompt(PromptRequest req);
+        Task<ResponsePromptDto> EjecutarPrompt(PromptRequest req);
         AgentProcess? BuscarPromptPorAgenteProceso(PromptRequest req, Process process);
         Task<OpenAiResponseDto> CallOpenAiAsync(
             Agent agent,

@@ -1,6 +1,7 @@
 ﻿using app_ocr_ai_models.Data;
 using app_tramites.Extensions;
 using app_tramites.Models.Dto;
+using app_tramites.Models.External;
 using app_tramites.Models.ModelAi;
 using app_tramites.Models.ViewModel;
 using app_tramites.Utils;
@@ -20,7 +21,7 @@ namespace app_tramites.Services.NexusProcess;
 public class NexusService(OCRDbContext db) : INexusService
 {
 
-    public async Task<FinalResponseResult> EjecutarPrompt(PromptRequest req)
+    public async Task<ResponsePromptDto> EjecutarPrompt(PromptRequest req)
     {
         // Cargar caso, archivos y definición
         var processCase = await db.ProcessCase
@@ -119,7 +120,19 @@ public class NexusService(OCRDbContext db) : INexusService
         };
         db.Usage.Add(usage);
         await db.SaveChangesAsync();
-        return final;
+
+        ResponsePromptDto result = new()
+        {
+            CaseCode = req.CaseCode,
+            ResponseText = final!.ResponseText,
+            MetadataJson = final.MetadataJson,
+            ProccessName = processDefinition.Name ?? "",
+            AgentName = agenteProceso!.Agent!.Name ?? "",
+            RequestText = final.RequestText ?? "",
+            CreatedDate = final.CreatedDate
+            
+        };
+        return result;
     }
 
     //deberia ser un servicio
@@ -302,8 +315,8 @@ public class NexusService(OCRDbContext db) : INexusService
            .SelectMany(pu => pu.Policys.AccessAgentPolicies)
            .Select(aap => new
            {
-               aap.AgentProcess.Process,
-               ProcessAgentId = (int?)aap.AgentProcess.Id // Obtener el ProcessAgentId
+               aap.AgentProcess?.Process,
+               ProcessAgentId = (int?)aap.AgentProcess?.Id // Obtener el ProcessAgentId
            })
            //.Distinct()
            .ToList();
@@ -410,7 +423,7 @@ public class NexusService(OCRDbContext db) : INexusService
         
     }
 
-    private async Task<(string Url, string Text)> ProcessFileAsync(
+    private static async Task<(string Url, string Text)> ProcessFileAsync(
      OcrFile file,
      OCRSetting ocrSetting,
      AzureBlobConf blobCfg,
@@ -442,7 +455,7 @@ public class NexusService(OCRDbContext db) : INexusService
         }
     }
 
-    private async Task<string> UploadBlobAsync(
+    private static async Task<string> UploadBlobAsync(
             OcrFile file,
             AzureBlobConf blobCfg)
     {
@@ -458,4 +471,5 @@ public class NexusService(OCRDbContext db) : INexusService
 
         return blobClient.Uri.ToString();
     }
+    
 }

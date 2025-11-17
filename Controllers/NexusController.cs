@@ -394,13 +394,13 @@ namespace SmartAdmin.Web.Controllers
             public List<string> GeneratedSteps { get; set; } = new();
         }
 
-        public class ChatRequest
-        {
-            public Guid CaseCode { get; set; }
-            public string Message { get; set; } = "";
-            public List<string> FileUrls { get; set; } = new();
-            public string Origin { get; set; }
-        }
+        //public class ChatRequest
+        //{
+        //    public Guid CaseCode { get; set; }
+        //    public string Message { get; set; } = "";
+        //    public List<string> FileUrls { get; set; } = new();
+        //    public string Origin { get; set; }
+        //}
 
         // Models/ChatRequest.cs
         //public class ChatRequest
@@ -411,144 +411,144 @@ namespace SmartAdmin.Web.Controllers
         //}
 
         // Controllers/NexusController.cs
-        [HttpPost]
-        public async Task<IActionResult> ChatAjax([FromBody] ChatRequest req)
-        {
-            if (req == null
-                || req.CaseCode == Guid.Empty
-                )
-                return BadRequest("Datos inválidos.");
+        //[HttpPost]
+        //public async Task<IActionResult> ChatAjax([FromBody] ChatRequest req)
+        //{
+        //    if (req == null
+        //        || req.CaseCode == Guid.Empty
+        //        )
+        //        return BadRequest("Datos inválidos.");
 
-            // 1) Recupera el caso y sus archivos
-            var processCase = await db.ProcessCase
-                .Include(pc => pc.DataFile)
-                .FirstOrDefaultAsync(pc => pc.CaseCode == req.CaseCode);
-            if (processCase == null)
-                return NotFound("Caso no encontrado.");
+        //    // 1) Recupera el caso y sus archivos
+        //    var processCase = await db.ProcessCase
+        //        .Include(pc => pc.DataFile)
+        //        .FirstOrDefaultAsync(pc => pc.CaseCode == req.CaseCode);
+        //    if (processCase == null)
+        //        return NotFound("Caso no encontrado.");
 
-            var usuario = await userManager.GetUserAsync(User);
+        //    var usuario = await userManager.GetUserAsync(User);
 
-            // 2) Lógica para elegir prompt / agent según req.Origin
-            //    Si Origin está vacío -> usar el prompt / agente por defecto ("chat-nexus")
-            OPAIPrompt prompt = null;
-            Agent agent = null;
-            FinalResponseConfig config = null;
-            OPAIModelPrompt promtModel = null;
+        //    // 2) Lógica para elegir prompt / agent según req.Origin
+        //    //    Si Origin está vacío -> usar el prompt / agente por defecto ("chat-nexus")
+        //    OPAIPrompt prompt = null;
+        //    Agent agent = null;
+        //    FinalResponseConfig config = null;
+        //    OPAIModelPrompt promtModel = null;
 
-            if (string.IsNullOrWhiteSpace(req.Origin))
-            {
-                // comportamiento actual por defecto
-                // Updated line to handle possible null value by using the null-coalescing operator
-                config = db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled)
-                         ?? throw new InvalidOperationException("FinalResponseConfig not found for ProcessCode 'A-HOSP'.");
-                // Updated line to handle possible null value by using the null-coalescing operator
-                prompt = await db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == "chat-nexus")
-                         ?? throw new InvalidOperationException("Prompt with code 'chat-nexus' not found.");
+        //    if (string.IsNullOrWhiteSpace(req.Origin))
+        //    {
+        //        // comportamiento actual por defecto
+        //        // Updated line to handle possible null value by using the null-coalescing operator
+        //        config = db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled)
+        //                 ?? throw new InvalidOperationException("FinalResponseConfig not found for ProcessCode 'A-HOSP'.");
+        //        // Updated line to handle possible null value by using the null-coalescing operator
+        //        prompt = await db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == "chat-nexus")
+        //                 ?? throw new InvalidOperationException("Prompt with code 'chat-nexus' not found.");
 
-                // Updated the line to handle possible null value by using the null-coalescing operator
-                config = db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled)
-                         ?? throw new InvalidOperationException("FinalResponseConfig not found for ProcessCode 'A-HOSP'.");
-                // Updated line to handle possible null value by using the null-coalescing operator
-                agent = await db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode)
-                        ?? throw new InvalidOperationException($"Agent not found for AgentCode '{config.AgentCode}'.");
+        //        // Updated the line to handle possible null value by using the null-coalescing operator
+        //        config = db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled)
+        //                 ?? throw new InvalidOperationException("FinalResponseConfig not found for ProcessCode 'A-HOSP'.");
+        //        // Updated line to handle possible null value by using the null-coalescing operator
+        //        agent = await db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode)
+        //                ?? throw new InvalidOperationException($"Agent not found for AgentCode '{config.AgentCode}'.");
 
-            }
-            else
-            {
-                // Intentar localizar un prompt con el código enviado en Origin
-                prompt = await db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == req.Origin);
+        //    }
+        //    else
+        //    {
+        //        // Intentar localizar un prompt con el código enviado en Origin
+        //        prompt = await db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == req.Origin);
 
-                if (prompt != null)
-                {
-                    // Encontramos un prompt específico: usamos su contenido
-                    // (aún usamos el config/agent por defecto salvo que tengas mapping adicional)
-                    config = db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
-                    promtModel = db.OPAIModelPrompt.FirstOrDefault(x => x.PromptCode ==prompt.Code);
-                    agent = await db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == promtModel.ModelCode);
-                }
-                else
-                {
-                    // Si no hay prompt, intentar buscar un Agent con ese código
-                    agent = await db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == req.Origin);
-                    if (agent != null)
-                    {
-                        // Si existe un Agent con ese código, intentar obtener la FinalResponseConfig relacionado
-                        config = db.FinalResponseConfig.FirstOrDefault(x => x.AgentCode == agent.Code && x.IsEnabled)
-                                 ?? db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
-                    }
-                    else
-                    {
-                        // Fallback: usamos el prompt/agent por defecto
-                        prompt = await db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == "chat-nexus");
-                        config = db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
-                        agent = await db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode);
-                    }
-                }
-            }
+        //        if (prompt != null)
+        //        {
+        //            // Encontramos un prompt específico: usamos su contenido
+        //            // (aún usamos el config/agent por defecto salvo que tengas mapping adicional)
+        //            config = db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
+        //            promtModel = db.OPAIModelPrompt.FirstOrDefault(x => x.PromptCode ==prompt.Code);
+        //            agent = await db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == promtModel.ModelCode);
+        //        }
+        //        else
+        //        {
+        //            // Si no hay prompt, intentar buscar un Agent con ese código
+        //            agent = await db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == req.Origin);
+        //            if (agent != null)
+        //            {
+        //                // Si existe un Agent con ese código, intentar obtener la FinalResponseConfig relacionado
+        //                config = db.FinalResponseConfig.FirstOrDefault(x => x.AgentCode == agent.Code && x.IsEnabled)
+        //                         ?? db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
+        //            }
+        //            else
+        //            {
+        //                // Fallback: usamos el prompt/agent por defecto
+        //                prompt = await db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == "chat-nexus");
+        //                config = db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
+        //                agent = await db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == config.AgentCode);
+        //            }
+        //        }
+        //    }
 
-            // 3) Construir prompts para la llamada a OpenAI
-            string systemPrompt = prompt?.Content ?? "Sistema por defecto ... (revisa configuraciones)";
-            var userContent = req.Message;
-
-
+        //    // 3) Construir prompts para la llamada a OpenAI
+        //    string systemPrompt = prompt?.Content ?? "Sistema por defecto ... (revisa configuraciones)";
+        //    var userContent = req.Message;
 
 
 
 
-            // Adjuntamos el texto de los DataFile del caso
-            var combined = new StringBuilder();
-
-            foreach (var df in processCase.DataFile)
-            {
-                var fileName = System.IO.Path.GetFileName(df.FileUri);
-                var ext = System.IO.Path.GetExtension(df.FileUri)?.ToLower().TrimStart('.') ?? "";
-                combined.AppendLine($"documento: {fileName}.{ext}---{df.Text}---");
-            }
-
-            var allText = combined.ToString();
-
-            // Si el cliente envió file URLs explícitas, podemos anexarlas o hacer algo con ellas:
-            if (req.FileUrls != null && req.FileUrls.Any())
-            {
-                userContent += "\n\nArchivos remitidos por el cliente:\n" + string.Join("\n", req.FileUrls);
-            }
-
-            userContent += $"\n\nInformación del Caso número NE-{(processCase.CaseCode.ToString()?.Split('-').FirstOrDefault() ?? "")}: Usuario que consulta: Auditor de Saldusa\n"
-                           + allText;
-
-            var metadata = !string.IsNullOrWhiteSpace(config.MetadataJson)
-                ? JsonSerializer.Deserialize<FinalResponseMetadata>(config.MetadataJson)!
-                : new FinalResponseMetadata();
 
 
-            var aiDto = await nexusService.CallOpenAiAsync(
-                agent: agent,
-                systemContent: systemPrompt,
-                userText: userContent,
-                dataFileId: processCase.DataFile.First().Id,
-                stepOrder: 0,
-                maxTokens: metadata.MaxTokens ?? 16000,
-                temperature: 0.2,
-                topP: 1.0
-            );
+        //    // Adjuntamos el texto de los DataFile del caso
+        //    var combined = new StringBuilder();
 
-            // 5) Guardar resultado en BD (igual que antes)
-            var final = new FinalResponseResult
-            {
-                CaseCode = req.CaseCode,
-                ResponseText = aiDto.ResultText,
-                CreatedDate = DateTime.Now
-            };
-            db.FinalResponseResult.Add(final);
-            await db.SaveChangesAsync();
+        //    foreach (var df in processCase.DataFile)
+        //    {
+        //        var fileName = System.IO.Path.GetFileName(df.FileUri);
+        //        var ext = System.IO.Path.GetExtension(df.FileUri)?.ToLower().TrimStart('.') ?? "";
+        //        combined.AppendLine($"documento: {fileName}.{ext}---{df.Text}---");
+        //    }
 
-            // 6) Devolver la respuesta
-            return Json(new
-            {
-                response = aiDto.ResultText,
-                timestamp = final.CreatedDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
-            });
-        }
+        //    var allText = combined.ToString();
+
+        //    // Si el cliente envió file URLs explícitas, podemos anexarlas o hacer algo con ellas:
+        //    if (req.FileUrls != null && req.FileUrls.Any())
+        //    {
+        //        userContent += "\n\nArchivos remitidos por el cliente:\n" + string.Join("\n", req.FileUrls);
+        //    }
+
+        //    userContent += $"\n\nInformación del Caso número NE-{(processCase.CaseCode.ToString()?.Split('-').FirstOrDefault() ?? "")}: Usuario que consulta: Auditor de Saldusa\n"
+        //                   + allText;
+
+        //    var metadata = !string.IsNullOrWhiteSpace(config.MetadataJson)
+        //        ? JsonSerializer.Deserialize<FinalResponseMetadata>(config.MetadataJson)!
+        //        : new FinalResponseMetadata();
+
+
+        //    var aiDto = await nexusService.CallOpenAiAsync(
+        //        agent: agent,
+        //        systemContent: systemPrompt,
+        //        userText: userContent,
+        //        dataFileId: processCase.DataFile.First().Id,
+        //        stepOrder: 0,
+        //        maxTokens: metadata.MaxTokens ?? 16000,
+        //        temperature: 0.2,
+        //        topP: 1.0
+        //    );
+
+        //    // 5) Guardar resultado en BD (igual que antes)
+        //    var final = new FinalResponseResult
+        //    {
+        //        CaseCode = req.CaseCode,
+        //        ResponseText = aiDto.ResultText,
+        //        CreatedDate = DateTime.Now
+        //    };
+        //    db.FinalResponseResult.Add(final);
+        //    await db.SaveChangesAsync();
+
+        //    // 6) Devolver la respuesta
+        //    return Json(new
+        //    {
+        //        response = aiDto.ResultText,
+        //        timestamp = final.CreatedDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+        //    });
+        //}
 
 
 
@@ -748,31 +748,27 @@ namespace SmartAdmin.Web.Controllers
         //    return blobClient.Uri.ToString();
         //}
 
+        //public Stream Base64ToStream(string base64String)
+        //{
+        //    byte[] bytes = Convert.FromBase64String(base64String);
+        //    return new MemoryStream(bytes);
+        //}
+        //public async Task<string> UploadFileAsync(Stream fileStream, string extension)
+        //{
+        //    var config = await db.AzureBlobConf
+        //        .FirstOrDefaultAsync();
 
+        //    var blobServiceClient = new BlobServiceClient(config.ConnectionString);
+        //    var containerClient = blobServiceClient.GetBlobContainerClient(config.ContainerName);
 
+        //    await containerClient.CreateIfNotExistsAsync();
 
+        //    var name = $"{Guid.NewGuid()}{extension}";
+        //    var blobClient = containerClient.GetBlobClient(name);
+        //    await blobClient.UploadAsync(fileStream, overwrite: true);
 
-        public Stream Base64ToStream(string base64String)
-        {
-            byte[] bytes = Convert.FromBase64String(base64String);
-            return new MemoryStream(bytes);
-        }
-        public async Task<string> UploadFileAsync(Stream fileStream, string extension)
-        {
-            var config = await db.AzureBlobConf
-                .FirstOrDefaultAsync();
-
-            var blobServiceClient = new BlobServiceClient(config.ConnectionString);
-            var containerClient = blobServiceClient.GetBlobContainerClient(config.ContainerName);
-
-            await containerClient.CreateIfNotExistsAsync();
-
-            var name = $"{Guid.NewGuid()}{extension}";
-            var blobClient = containerClient.GetBlobClient(name);
-            await blobClient.UploadAsync(fileStream, overwrite: true);
-
-            return blobClient.Uri.ToString();
-        }
+        //    return blobClient.Uri.ToString();
+        //}
 
         [HttpGet]
         public async Task<IActionResult> GetProcessesByUser()
