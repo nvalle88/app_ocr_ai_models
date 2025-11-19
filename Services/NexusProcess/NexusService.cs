@@ -104,7 +104,8 @@ public class NexusService(OCRDbContext db) : INexusService
             ResponseText = finalResp.ResultText,
             CreatedDate = DateTime.Now,
             RequestText = requestText,
-            MetadataJson = JsonSerializer.Serialize(metadata, options)
+            MetadataJson = JsonSerializer.Serialize(metadata, options),
+            AgentProccessId = agenteProceso.Id
         };
 
         // Guardar resultado
@@ -337,17 +338,17 @@ public class NexusService(OCRDbContext db) : INexusService
         List<ViewAgentProcess> allProcesses = [.. processesFromPolicies
             .Concat(processesFromRoles)
             .Where(p => p.Process != null && !string.IsNullOrWhiteSpace(p.Process.Code))
-            .GroupBy(p => (p.Process.Code ?? "").Trim(), StringComparer.OrdinalIgnoreCase)
+            .GroupBy(p => (p.Process?.Code ?? "").Trim(), StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Any(x => x.ProcessAgentId.HasValue))
             .Select(g =>
             {
                 // Priorizar entradas con ProcessAgentId (vienen de policies), si hay varias elegir la primera
                 var chosen = g
                     .OrderByDescending(x => x.ProcessAgentId.HasValue)
-                    .ThenBy(x => x.Process.Name ?? "")
+                    .ThenBy(x => x.Process!.Name ?? "")
                     .First();
 
-                return new ViewAgentProcess { ProcessId = chosen.Process.Code, ProcessName = chosen.Process.Name,  Description = chosen.Process.Description,ProcessAgentId = chosen.ProcessAgentId };
+                return new ViewAgentProcess { ProcessId = chosen.Process!.Code, ProcessName = chosen.Process.Name,  Description = chosen.Process.Description,ProcessAgentId = chosen.ProcessAgentId };
             })];
 
         
@@ -360,10 +361,10 @@ public class NexusService(OCRDbContext db) : INexusService
 
         if (input == null || string.IsNullOrWhiteSpace(input.ProcessCode))
             throw new NegocioException("ProcessCode es obligatorio.");
-            //return BadRequest("ProcessCode es obligatorio.");
+            
         var ocrSetting = await db.OCRSetting
             .FirstOrDefaultAsync(x => x.SettingCode == "DEFAULT" && x.PlatformCode == "AZURE") ?? throw new NegocioException("Configuración OCR no encontrada.");
-        //return NotFound("Configuración OCR no encontrada.");
+        
 
         var blobCfg = await db.AzureBlobConf.AsNoTracking().FirstOrDefaultAsync()
             ?? throw new InvalidOperationException("AzureBlobConf no encontrada.");
@@ -381,11 +382,7 @@ public class NexusService(OCRDbContext db) : INexusService
             .FirstOrDefaultAsync(ap => ap.Id == agentProcessId);
 
         var nameProccess = agentProcess?.Process.Name;
-        var processDef = agentProcess?.Process;
-        if (processDef == null)
-            throw new NegocioException("Proceso no encontrado.");
-        //return NotFound("Proceso no encontrado.");
-
+        var processDef = (agentProcess?.Process) ?? throw new NegocioException("Proceso no encontrado.");
         var caseCode = Guid.NewGuid();
         var processCase = new ProcessCase
         {
@@ -397,8 +394,6 @@ public class NexusService(OCRDbContext db) : INexusService
         db.ProcessCase.Add(processCase);
         await db.SaveChangesAsync();
 
-
-
         var dataFiles = ocrResults.Select(r => new DataFile
         {
             CaseCode = caseCode,
@@ -409,8 +404,6 @@ public class NexusService(OCRDbContext db) : INexusService
         }).ToList();
         db.DataFile.AddRange(dataFiles);
         await db.SaveChangesAsync();
-
-
 
         return new ViewCreateCase
         {
@@ -439,7 +432,7 @@ public class NexusService(OCRDbContext db) : INexusService
             // Ejecutar OCR con timeout
             var clientOcr = new DocumentIntelligenceClient(
                 new Uri(ocrSetting.Endpoint),
-                new AzureKeyCredential(ocrSetting.ApiKey));
+                new AzureKeyCredential(ocrSetting.ApiKey!));
 
             var operation = await clientOcr.AnalyzeDocumentAsync(
                 WaitUntil.Completed,
@@ -449,7 +442,7 @@ public class NexusService(OCRDbContext db) : INexusService
 
             return (Url: blobUrl, Text: operation.Value.Content);
         }
-        catch (TaskCanceledException ex)
+        catch (TaskCanceledException)
         {
             throw new TimeoutException($"El procesamiento del archivo superó el tiempo límite de {timeoutMilliseconds} ms.");
         }

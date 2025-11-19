@@ -19,5 +19,6 @@ namespace app_tramites.Models.ModelAi
         public virtual Agent Agent { get; set; } = null!;
         public virtual Process Process { get; set; } = null!;
         public virtual ICollection<AccessAgentPolicy> AccessAgentPolicies { get; set; } = new List<AccessAgentPolicy>();
+        public virtual ICollection<FinalResponseResult> FinalResponseResults { get; set; } = new List<FinalResponseResult>();
     }
 }

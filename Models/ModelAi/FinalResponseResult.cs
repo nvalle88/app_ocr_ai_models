@@ -25,8 +25,13 @@ namespace app_tramites.Models.ModelAi
 
         public string? MetadataJson { get; set; }
 
+        public int AgentProccessId { get; set; }
+
         [ForeignKey("CaseCode")]
         public virtual ProcessCase ProcessCase { get; set; } = null!;
+
+        [ForeignKey("AgentProccessId")]
+        public virtual AgentProcess AgentProcess { get; set; } = null!;
 
     }
 }
