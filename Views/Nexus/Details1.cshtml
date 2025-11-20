@@ -207,7 +207,7 @@
                         var showStudioTiles = (Model?.HasButton ?? false);
                     }
                     <!-- START: Studio tiles Botones dibujar y ocultar-->
-                    <div class="studio-grid" aria-hidden="@(showStudioTiles ? "false" : "true")" data-studio-visible="@showStudioTiles.ToString().ToLower()" style="@(showStudioTiles ? "" : "display:none;")">
+                    @* <div class="studio-grid" aria-hidden="@(showStudioTiles ? "false" : "true")" data-studio-visible="@showStudioTiles.ToString().ToLower()" style="@(showStudioTiles ? "" : "display:none;")">
                             <button id="studioAudio" class="studio-tile tile-audio" title="Validación contractual" type="button" aria-label="Validación contractual">
                                 <div class="tile-top">
                                     <div class="tile-icon"><i class="fa fa-wave-square"></i></div>
@@ -237,8 +237,33 @@
                                     <div class="tile-title">Facturas</div>
                                 </div>
                             </button>
-
+ 
+                        </div>*@
+                    <!-- START: Studio tiles Botones dibujar y ocultar-->
+                    @* Si showStudioTiles == false NO se genera ni HTML ni script *@
+                    @if (showStudioTiles && Model?.AgentProccessButtons != null && Model.AgentProccessButtons.Any())
+                    {
+                        <div class="studio-grid" aria-hidden="false" data-studio-visible="true">
+                            @foreach (var b in Model.AgentProccessButtons)
+                            {
+                                var btnId = !string.IsNullOrWhiteSpace(b.ButtonId) ? b.ButtonId : ("studioBtn_" + (b.AgentProcessId?.ToString() ?? Guid.NewGuid().ToString()));
+                                var cssClass = !string.IsNullOrWhiteSpace(b.ClassName) ? b.ClassName : "studio-tile";
+                                <button id="@btnId" class="@cssClass" title="@(b.Tittle ?? "")" type="button" aria-label="@(b.AriaLabel ?? b.Name ?? "")" data-agentprocessid="@(b.AgentProcessId)">
+                                    <div class="tile-top">
+                                        <div class="tile-icon"><i class="@(b.Icon ?? "")"></i></div>
+                                        <div class="tile-menu"><i class="@(b.IconMenu ?? "fa fa-ellipsis-vertical")"></i></div>
+                                    </div>
+                                    <div class="tile-body">
+                                        <div class="tile-title">@(b.Name ?? "")</div>
+                                    </div>
+                                </button>
+                            }
                         </div>
+                    }
+                    else
+                    {
+                        // no se genera HTML
+                    }
                     <hr class="my-2" />
 
                     <!-- START: Notes list (colocar entre .studio-grid y el <hr>) -->
@@ -713,9 +738,70 @@
                 const chatInner = q('#chatInputInner');
                 const sendBtn = q('#sendChat');
                 const chatOutputEl = q('#chatOutput');
-                const studioAudioBtn = q('#studioAudio');if (!studioAudioBtn) return;
-                const studioVideoBtn = q('#studioVideo');if (!studioVideoBtn) return;
-                const studioMindBtn = q('#studioMind');if (!studioMindBtn) return;
+                // Seleccionamos todas las tiles dinámicas (si no hay, no rompemos)
+                const studioTiles = qa('.studio-tile');
+                // Bind genérico para tiles (si existen)
+                if (studioTiles && studioTiles.length > 0) {
+                    studioTiles.forEach(tile => {
+                        tile.addEventListener('click', async (ev) => {
+                            ev.preventDefault();
+                            const btn = tile;
+                            btn.disabled = true;
+                            btn.classList.add('loading');
+                            // Recupera caseCode desde el panel (o inyectado desde Razor)
+                            const casePanel = q('#cfTopPanel');
+                            const caseCode = casePanel ? casePanel.dataset.case : '@Model.ProcessCase.CaseCode';
+                            // Mensaje que se enviará al controlador (puedes ajustarlo)
+                            const message  = textarea?.value?.trim();
+                            // UI thinking
+                            const thinking = startThinking();
+                            setBtnLoading(true);
+                            try {
+                                await stabilizePositionDuringTransition(900);
+                                const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'BUTTON', id: btn.dataset.agentprocessid})
+                                });
+                                setBtnLoading(false);
+                                stopThinking(thinking);
+                                if (!resp.ok) throw new Error(resp.statusText || 'Error en la petición');
+                                const data = await resp.json();
+                                // Convierte la respuesta (markdown) a HTML y la escribe en el panel con la misma animación
+                                const combinedMd = combineRequestResponseMd(data);
+                                const html = (typeof marked !== 'undefined') ? marked.parse(combinedMd || '') : (combinedMd || '');
+                                if (chatOutputEl) {
+                                    await typeWriteInto(chatOutputEl, html, 3);
+                                }
+
+                                // Limpia / enfoca textarea como en el flujo normal
+                                const ta = q('#chatInput');
+                                if (ta) {
+                                    ta.value = '';
+                                    try { autoResize(ta); } catch (e) {}
+                                    try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
+                                }
+                            } catch (err) {
+                                console.error('studio tile error', err);
+                                stopThinking();
+                                setBtnLoading(false);
+                                Swal.fire({
+                                    icon: 'warning',
+                                    title: 'Advertencia',
+                                    text: 'Error al generar la respuesta: ' + (err && err.message ? err.message : 'Error en la petición'),
+                                });
+                            } finally {
+                                btn.disabled = false;
+                                btn.classList.remove('loading');
+                                stopThinking();
+                                positionChatInput();
+                            }
+                        });
+                    });
+                }
+                // const studioAudioBtn = q('#studioAudio');if (!studioAudioBtn) return;
+                // const studioVideoBtn = q('#studioVideo');if (!studioVideoBtn) return;
+                // const studioMindBtn = q('#studioMind');if (!studioMindBtn) return;
 
                 // studioMindBtn.addEventListener('click', async (ev) => {
                 //         ev.preventDefault();

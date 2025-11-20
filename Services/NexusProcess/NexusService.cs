@@ -67,7 +67,7 @@ public class NexusService(OCRDbContext db) : INexusService
         }
 
         var context = string.Empty;
-        if (req.Origin.Equals(ConstanteTipoAgente.Chat, StringComparison.OrdinalIgnoreCase))
+        if (req.Origin.Equals(ConstanteTipoAgente.Chat, StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(req.Message))
         {
             context =  userContent + $"\n\nInformación del Caso número NE-{(processCase.CaseCode.ToString()?.Split('-').FirstOrDefault() ?? "")}: Usuario que consulta: {req.Usuario}\n" +
                 combined.ToString();
@@ -136,8 +136,8 @@ public class NexusService(OCRDbContext db) : INexusService
         return result;
     }
 
-    //deberia ser un servicio
-    public AgentProcess? BuscarPromptPorAgenteProceso(PromptRequest req, Process process)
+
+    /*public AgentProcess? BuscarPromptPorAgenteProceso(PromptRequest req, Process process)
     {
         
         var data =  db.AgentProcesses
@@ -151,6 +151,28 @@ public class NexusService(OCRDbContext db) : INexusService
 
         return data;
 
+    }*/
+
+    public AgentProcess? BuscarPromptPorAgenteProceso(PromptRequest req, Process process)
+    {
+        
+        var query = db.AgentProcesses
+            .Include(ap => ap.Agent)
+                .ThenInclude(a => a.OPAIModelPrompt)
+                .ThenInclude(op => op.PromptCodeNavigation)
+            .Include(ap => ap.Agent.AgentConfig)
+            .Where(ap => ap.DefinitionCode == process.Code && ap.Agent.IsActive)
+            .AsQueryable();
+        
+        if (req?.Id > 0)
+        {
+            query = query.Where(ap => ap.Id == req.Id);
+        }
+
+        var data = query.FirstOrDefault(ap =>
+            ap.Agent.OPAIModelPrompt.Any(op => op.TypeAgentNavigation.Code == req!.Origin));
+
+        return data;
     }
 
     public async Task<OpenAiResponseDto> CallOpenAiAsync(
@@ -216,30 +238,72 @@ public class NexusService(OCRDbContext db) : INexusService
             .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode);
     }
 
+    private static List<AgentProccessButton> GetAgentButtons(List<AgentTypeDto> agentsConfig)
+    {
+        List<AgentProccessButton> buttons = [];
+        var config = agentsConfig.Where(ac => ac.Code.Equals(ConstanteTipoAgente.Botones, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(c => c.OPAIModelPrompt)
+            .ToList();
+        foreach (var button in config)
+        {
+            var buttonConfig = new AgentProccessButton
+            {
+                ButtonId = button.ButtonId,
+                ClassName = button.ClassName,
+                Tittle = button.Tittle,
+                Icon = button.Icon,
+                IconMenu = button.IconMenu,
+                AriaLabel = button.AriaLabel,
+                Name = button.NameButton,
+                AgentProcessId = button.ModelCodeNavigation?.AgentProcesses
+                    .FirstOrDefault(ap => ap.AgentCode == button.ModelCode)?.Id,
+            };
+            buttons.Add(buttonConfig);
+        }
+        /*buttons =
+            [
+               new AgentProccessButton
+                {
+                    ButtonId = "studioAudio",
+                    ClassName = "studio-tile tile-audio",
+                    Tittle = "Validación contractual",
+                    Icon = "fa fa-wave-square",
+                    IconMenu = "fa fa-ellipsis-vertical",
+                    AriaLabel = "Validación contractual",
+                    Name = "Contratos",
+                    AgentProcessId = 1//agents.FirstOrDefault(a => a.Code == ConstanteTipoAgente.Chat)?.CatalogId
+                }
+            ];*/
+
+        return buttons;
+    }
+
     public async Task<ViewCaseDetails?> ObtenerDetailsProcessCase(Guid caseCode, IdentityUser? user)
     {
         var proccess = await db.ProcessCase
             .Include(pc => pc.FinalResponseResults).Include(pc => pc.DataFile)
-            .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode);
-
-        if (proccess == null)
-            throw new NegocioException("No hay información que mostrar");
-
+            .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode) ?? throw new NegocioException("No hay información que mostrar");
         var agents = await GetAgentTypesForUserAndProcessAsync(user, proccess.DefinitionCode);
         bool hasChat = false;
         bool hasButton = false;
+        List<AgentProccessButton> buttons = [];
 
         if (agents is not null && agents.Count > 0)
         {
             hasChat = agents.Any(c => c.Code.Equals(ConstanteTipoAgente.Chat, StringComparison.OrdinalIgnoreCase));
             hasButton = agents.Any(c => c.Code.Equals(ConstanteTipoAgente.Botones, StringComparison.OrdinalIgnoreCase));
+            if (hasButton)
+            {
+                buttons = GetAgentButtons(agents);
+            }
         }
 
         var details = new ViewCaseDetails
         {
             HasChat = hasChat,
             HasButton = hasButton,
-            ProcessCase = proccess!
+            ProcessCase = proccess!,
+            AgentProccessButtons = buttons
         };
 
         return details;
@@ -291,7 +355,8 @@ public class NexusService(OCRDbContext db) : INexusService
                     Code = cat.Code,
                     CatalogId = cat.Id,
                     DefinitionCode = ap.DefinitionCode,
-                    AgentCode = ap.AgentCode
+                    AgentCode = ap.AgentCode,
+                    OPAIModelPrompt = ap.Agent.OPAIModelPrompt?.ToList()!,
                 }))
             .DistinctBy(d => (d.CatalogId, d.AgentCode, d.DefinitionCode))
             .ToList();

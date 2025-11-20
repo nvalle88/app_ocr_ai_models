@@ -16,6 +16,14 @@ public partial class OPAIModelPrompt
 
     public string? MetadataJson { get; set; }
 
+    public string? ButtonId { get; set; }
+    public string? ClassName { get; set; }
+    public string? Tittle { get; set; }
+    public string? Icon { get; set; }
+    public string? IconMenu { get; set; }
+    public string? AriaLabel { get; set; }
+    public string? NameButton { get; set; }
+
     public virtual Agent ModelCodeNavigation { get; set; } = null!;
 
     public virtual OPAIPrompt PromptCodeNavigation { get; set; } = null!;
