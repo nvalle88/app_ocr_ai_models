@@ -70,9 +70,6 @@ public class NexusService : INexusService
         var combined = new StringBuilder();
         foreach (var df in dataFiles)
         {
-            //var fileName = Path.GetFileName(df.OriginalName);
-            //var ext = Path.GetExtension(df.FileUri)?.ToLower().TrimStart('.') ?? "";
-            //combined.AppendLine($"documento: {fileName}.{ext}---{df.Text}---");
             combined.AppendLine($"documento: {df.OriginalName}---{df.Text}---");
         }
 
@@ -423,7 +420,7 @@ public class NexusService : INexusService
         //el proceso a partir del AgentProcess
         int agentProcessId = Int16.Parse(input.ProcessCode);
         var agentProcess = await db.AgentProcesses
-            .Include(ap => ap.Process)//.ThenInclude(p => p.ProcessStep.OrderBy(s => s.StepOrder))
+            .Include(ap => ap.Process)
             .FirstOrDefaultAsync(ap => ap.Id == agentProcessId);
 
         var nameProccess = agentProcess?.Process.Name;
