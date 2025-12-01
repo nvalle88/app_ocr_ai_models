@@ -147,6 +147,13 @@
                                                             <i class="fa fa-eye"></i>
                                                         </button>
                                                     }
+                                                    else if (done && resumenCategoria == "No Definido")
+                                                    {
+                                                        <button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails" data-nameproccess="NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))" data-casecode="@c.CaseCode" data-processcode="" onclick="handleViewDetails(this)">
+                                                            <i class="fa fa-eye"></i>
+                                                        </button>
+                                                        <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-nameproccess="NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))" data-casecode="@c.CaseCode" data-processcode=""><i class="fa fa-play"></i></button>
+                                                    }
                                                     else
                                                     {
                                                         <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-nameproccess="NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))" data-casecode="@c.CaseCode" data-processcode=""><i class="fa fa-play"></i></button>
@@ -471,7 +478,8 @@
 
 
                     if (tipoNombre.toLowerCase().includes('no definido')) {
-                            row.children[5].innerHTML = `<button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}" data-nameproccess="${proccessName}"><i class="fa fa-play"></i></button>`;
+                            //row.children[5].innerHTML = `<button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}" data-nameproccess="${proccessName}"><i class="fa fa-play"></i></button>`;
+                            row.children[5].innerHTML = `<button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}" data-nameproccess="${proccessName}" onclick="handleViewDetails(this)"><i class="fa fa-eye"></i></button> <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}" data-nameproccess="${proccessName}"><i class="fa fa-play"></i></button>`;
                     } else {
                         row.children[5].innerHTML = `<button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails" data-casecode="${btn.dataset.casecode}" data-processcode="${btn.dataset.processcode}" data-nameproccess="${proccessName}" onclick="handleViewDetails(this)"><i class="fa fa-eye"></i></button>`;
                     }

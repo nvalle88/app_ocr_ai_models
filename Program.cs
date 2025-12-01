@@ -2,6 +2,7 @@ using app_ocr_ai_models.Data;
 using app_ocr_ai_models.Services;
 using app_tramites.Data;
 using app_tramites.Services.NexusProcess;
+using app_tramites.Utils;
 using Core;
 using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Identity;
@@ -60,6 +61,13 @@ namespace app_ocr_ai_models
                     .AllowAnyMethod()
                     .AllowAnyHeader());
             });
+
+            builder.Services.AddHttpClient("FileDownloaderClient", client =>
+            {
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("app_tramites-file-downloader/1.0");
+                client.Timeout = TimeSpan.FromMinutes(2);
+            });
+            builder.Services.AddSingleton<FileDownloader>();
 
             var app = builder.Build();
 

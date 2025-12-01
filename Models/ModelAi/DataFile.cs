@@ -14,5 +14,7 @@ public partial class DataFile
 
     public DateTime CreatedDate { get; set; }
 
+    public string OriginalName { get; set; } = string.Empty;
+
     public virtual ProcessCase CaseCodeNavigation { get; set; } = null!;
 }

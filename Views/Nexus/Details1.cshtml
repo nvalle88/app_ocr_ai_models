@@ -24,7 +24,7 @@
                             <tbody> 
                                 @foreach (var file in Model.ProcessCase.DataFile)
                                 {
-                                    var origName = file.IsFileUri ? file.FileUri : file.FileUri;
+                                    var origName = file.IsFileUri && !string.IsNullOrEmpty(file.OriginalName) ? file.OriginalName : file.FileUri;
                                     var ext = System.IO.Path.GetExtension(origName)?.ToLower().TrimStart('.') ?? "";
                                     var url = file.FileUri;
                                     var type = (ext == "pdf") ? "pdf" : (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp") ? "img" : "other";
@@ -42,7 +42,7 @@
                                             </div>
                                         </td>
                                         <td class="align-middle">
-                                            <div class="fw-semibold text-truncate">@System.IO.Path.GetFileName(origName)</div>
+                                            <div class="fw-semibold text-truncate">@origName</div>
                                             <small class="text-muted">@ext.ToUpper()</small>
                                         </td>
                                         <td class="text-end align-middle" style="width:36px;">

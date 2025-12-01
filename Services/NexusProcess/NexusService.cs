@@ -18,8 +18,17 @@ using Usage = app_tramites.Models.ModelAi.Usage;
 
 namespace app_tramites.Services.NexusProcess;
 
-public class NexusService(OCRDbContext db) : INexusService
+public class NexusService : INexusService
 {
+
+    private readonly OCRDbContext db;
+    private readonly FileDownloader fileDownloader;
+
+    public NexusService(OCRDbContext db, FileDownloader fileDownloader)
+    {
+        this.db = db ?? throw new ArgumentNullException(nameof(db));
+        this.fileDownloader = fileDownloader ?? throw new ArgumentNullException(nameof(fileDownloader));
+    }
 
     public async Task<ResponsePromptDto> EjecutarPrompt(PromptRequest req)
     {
@@ -35,7 +44,7 @@ public class NexusService(OCRDbContext db) : INexusService
 
         
         var agenteProceso = BuscarPromptPorAgenteProceso(req, processDefinition);
-        if (agenteProceso == null || agenteProceso.Agent == null) return null!;        
+        if (agenteProceso == null || agenteProceso.Agent == null) return null!;
 
         var promptModel = agenteProceso.Agent.OPAIModelPrompt?.First().PromptCodeNavigation;
         var agentPrompt = agenteProceso.Agent.OPAIModelPrompt?.First();
@@ -61,9 +70,10 @@ public class NexusService(OCRDbContext db) : INexusService
         var combined = new StringBuilder();
         foreach (var df in dataFiles)
         {
-            var fileName = Path.GetFileName(df.FileUri);
-            var ext = Path.GetExtension(df.FileUri)?.ToLower().TrimStart('.') ?? "";
-            combined.AppendLine($"documento: {fileName}.{ext}---{df.Text}---");
+            //var fileName = Path.GetFileName(df.OriginalName);
+            //var ext = Path.GetExtension(df.FileUri)?.ToLower().TrimStart('.') ?? "";
+            //combined.AppendLine($"documento: {fileName}.{ext}---{df.Text}---");
+            combined.AppendLine($"documento: {df.OriginalName}---{df.Text}---");
         }
 
         var context = string.Empty;
@@ -135,23 +145,7 @@ public class NexusService(OCRDbContext db) : INexusService
         };
         return result;
     }
-
-
-    /*public AgentProcess? BuscarPromptPorAgenteProceso(PromptRequest req, Process process)
-    {
-        
-        var data =  db.AgentProcesses
-                .Include(ap => ap.Agent)
-                .ThenInclude(a => a.OPAIModelPrompt)
-                .ThenInclude(op => op.PromptCodeNavigation)
-                .Include(ap => ap.Agent.AgentConfig)
-                .Where(ap => ap.DefinitionCode == process.Code && ap.Agent.IsActive)
-                .FirstOrDefault(ap => ap.Agent.OPAIModelPrompt
-                .Any(op => op.TypeAgentNavigation.Code == req.Origin));
-
-        return data;
-
-    }*/
+    
 
     public AgentProcess? BuscarPromptPorAgenteProceso(PromptRequest req, Process process)
     {
@@ -259,21 +253,7 @@ public class NexusService(OCRDbContext db) : INexusService
                     .FirstOrDefault(ap => ap.AgentCode == button.ModelCode)?.Id,
             };
             buttons.Add(buttonConfig);
-        }
-        /*buttons =
-            [
-               new AgentProccessButton
-                {
-                    ButtonId = "studioAudio",
-                    ClassName = "studio-tile tile-audio",
-                    Tittle = "Validación contractual",
-                    Icon = "fa fa-wave-square",
-                    IconMenu = "fa fa-ellipsis-vertical",
-                    AriaLabel = "Validación contractual",
-                    Name = "Contratos",
-                    AgentProcessId = 1//agents.FirstOrDefault(a => a.Code == ConstanteTipoAgente.Chat)?.CatalogId
-                }
-            ];*/
+        }       
 
         return buttons;
     }
@@ -434,8 +414,8 @@ public class NexusService(OCRDbContext db) : INexusService
         var blobCfg = await db.AzureBlobConf.AsNoTracking().FirstOrDefaultAsync()
             ?? throw new InvalidOperationException("AzureBlobConf no encontrada.");
 
-        var ocrTasks = input.Files.Select(f =>
-            ProcessFileAsync(f, ocrSetting, blobCfg)
+        var ocrTasks = input.Files.Select(f =>                  
+            ProcessFileAsync(f, ocrSetting, blobCfg)                                
         );
 
         var ocrResults = await Task.WhenAll(ocrTasks);
@@ -465,7 +445,8 @@ public class NexusService(OCRDbContext db) : INexusService
             IsFileUri = !string.IsNullOrEmpty(r.Url),
             FileUri = r.Url,
             Text = r.Text,
-            CreatedDate = DateTime.Now
+            CreatedDate = DateTime.Now,
+            OriginalName = r.OriginalName
         }).ToList();
         db.DataFile.AddRange(dataFiles);
         await db.SaveChangesAsync();
@@ -481,7 +462,7 @@ public class NexusService(OCRDbContext db) : INexusService
         
     }
 
-    private static async Task<(string Url, string Text)> ProcessFileAsync(
+    private async Task<(string Url, string Text, string OriginalName)> ProcessFileAsync(
      OcrFile file,
      OCRSetting ocrSetting,
      AzureBlobConf blobCfg,
@@ -490,7 +471,7 @@ public class NexusService(OCRDbContext db) : INexusService
         using var cts = new CancellationTokenSource(timeoutMilliseconds);
 
         try
-        {
+        {            
             // Subir blob
             var blobUrl = await UploadBlobAsync(file, blobCfg);
 
@@ -505,7 +486,7 @@ public class NexusService(OCRDbContext db) : INexusService
                 new Uri(blobUrl),
                 cancellationToken: cts.Token);
 
-            return (Url: blobUrl, Text: operation.Value.Content);
+            return (Url: blobUrl, Text: operation.Value.Content, OriginalName: file.FileName);
         }
         catch (TaskCanceledException)
         {
@@ -513,7 +494,7 @@ public class NexusService(OCRDbContext db) : INexusService
         }
     }
 
-    private static async Task<string> UploadBlobAsync(
+    private async Task<string> UploadBlobAsync(
             OcrFile file,
             AzureBlobConf blobCfg)
     {
@@ -523,9 +504,18 @@ public class NexusService(OCRDbContext db) : INexusService
 
         var blobName = $"{Guid.NewGuid()}{file.Extension}";
         var blobClient = containerClient.GetBlobClient(blobName);
-
-        await using var ms = new MemoryStream(Convert.FromBase64String(file.Content));
-        await blobClient.UploadAsync(ms, overwrite: true);
+        
+        if (string.IsNullOrEmpty(file.Content))
+        {
+            blobClient.StartCopyFromUri(new Uri(file.Url));
+            /*await using var remoteStream = await fileDownloader.DownloadUrlToMemoryStreamAsync(file.Url);
+            await blobClient.UploadAsync(remoteStream, overwrite: true);*/
+        }            
+        else
+        {
+            await using var ms = new MemoryStream(Convert.FromBase64String(file.Content));
+            await blobClient.UploadAsync(ms, overwrite: true);
+        }
 
         return blobClient.Uri.ToString();
     }
