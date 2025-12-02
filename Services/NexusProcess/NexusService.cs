@@ -286,12 +286,21 @@ public class NexusService : INexusService
         return details;
     }
 
-    public async Task<List<ProcessCase>?> ObtenerProcesos()
+    public async Task<List<ProcessCase>?> ObtenerProcesos(IdentityUser? user, IList<string>? roles)
     {
+        //a partir de los roles que tiene el usuario necesito obtener los procesos, para posteriormente filtrar los casos
+        var procesosUsuario = await GetProcessesByUser(user, roles);
+        if (procesosUsuario.Processes.Count == 0)
+            return [];
+
+        var codigos = procesosUsuario.Processes
+            .Where(p => !string.IsNullOrWhiteSpace(p.ProcessId))
+            .Select(p => p.ProcessId!)
+            .ToList();
         var today = DateTime.ParseExact("2025-09-12 17:10:00", "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
         return await db.ProcessCase.Include(x => x.FinalResponseResults)
                 .Include(x => x.DefinitionCodeNavigation)
-                .Where(x => x.StartDate > today)
+                .Where(x => x.StartDate > today && codigos.Contains(x.DefinitionCode))
                                  .OrderByDescending(pc => pc.StartDate)
                                  .ToListAsync();
     }
@@ -360,8 +369,7 @@ public class NexusService : INexusService
            {
                aap.AgentProcess?.Process,
                ProcessAgentId = (int?)aap.AgentProcess?.Id // Obtener el ProcessAgentId
-           })
-           //.Distinct()
+           })           
            .ToList();
 
         // Consultar los procesos relacionados con los roles del usuario
@@ -373,8 +381,7 @@ public class NexusService : INexusService
             {
                 rp.Process,
                 ProcessAgentId = (int?)null // No hay un ProcessAgentId en esta consulta
-            })
-            //.Distinct()
+            })           
             .ToListAsync();
 
         List<ViewAgentProcess> allProcesses = [.. processesFromPolicies

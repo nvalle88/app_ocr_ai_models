@@ -20,7 +20,7 @@ namespace app_tramites.Services.NexusProcess
             double temperature = 0.2,
             double topP = 1.0);
         Task<ProcessCase?> ObtenerProcessCase(Guid caseCode);
-        Task<List<ProcessCase>?> ObtenerProcesos();
+        Task<List<ProcessCase>?> ObtenerProcesos(IdentityUser? user, IList<string>? roles);
         Task<ViewProcessUser> GetProcessesByUser(IdentityUser? user, IList<string>? roles);
         Task<ViewCreateCase> CreateCaseProcess(QueryInput input);
         Task<ViewCaseDetails?> ObtenerDetailsProcessCase(Guid caseCode, IdentityUser? user);

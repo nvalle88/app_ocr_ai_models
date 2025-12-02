@@ -222,7 +222,21 @@ namespace SmartAdmin.Web.Controllers
         public async Task<IActionResult> Index()
         {
             var vm = new QueryInput { ProcessCode = "" };
-            var casos = await nexusService.ObtenerProcesos();
+            // Validar que el usuario esté autenticado
+            var user = await userManager.GetUserAsync(User);
+            if (user == null)
+            {
+                return Unauthorized(new { success = false, message = "Usuario no autenticado." });
+            }
+
+            // Obtener los roles del usuario
+            var roles = await userManager.GetRolesAsync(user);
+
+            if (roles == null || roles.Count == 0)
+            {
+                return Unauthorized(new { success = false, message = "Usuario sin accesos." });
+            }
+            var casos = await nexusService.ObtenerProcesos(user, roles);
             ViewBag.ProcessCases = casos;
             return View(vm);
         }
