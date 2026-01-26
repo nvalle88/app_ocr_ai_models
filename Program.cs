@@ -96,7 +96,13 @@ namespace app_ocr_ai_models
             app.UseAuthentication();
             app.UseAuthorization();
 
-            app.UseCors();
+            app.UseCors(options =>
+            {
+                options.AllowAnyOrigin();
+                options.AllowAnyMethod();
+                options.AllowAnyHeader();
+
+            });
 
             app.MapControllerRoute(
                 name: "default",
