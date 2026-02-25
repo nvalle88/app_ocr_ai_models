@@ -251,7 +251,7 @@ namespace SmartAdmin.Web.Controllers
         public async Task<IActionResult> Index()
         {
             var vm = new QueryInput { ProcessCode = "A-HOSP" };
-            var today = DateTime.ParseExact("2025-09-12 17:10:00", "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            var today = DateTime.ParseExact("2026-01-25 17:10:00", "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
             var casos = await _db.ProcessCase.Include(x => x.FinalResponseResults).Where(x => x.StartDate > today)
                                  .OrderByDescending(pc => pc.StartDate)
