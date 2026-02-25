@@ -121,8 +121,8 @@ namespace app_ocr_ai_models
                 var services = scope.ServiceProvider;
 
                 // Ejecutar la inicialización de roles y usuarios de forma asíncrona
-                await DataSeeder.SeedRolesAsync(services);
-                await DataSeeder.SeedAdminUserAsync(services);
+                //await DataSeeder.SeedRolesAsync(services);
+                //await DataSeeder.SeedAdminUserAsync(services);
 
                 // Opcional: Registrar que el Seeding fue exitoso
                 LoggerService.LogInformation("Seeding de datos y roles completado con éxito.");

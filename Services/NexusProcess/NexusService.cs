@@ -297,12 +297,22 @@ public class NexusService : INexusService
             .Where(p => !string.IsNullOrWhiteSpace(p.ProcessId))
             .Select(p => p.ProcessId!)
             .ToList();
-        var today = DateTime.ParseExact("2025-09-12 17:10:00", "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
-        return await db.ProcessCase.Include(x => x.FinalResponseResults)
-                .Include(x => x.DefinitionCodeNavigation)
-                .Where(x => x.StartDate > today && codigos.Contains(x.DefinitionCode))
-                                 .OrderByDescending(pc => pc.StartDate)
-                                 .ToListAsync();
+        var s = DateTime.Now.AddDays(-1).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        var today = DateTime.ParseExact(s, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+
+        int pageNumber = 1; // página actual
+        int pageSize = 200;  // registros por página
+
+        return await db.ProcessCase
+            .AsNoTracking()
+            .Include(x => x.FinalResponseResults)
+            .Include(x => x.DefinitionCodeNavigation)
+            .Where(x => x.StartDate > today && codigos.Contains(x.DefinitionCode))
+            .OrderByDescending(pc => pc.StartDate)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
     }
 
     private async Task<List<AgentTypeDto>> GetAgentTypesForUserAndProcessAsync(IdentityUser? user, string processCode)
