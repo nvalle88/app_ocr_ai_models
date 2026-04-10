@@ -153,27 +153,24 @@
                 <div class="card-header small-header center-header">
                     <div class="center-header-layout">
                         <div class="case-header-block">
-                            <h5 class="mb-0 header-title">Resultados del Caso</h5>
-                            @if (!string.IsNullOrWhiteSpace(processTitle))
-                            {
-                                <small class="case-header-meta">@processTitle</small>
-                            }
-                            <div class="case-header-stats" role="list" aria-label="Resumen del caso">
-                                <div class="case-header-pill" role="listitem">
-                                    <span class="label">Caso</span>
-                                    <strong>NE-@caseShortCode</strong>
+                            <div class="case-header-topline">
+                                <div class="case-header-summary" role="list" aria-label="Resumen del caso">
+                                    <span class="case-summary-item" role="listitem">
+                                        <span class="label">Caso</span>
+                                        <strong>NE-@caseShortCode</strong>
+                                    </span>
+                                    <span class="case-summary-item" role="listitem">
+                                        <span class="label">Documentos</span>
+                                        <strong>@documentCount</strong>
+                                    </span>
+                                    @if (lastResponseDate != null)
+                                    {
+                                        <span class="case-summary-item case-summary-item-wide" role="listitem">
+                                            <span class="label">Última respuesta</span>
+                                            <strong>@lastResponseDate.Value.ToLocalTime().ToString("dd/MM/yyyy, HH:mm")</strong>
+                                        </span>
+                                    }
                                 </div>
-                                <div class="case-header-pill" role="listitem">
-                                    <span class="label">Documentos</span>
-                                    <strong>@documentCount</strong>
-                                </div>
-                                @if (lastResponseDate != null)
-                                {
-                                    <div class="case-header-pill" role="listitem">
-                                        <span class="label">Última respuesta</span>
-                                        <strong>@lastResponseDate.Value.ToLocalTime().ToString("dd/MM/yyyy, HH:mm")</strong>
-                                    </div>
-                                }
                             </div>
                         </div>
                         <div class="d-flex align-items-center gap-2 panel-header-actions">
@@ -1298,7 +1295,7 @@
                 let persistentUploadDrafts = [];
                 let persistentUploadTicker = null;
 
-                sanitizeRichHtml(chatOutputEl);
+                qa('#chatOutput .chat-turn-request, #chatOutput .chat-turn-response-body').forEach(sanitizeRichHtml);
                 enhanceMarkdownContent(chatOutputEl);
 
                 function ensureChatOutput() {
@@ -1329,10 +1326,11 @@
                 });
 
                 function setDocumentFocus(enabled) {
-                    document.documentElement.classList.toggle('document-focus', !!enabled);
-                    document.documentElement.classList.toggle('right-hidden', !!enabled);
+                    const applyDesktopFocus = !!enabled && !window.matchMedia('(max-width: 991px)').matches;
+                    document.documentElement.classList.toggle('document-focus', applyDesktopFocus);
+                    document.documentElement.classList.toggle('right-hidden', applyDesktopFocus);
                     if (colRight) {
-                        colRight.setAttribute('aria-hidden', enabled ? 'true' : 'false');
+                        colRight.setAttribute('aria-hidden', applyDesktopFocus ? 'true' : 'false');
                     }
                     positionChatInput();
                 }
@@ -2080,6 +2078,7 @@
                 const btnOpenInViewer = q('#btnOpenInViewer');
                 const btnDownloadPreview = q('#btnDownloadPreview');
                 let currentPreview = { url: '', type: '', ext: '', id: '' };
+                window.addEventListener('resize', () => setDocumentFocus(!!currentPreview.url));
 
                 async function getMarkupPreviewPayload(fileId) {
                     const response = await fetch(`@Url.Action("GetCaseDocumentPreview", "Nexus")?caseCode=${caseCode}&fileId=${fileId}`);
@@ -2150,6 +2149,7 @@
                     if (!previewContent) return;
                     previewContent.innerHTML = '';
                     previewContent.scrollTop = 0;
+                    previewContent.classList.remove('is-dragging');
                     previewContent.dataset.zoomKind = 'none';
                     previewContent.style.overflow = 'auto';
                     previewContent.style.webkitOverflowScrolling = 'touch';
@@ -2257,11 +2257,11 @@
                     if (type === 'img') {
                         previewContent.dataset.zoomKind = 'img';
                         const zoomWrapper = document.createElement('div');
-                        zoomWrapper.className = 'preview-zoom-wrapper is-grab preview-image-scroll';
+                        zoomWrapper.className = 'preview-zoom-wrapper preview-image-scroll';
                         zoomWrapper.style.width = '100%';
                         zoomWrapper.style.height = '100%';
                         zoomWrapper.style.overflow = 'auto';
-                        zoomWrapper.style.touchAction = 'none';
+                        zoomWrapper.style.touchAction = 'auto';
 
                         const stage = document.createElement('div');
                         stage.className = 'preview-image-stage';
@@ -2332,11 +2332,11 @@
                         const progressBar = progressWrap.querySelector('.progress-bar');
 
                         const zoomWrapper = document.createElement('div');
-                        zoomWrapper.className = 'preview-zoom-wrapper is-grab';
+                        zoomWrapper.className = 'preview-zoom-wrapper';
                         zoomWrapper.style.width = '100%';
                         zoomWrapper.style.height = '100%';
                         zoomWrapper.style.overflow = 'auto';
-                        zoomWrapper.style.touchAction = 'none';
+                        zoomWrapper.style.touchAction = 'auto';
                         previewContent.appendChild(zoomWrapper);
 
                         const pagesContainer = document.createElement('div');
@@ -3014,13 +3014,13 @@
 
                 // Crear wrapper y mover el contenido dentro
                 const wrapper = document.createElement('div');
-                wrapper.className = 'preview-zoom-wrapper is-grab';
+                wrapper.className = 'preview-zoom-wrapper';
                 // permitimos scroll/pan dentro del wrapper
                 wrapper.style.overflow = 'auto';
                 wrapper.style.width = '100%';
                 wrapper.style.height = '100%';
                 wrapper.style.boxSizing = 'border-box';
-                wrapper.style.touchAction = 'none';
+                wrapper.style.touchAction = 'auto';
 
                 // mover hijos dentro del wrapper (manteniendo el orden)
                 while (previewContent.firstChild) {
@@ -3043,6 +3043,30 @@
 
             function updateZoomLabel() {
                 if (zoomLabel) zoomLabel.textContent = Math.round(currentScale * 100) + '%';
+            }
+
+            function canPanPreview() {
+                const zoomKind = previewContent.dataset.zoomKind || '';
+                return currentScale > 1 && zoomKind !== 'static' && zoomKind !== 'none';
+            }
+
+            function syncPanAvailability(wrapper) {
+                if (!wrapper) return;
+
+                const enabled = canPanPreview();
+                wrapper.classList.toggle('is-pan-enabled', enabled);
+                wrapper.classList.toggle('is-grab', enabled && !wrapper.classList.contains('is-grabbing'));
+                wrapper.style.touchAction = enabled ? 'none' : 'auto';
+
+                if (!enabled) {
+                    wrapper.classList.remove('is-grab');
+                    wrapper.classList.remove('is-grabbing');
+                    previewContent.classList.remove('is-dragging');
+                    isDown = false;
+                    if (panWrapper === wrapper) {
+                        panWrapper = null;
+                    }
+                }
             }
 
             function preserveWrapperScroll(wrapper, applyChanges) {
@@ -3112,11 +3136,13 @@
                 if (zoomKind === 'static' || zoomKind === 'none') {
                     currentScale = 1.0;
                     updateZoomLabel();
+                    syncPanAvailability(previewContent.querySelector('.preview-zoom-wrapper'));
                     return;
                 }
 
                 currentScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
                 updateZoomLabel();
+                syncPanAvailability(previewContent.querySelector('.preview-zoom-wrapper'));
 
                 const primary = findPrimary();
                 if (!primary || !primary.el) return;
@@ -3170,6 +3196,7 @@
                         wrapper.scrollLeft = 0;
                         wrapper.scrollTop = 0;
                     }
+                    syncPanAvailability(wrapper);
                     return;
                 }
 
@@ -3181,6 +3208,7 @@
                     if (!wrapper) return;
 
                     if (syncPdfScale(wrapper)) {
+                        syncPanAvailability(wrapper);
                         return;
                     }
 
@@ -3201,6 +3229,7 @@
                         wrapper.style.width  = (rect.width * currentScale) + 'px';
                         wrapper.style.height = (rect.height * currentScale) + 'px';
                     }
+                    syncPanAvailability(wrapper);
                     return;
                 }
 
@@ -3210,6 +3239,7 @@
                 if (!wrapper) return;
                 wrapper.style.width  = (currentScale * 100) + '%';
                 wrapper.style.height = 'auto';
+                syncPanAvailability(wrapper);
             }
 
             // Acciones de zoom
@@ -3242,7 +3272,7 @@
 
             function startPan(e) {
                 const wrapper = previewContent.querySelector('.preview-zoom-wrapper');
-                if (!wrapper) return;
+                if (!wrapper || !wrapper.classList.contains('is-pan-enabled')) return;
                 panWrapper = wrapper;
                 isDown = true;
                 previewContent.classList.add('is-dragging');
@@ -3276,7 +3306,7 @@
                 const wrapper = panWrapper || previewContent.querySelector('.preview-zoom-wrapper');
                 if (wrapper) {
                     wrapper.classList.remove('is-grabbing');
-                    wrapper.classList.add('is-grab');
+                    syncPanAvailability(wrapper);
                 }
                 previewContent.classList.remove('is-dragging');
                 panWrapper = null;
