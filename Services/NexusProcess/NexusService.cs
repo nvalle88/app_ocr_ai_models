@@ -8,6 +8,7 @@ using app_tramites.Utils;
 using Azure;
 using Azure.AI.DocumentIntelligence;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
@@ -23,6 +24,18 @@ public class NexusService : INexusService
 
     private readonly OCRDbContext db;
     private readonly FileDownloader fileDownloader;
+
+    // Init una sola vez (por instancia)
+    private readonly object _initLock = new();
+    private Task? _initTask;
+
+    private OCRSetting? _ocrSetting;
+    private AzureBlobConf? _blobCfg;
+
+    private DocumentIntelligenceClient? _docClient;
+    private BlobContainerClient? _containerClient;
+
+
 
     public NexusService(OCRDbContext db, FileDownloader fileDownloader)
     {
@@ -42,7 +55,7 @@ public class NexusService : INexusService
         var dataFiles = processCase.DataFile.ToList();
         var processDefinition = processCase.DefinitionCodeNavigation; //proceso
 
-        
+
         var agenteProceso = BuscarPromptPorAgenteProceso(req, processDefinition);
         if (agenteProceso == null || agenteProceso.Agent == null) return null!;
 
@@ -59,94 +72,125 @@ public class NexusService : INexusService
         if (!string.IsNullOrWhiteSpace(metadata.CustomInstructions))
             prompt += metadata.CustomInstructions;
 
-        var userContent = req.Message ?? "";
-        //verificar si hay archivos en req y si hay mensaje       
-        if (req.FileUrls != null && req.FileUrls.Count > 0)
+        var transientFiles = new List<(string Url, string Text, string OriginalName)>();
+        try
         {
-            userContent += "\n\nArchivos remitidos por el cliente:\n" + string.Join("\n", req.FileUrls);
+            if (req.Files is { Count: > 0 })
+            {
+                await EnsureInitializedAsync();
+                var ocrTasks = req.Files.Select(f =>
+                    ProcessFileAsync(f, _ocrSetting!, _blobCfg!, _docClient!, timeoutMilliseconds: 90000));
+
+                transientFiles = [.. await Task.WhenAll(ocrTasks)];
+            }
+
+            var userContent = req.Message ?? "";
+            if (req.FileUrls != null && req.FileUrls.Count > 0)
+            {
+                userContent += "\n\nArchivos remitidos por el cliente:\n" + string.Join("\n", req.FileUrls);
+            }
+
+            if (transientFiles.Count > 0)
+            {
+                var attachmentLabel = transientFiles.Count == 1 ? "1 adjunto temporal" : $"{transientFiles.Count} adjuntos temporales";
+                userContent += $"\n\n{attachmentLabel} enviados en esta interacción.";
+            }
+
+            var combined = new StringBuilder();
+            foreach (var df in dataFiles)
+            {
+                combined.AppendLine($"documento: {df.OriginalName}---{df.Text}---");
+            }
+
+            foreach (var df in transientFiles)
+            {
+                combined.AppendLine($"documento temporal: {df.OriginalName}---{df.Text}---");
+            }
+
+            var context = string.Empty;
+            if (req.Origin.Equals(ConstanteTipoAgente.Chat, StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(req.Message))
+            {
+                context = userContent + $"\n\nInformación del Caso número NE-{(processCase.CaseCode.ToString()?.Split('-').FirstOrDefault() ?? "")}: Usuario que consulta: {req.Usuario}\n" +
+                    combined.ToString();
+            }
+            else
+            {
+                context = combined.ToString();
+            }
+
+            var finalResp = await CallOpenAiAsync(
+                agenteProceso.Agent!,
+                prompt,
+                userText: context,
+                dataFiles.First().Id,
+                stepOrder: 999,
+                maxTokens: metadata.MaxTokens ?? 100000,
+                temperature: metadata.Temperature ?? 0.2,
+                topP: 1.0);
+
+            var options = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = null
+            };
+
+            var requestText = string.IsNullOrWhiteSpace(req.Message) ? agenteProceso.Agent.Description ?? string.Empty : req.Message.Trim();
+            if (transientFiles.Count > 0)
+            {
+                var attachmentText = transientFiles.Count == 1
+                    ? "1 adjunto temporal"
+                    : $"{transientFiles.Count} adjuntos temporales";
+                requestText = string.IsNullOrWhiteSpace(requestText)
+                    ? $"Adjuntos temporales: {attachmentText}"
+                    : $"{requestText}\nAdjuntos temporales: {attachmentText}";
+            }
+
+            var final = new FinalResponseResult
+            {
+                CaseCode = req.CaseCode,
+                ResponseText = finalResp.ResultText,
+                CreatedDate = DateTime.Now,
+                RequestText = requestText,
+                MetadataJson = JsonSerializer.Serialize(metadata, options),
+                AgentProccessId = agenteProceso.Id
+            };
+
+            db.FinalResponseResult.Add(final);
+            await db.SaveChangesAsync();
+
+            Usage usage = new()
+            {
+                PromptTokens = finalResp.PromptTokens,
+                CompletionTokens = finalResp.CompletionTokens,
+                CreatedDate = DateTime.Now,
+                FinalResponseResultId = final.Id
+            };
+            db.Usage.Add(usage);
+            await db.SaveChangesAsync();
+
+            ResponsePromptDto result = new()
+            {
+                CaseCode = req.CaseCode,
+                ResponseText = final.ResponseText,
+                MetadataJson = final.MetadataJson,
+                ProccessName = processDefinition.Name ?? "",
+                AgentName = agenteProceso.Agent.Name ?? "",
+                RequestText = final.RequestText ?? "",
+                CreatedDate = final.CreatedDate
+            };
+
+            return result;
         }
-
-        // Combinar texto
-        var combined = new StringBuilder();
-        foreach (var df in dataFiles)
+        finally
         {
-            combined.AppendLine($"documento: {df.OriginalName}---{df.Text}---");
+            await DeleteTransientFilesAsync(transientFiles);
         }
-
-        var context = string.Empty;
-        if (req.Origin.Equals(ConstanteTipoAgente.Chat, StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(req.Message))
-        {
-            context =  userContent + $"\n\nInformación del Caso número NE-{(processCase.CaseCode.ToString()?.Split('-').FirstOrDefault() ?? "")}: Usuario que consulta: {req.Usuario}\n" +
-                combined.ToString();
-        }
-        else
-        {
-            context = combined.ToString();
-        }
-
-
-        // Llamada a OpenAI
-        var finalResp = await CallOpenAiAsync(
-            agenteProceso.Agent!,
-            prompt,
-            userText: context,
-            dataFiles.First().Id,
-            stepOrder: 999,
-            maxTokens: metadata.MaxTokens ?? 100000,
-            temperature: metadata.Temperature ?? 0.2,
-            topP: 1.0);
-
-        var options = new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            PropertyNamingPolicy = null
-        };
-
-        var requestText = string.IsNullOrEmpty(req.Message) ? agenteProceso.Agent.Description : req.Message;
-        requestText = $"<div style=\"text-align: right;font-weight:bold;\">{requestText}</div>";
-
-        var final = new FinalResponseResult
-        {
-            CaseCode = req.CaseCode,
-            ResponseText = finalResp.ResultText,
-            CreatedDate = DateTime.Now,
-            RequestText = requestText,
-            MetadataJson = JsonSerializer.Serialize(metadata, options),
-            AgentProccessId = agenteProceso.Id
-        };
-
-        // Guardar resultado
-        db.FinalResponseResult.Add(final);
-        await db.SaveChangesAsync();
-
-        Usage usage = new()
-        {
-            PromptTokens = finalResp.PromptTokens,
-            CompletionTokens = finalResp.CompletionTokens,
-            CreatedDate = DateTime.Now,
-            FinalResponseResultId = final.Id
-        };
-        db.Usage.Add(usage);
-        await db.SaveChangesAsync();
-
-        ResponsePromptDto result = new()
-        {
-            CaseCode = req.CaseCode,
-            ResponseText = final!.ResponseText,
-            MetadataJson = final.MetadataJson,
-            ProccessName = processDefinition.Name ?? "",
-            AgentName = agenteProceso!.Agent!.Name ?? "",
-            RequestText = final.RequestText ?? "",
-            CreatedDate = final.CreatedDate
-            
-        };
-        return result;
     }
-    
+
 
     public AgentProcess? BuscarPromptPorAgenteProceso(PromptRequest req, Process process)
     {
-        
+
         var query = db.AgentProcesses
             .Include(ap => ap.Agent)
                 .ThenInclude(a => a.OPAIModelPrompt)
@@ -154,7 +198,7 @@ public class NexusService : INexusService
             .Include(ap => ap.Agent.AgentConfig)
             .Where(ap => ap.DefinitionCode == process.Code && ap.Agent.IsActive)
             .AsQueryable();
-        
+
         if (req?.Id > 0)
         {
             query = query.Where(ap => ap.Id == req.Id);
@@ -250,7 +294,7 @@ public class NexusService : INexusService
                     .FirstOrDefault(ap => ap.AgentCode == button.ModelCode)?.Id,
             };
             buttons.Add(buttonConfig);
-        }       
+        }
 
         return buttons;
     }
@@ -297,7 +341,7 @@ public class NexusService : INexusService
             .Where(p => !string.IsNullOrWhiteSpace(p.ProcessId))
             .Select(p => p.ProcessId!)
             .ToList();
-        var s = DateTime.Now.AddDays(-1).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        var s = DateTime.Now.AddDays(-10).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
         var today = DateTime.ParseExact(s, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
         int pageNumber = 1; // página actual
@@ -379,7 +423,7 @@ public class NexusService : INexusService
            {
                aap.AgentProcess?.Process,
                ProcessAgentId = (int?)aap.AgentProcess?.Id // Obtener el ProcessAgentId
-           })           
+           })
            .ToList();
 
         // Consultar los procesos relacionados con los roles del usuario
@@ -391,7 +435,7 @@ public class NexusService : INexusService
             {
                 rp.Process,
                 ProcessAgentId = (int?)null // No hay un ProcessAgentId en esta consulta
-            })           
+            })
             .ToListAsync();
 
         List<ViewAgentProcess> allProcesses = [.. processesFromPolicies
@@ -410,48 +454,102 @@ public class NexusService : INexusService
                 return new ViewAgentProcess { ProcessId = chosen.Process!.Code, ProcessName = chosen.Process.Name,  Description = chosen.Process.Description,ProcessAgentId = chosen.ProcessAgentId };
             })];
 
-        
-        return new ViewProcessUser { Success = true, Processes = allProcesses };        
+
+        return new ViewProcessUser { Success = true, Processes = allProcesses };
+    }
+
+    // =========================
+    // INIT: una sola vez
+    // =========================
+    private async Task EnsureInitializedAsync()
+    {
+        if (_initTask != null)
+        {
+            await _initTask;
+            return;
+        }
+
+        lock (_initLock)
+        {
+            _initTask ??= InitOnceAsync();
+        }
+
+        await _initTask;
+    }
+
+    private async Task InitOnceAsync()
+    {
+        // 1) Settings 1 vez
+        _ocrSetting = await db.OCRSetting.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.SettingCode == "DEFAULT" && x.PlatformCode == "AZURE")
+            ?? throw new NegocioException("Configuración OCR no encontrada.");
+
+        _blobCfg = await db.AzureBlobConf.AsNoTracking()
+            .FirstOrDefaultAsync()
+            ?? throw new InvalidOperationException("AzureBlobConf no encontrada.");
+
+        // 2) Client OCR 1 vez
+        _docClient = new DocumentIntelligenceClient(
+            new Uri(_ocrSetting.Endpoint),
+            new AzureKeyCredential(_ocrSetting.ApiKey!));
+
+        // 3) Blob clients 1 vez
+        var blobServiceClient = new BlobServiceClient(_blobCfg.ConnectionString);
+        _containerClient = blobServiceClient.GetBlobContainerClient(_blobCfg.ContainerName);
+
+        // 4) Contenedor 1 vez
+        //await CreateContainerIfNeededAsync(_containerClient);
+    }
+
+    private static async Task CreateContainerIfNeededAsync(BlobContainerClient containerClient)
+    {
+        try
+        {
+            await containerClient.CreateIfNotExistsAsync();
+        }
+        catch (RequestFailedException ex) when (ex.Status == 409)
+        {
+            // carrera / contención: OK
+        }
     }
 
     public async Task<ViewCreateCase> CreateCaseProcess(QueryInput input)
     {
-     
-
         if (input == null || string.IsNullOrWhiteSpace(input.ProcessCode))
             throw new NegocioException("ProcessCode es obligatorio.");
-            
-        var ocrSetting = await db.OCRSetting
-            .FirstOrDefaultAsync(x => x.SettingCode == "DEFAULT" && x.PlatformCode == "AZURE") ?? throw new NegocioException("Configuración OCR no encontrada.");
-        
 
-        var blobCfg = await db.AzureBlobConf.AsNoTracking().FirstOrDefaultAsync()
-            ?? throw new InvalidOperationException("AzureBlobConf no encontrada.");
+        if (input.Files == null || input.Files.Count == 0)
+            throw new NegocioException("Debe enviar al menos un archivo.");
 
-        var ocrTasks = input.Files.Select(f =>                  
-            ProcessFileAsync(f, ocrSetting, blobCfg)                                
+        await EnsureInitializedAsync();
+
+        var ocrSetting = _ocrSetting!;
+        var blobCfg = _blobCfg!; 
+        var clientOcr = _docClient!;
+
+        var ocrTasks = input.Files.Select(f =>
+            ProcessFileAsync(f, ocrSetting, blobCfg, clientOcr, timeoutMilliseconds: 90000)
         );
 
         var ocrResults = await Task.WhenAll(ocrTasks);
 
-        //el proceso a partir del AgentProcess
-        int agentProcessId = Int16.Parse(input.ProcessCode);
-        var agentProcess = await db.AgentProcesses
-            .Include(ap => ap.Process)
-            .FirstOrDefaultAsync(ap => ap.Id == agentProcessId);
+        var processInfo =  db.Process
+            .AsNoTracking()
+            .Where(p => p.Code == input.ProcessCode)
+            .Select(p => new { p.Code, p.Name })
+            .FirstOrDefault()
+            ?? throw new NegocioException("Proceso no encontrado.");
 
-        var nameProccess = agentProcess?.Process.Name;
-        var processDef = (agentProcess?.Process) ?? throw new NegocioException("Proceso no encontrado.");
+        var now = DateTime.UtcNow;
         var caseCode = Guid.NewGuid();
+
         var processCase = new ProcessCase
         {
             CaseCode = caseCode,
-            DefinitionCode = processDef.Code,
-            StartDate = DateTime.Now,
+            DefinitionCode = processInfo.Code,
+            StartDate = now,
             State = "Started"
         };
-        db.ProcessCase.Add(processCase);
-        await db.SaveChangesAsync();
 
         var dataFiles = ocrResults.Select(r => new DataFile
         {
@@ -459,10 +557,12 @@ public class NexusService : INexusService
             IsFileUri = !string.IsNullOrEmpty(r.Url),
             FileUri = r.Url,
             Text = r.Text,
-            CreatedDate = DateTime.Now,
+            CreatedDate = now,
             OriginalName = r.OriginalName
         }).ToList();
-        db.DataFile.AddRange(dataFiles);
+
+        processCase.DataFile = dataFiles;
+        db.ProcessCase.Add(processCase);
         await db.SaveChangesAsync();
 
         return new ViewCreateCase
@@ -471,9 +571,79 @@ public class NexusService : INexusService
             DefinitionCode = processCase.DefinitionCode,
             StartDate = processCase.StartDate,
             State = processCase.State,
-            NameProccess = nameProccess ?? ""
+            NameProccess = processInfo.Name ?? ""
         };
-        
+    }
+
+    public async Task<List<DataFile>> AddDocumentsToCase(Guid caseCode, IReadOnlyCollection<OcrFile> files)
+    {
+        if (caseCode == Guid.Empty)
+            throw new NegocioException("CaseCode es obligatorio.");
+
+        if (files == null || files.Count == 0)
+            throw new NegocioException("Debe enviar al menos un archivo.");
+
+        var processCase = await db.ProcessCase
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.CaseCode == caseCode)
+            ?? throw new NegocioException("Caso no encontrado.");
+
+        await EnsureInitializedAsync();
+
+        var ocrTasks = files.Select(f =>
+            ProcessFileAsync(f, _ocrSetting!, _blobCfg!, _docClient!, timeoutMilliseconds: 90000));
+
+        var ocrResults = await Task.WhenAll(ocrTasks);
+        var now = DateTime.UtcNow;
+
+        var newFiles = ocrResults.Select(result => new DataFile
+        {
+            CaseCode = processCase.CaseCode,
+            IsFileUri = !string.IsNullOrEmpty(result.Url),
+            FileUri = result.Url,
+            Text = result.Text,
+            CreatedDate = now,
+            OriginalName = result.OriginalName
+        }).ToList();
+
+        db.DataFile.AddRange(newFiles);
+        await db.SaveChangesAsync();
+
+        return newFiles;
+    }
+
+    private async Task<(string Url, string Text, string OriginalName)> ProcessFileAsync(
+      OcrFile file,
+      OCRSetting ocrSetting,
+      AzureBlobConf blobCfg,
+      DocumentIntelligenceClient clientOcr,
+      int timeoutMilliseconds = 90000)
+    {
+        using var cts = new CancellationTokenSource(timeoutMilliseconds);
+
+        try
+        {
+            var blobUrl = await UploadBlobAsync(file, blobCfg, timeoutMilliseconds: 60000);
+            var originalName = ResolveOriginalName(file);
+
+            if (ShouldSkipOcr(file))
+            {
+                var directText = await ReadDirectTextAsync(file, cts.Token);
+                return (Url: blobUrl, Text: directText, OriginalName: originalName);
+            }
+
+            var operation = await clientOcr.AnalyzeDocumentAsync(
+                WaitUntil.Completed,
+                ocrSetting.ModelId,
+                new Uri(blobUrl),
+                cancellationToken: cts.Token);
+
+            return (Url: blobUrl, Text: operation.Value.Content ?? "", OriginalName: originalName);
+        }
+        catch (TaskCanceledException)
+        {
+            throw new TimeoutException($"El procesamiento del archivo superó el tiempo límite de {timeoutMilliseconds} ms.");
+        }
     }
 
     private async Task<(string Url, string Text, string OriginalName)> ProcessFileAsync(
@@ -482,30 +652,187 @@ public class NexusService : INexusService
      AzureBlobConf blobCfg,
      int timeoutMilliseconds = 90000) // 30 segundos por defecto
     {
+        var clientOcr = new DocumentIntelligenceClient(
+            new Uri(ocrSetting.Endpoint),
+            new AzureKeyCredential(ocrSetting.ApiKey!));
+
+        return await ProcessFileAsync(file, ocrSetting, blobCfg, clientOcr, timeoutMilliseconds);
+    }
+
+   
+
+    private static async Task WaitForCopyToCompleteAsync(
+        BlobClient blobClient,
+        int timeoutMs,
+        CancellationToken ct)
+    {
+        var started = DateTime.UtcNow;
+
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var props = await blobClient.GetPropertiesAsync(cancellationToken: ct);
+            var status = props.Value.CopyStatus;
+
+            if (status == CopyStatus.Success)
+                return;
+
+            if (status is CopyStatus.Failed or CopyStatus.Aborted)
+                throw new InvalidOperationException(
+                    $"CopyFromUri falló. Status={status}. Description={props.Value.CopyStatusDescription}");
+
+            if ((DateTime.UtcNow - started).TotalMilliseconds > timeoutMs)
+                throw new TimeoutException($"CopyFromUri excedió {timeoutMs} ms.");
+
+            await Task.Delay(250, ct);
+        }
+    }
+
+    private async Task<string> UploadBlobAsync(
+    OcrFile file,
+    AzureBlobConf blobCfg,
+    int timeoutMilliseconds = 60000)
+    {
+        if (file == null) throw new ArgumentNullException(nameof(file));
+        if (blobCfg == null) throw new ArgumentNullException(nameof(blobCfg));
+
+        if (string.IsNullOrWhiteSpace(blobCfg.ConnectionString))
+            throw new InvalidOperationException("AzureBlobConf.ConnectionString vacío.");
+
+        if (string.IsNullOrWhiteSpace(blobCfg.ContainerName))
+            throw new InvalidOperationException("AzureBlobConf.ContainerName vacío.");
+
         using var cts = new CancellationTokenSource(timeoutMilliseconds);
 
-        try
-        {            
-            // Subir blob
-            var blobUrl = await UploadBlobAsync(file, blobCfg);
+        var blobServiceClient = new BlobServiceClient(blobCfg.ConnectionString);
+        var containerClient = blobServiceClient.GetBlobContainerClient(blobCfg.ContainerName);
+        var ext = (file.Extension ?? "").Trim();
+        if (!string.IsNullOrEmpty(ext) && !ext.StartsWith(".")) ext = "." + ext;
 
-            // Ejecutar OCR con timeout
-            var clientOcr = new DocumentIntelligenceClient(
-                new Uri(ocrSetting.Endpoint),
-                new AzureKeyCredential(ocrSetting.ApiKey!));
+        var blobName = $"{Guid.NewGuid()}{ext}";
+        var blobClient = containerClient.GetBlobClient(blobName);
+        var uploadOptions = BuildBlobUploadOptions(ext);
 
-            var operation = await clientOcr.AnalyzeDocumentAsync(
-                WaitUntil.Completed,
-                ocrSetting.ModelId,
-                new Uri(blobUrl),
-                cancellationToken: cts.Token);
-
-            return (Url: blobUrl, Text: operation.Value.Content, OriginalName: file.FileName);
-        }
-        catch (TaskCanceledException)
+        if (!string.IsNullOrWhiteSpace(file.Content))
         {
-            throw new TimeoutException($"El procesamiento del archivo superó el tiempo límite de {timeoutMilliseconds} ms.");
+            byte[] bytes;
+            try
+            {
+                bytes = Convert.FromBase64String(file.Content);
+            }
+            catch (FormatException)
+            {
+                throw new NegocioException("Content no es Base64 válido.");
+            }
+
+            await using var ms = new MemoryStream(bytes, writable: false);
+
+            await ExecuteWithRetryAsync(async () =>
+            {
+                ms.Position = 0;
+                await blobClient.UploadAsync(ms, uploadOptions, cancellationToken: cts.Token);
+            }, cts.Token);
+
+            return blobClient.Uri.ToString();
         }
+        if (!string.IsNullOrWhiteSpace(file.Url))
+        {
+            await using var remoteStream = await fileDownloader.DownloadUrlToMemoryStreamAsync(file.Url);
+
+            await ExecuteWithRetryAsync(async () =>
+            {
+                remoteStream.Position = 0;
+                await blobClient.UploadAsync(remoteStream, uploadOptions, cancellationToken: cts.Token);
+            }, cts.Token);
+
+            return blobClient.Uri.ToString();
+        }
+
+        throw new NegocioException("Archivo sin Content ni Url.");
+    }
+
+    private async Task ExecuteWithRetryAsync(
+        Func<Task> action,
+        CancellationToken cancellationToken,
+        int maxAttempts = 3,
+        int initialDelayMs = 300)
+    {
+        int delayMs = initialDelayMs;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                await action();
+                return;
+            }
+            catch (Azure.RequestFailedException ex) when (
+                attempt < maxAttempts &&
+                IsTransientStatus(ex.Status))
+            {
+                await Task.Delay(delayMs, cancellationToken);
+                delayMs *= 2; // Exponential backoff
+            }
+        }
+    }
+
+    private static bool IsTransientStatus(int statusCode)
+    {
+        return statusCode == 408 || // Timeout
+               statusCode == 429 || // Too Many Requests
+               statusCode == 500 ||
+               statusCode == 502 ||
+               statusCode == 503 ||
+               statusCode == 504;
+    }
+
+    private async Task DeleteTransientFilesAsync(IEnumerable<(string Url, string Text, string OriginalName)> transientFiles)
+    {
+        if (_blobCfg == null)
+            return;
+
+        foreach (var file in transientFiles)
+        {
+            if (string.IsNullOrWhiteSpace(file.Url))
+                continue;
+
+            try
+            {
+                await DeleteBlobIfExistsAsync(file.Url, _blobCfg);
+            }
+            catch
+            {
+                // Si el adjunto temporal no se puede limpiar, no rompemos la respuesta al usuario.
+            }
+        }
+    }
+
+    private static async Task DeleteBlobIfExistsAsync(string blobUrl, AzureBlobConf blobCfg)
+    {
+        if (string.IsNullOrWhiteSpace(blobUrl) || string.IsNullOrWhiteSpace(blobCfg.ConnectionString))
+            return;
+
+        var uri = new Uri(blobUrl);
+        var path = uri.AbsolutePath.Trim('/');
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        var separatorIndex = path.IndexOf('/');
+        if (separatorIndex <= 0 || separatorIndex == path.Length - 1)
+            return;
+
+        var containerName = path[..separatorIndex];
+        var blobName = Uri.UnescapeDataString(path[(separatorIndex + 1)..]);
+        if (!containerName.Equals(blobCfg.ContainerName, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var blobServiceClient = new BlobServiceClient(blobCfg.ConnectionString);
+        var blobClient = blobServiceClient
+            .GetBlobContainerClient(containerName)
+            .GetBlobClient(blobName);
+
+        await blobClient.DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots);
     }
 
     private async Task<string> UploadBlobAsync(
@@ -518,20 +845,135 @@ public class NexusService : INexusService
 
         var blobName = $"{Guid.NewGuid()}{file.Extension}";
         var blobClient = containerClient.GetBlobClient(blobName);
-        
+        var uploadOptions = BuildBlobUploadOptions(GetNormalizedExtension(file));
+
         if (string.IsNullOrEmpty(file.Content))
         {
             blobClient.StartCopyFromUri(new Uri(file.Url));
-            /*await using var remoteStream = await fileDownloader.DownloadUrlToMemoryStreamAsync(file.Url);
-            await blobClient.UploadAsync(remoteStream, overwrite: true);*/
-        }            
+            await using var remoteStream = await fileDownloader.DownloadUrlToMemoryStreamAsync(file.Url);
+            await blobClient.UploadAsync(remoteStream, uploadOptions);
+        }
         else
         {
             await using var ms = new MemoryStream(Convert.FromBase64String(file.Content));
-            await blobClient.UploadAsync(ms, overwrite: true);
+            await blobClient.UploadAsync(ms, uploadOptions);
         }
 
         return blobClient.Uri.ToString();
     }
-    
+
+    private static bool ShouldSkipOcr(OcrFile file)
+    {
+        var extension = GetNormalizedExtension(file);
+        return extension is ".xml" or ".html" or ".htm";
+    }
+
+    private static string GetNormalizedExtension(OcrFile file)
+    {
+        var extension = (file.Extension ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(extension) && !string.IsNullOrWhiteSpace(file.FileName))
+            extension = Path.GetExtension(file.FileName);
+
+        if (string.IsNullOrWhiteSpace(extension) && !string.IsNullOrWhiteSpace(file.Url))
+        {
+            try
+            {
+                extension = Path.GetExtension(new Uri(file.Url).AbsolutePath);
+            }
+            catch
+            {
+                extension = Path.GetExtension(file.Url);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(extension) && !extension.StartsWith(".", StringComparison.Ordinal))
+            extension = "." + extension;
+
+        return extension.ToLowerInvariant();
+    }
+
+    private static string ResolveOriginalName(OcrFile file)
+    {
+        if (!string.IsNullOrWhiteSpace(file.FileName))
+            return file.FileName;
+
+        if (!string.IsNullOrWhiteSpace(file.Url))
+        {
+            try
+            {
+                var nameFromUri = Path.GetFileName(new Uri(file.Url).AbsolutePath);
+                if (!string.IsNullOrWhiteSpace(nameFromUri))
+                    return Uri.UnescapeDataString(nameFromUri);
+            }
+            catch
+            {
+                var fallbackName = Path.GetFileName(file.Url);
+                if (!string.IsNullOrWhiteSpace(fallbackName))
+                    return fallbackName;
+            }
+        }
+
+        var extension = GetNormalizedExtension(file);
+        return string.IsNullOrWhiteSpace(extension) ? "documento" : $"documento{extension}";
+    }
+
+    private async Task<string> ReadDirectTextAsync(OcrFile file, CancellationToken cancellationToken)
+    {
+        byte[] bytes;
+
+        if (!string.IsNullOrWhiteSpace(file.Content))
+        {
+            try
+            {
+                bytes = Convert.FromBase64String(file.Content);
+            }
+            catch (FormatException)
+            {
+                throw new NegocioException("Content no es Base64 válido.");
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(file.Url))
+        {
+            await using var remoteStream = await fileDownloader.DownloadUrlToMemoryStreamAsync(file.Url);
+            bytes = remoteStream.ToArray();
+        }
+        else
+        {
+            return string.Empty;
+        }
+
+        await using var ms = new MemoryStream(bytes, writable: false);
+        using var reader = new StreamReader(ms, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return await reader.ReadToEndAsync(cancellationToken);
+    }
+
+    private static BlobUploadOptions BuildBlobUploadOptions(string? extension)
+    {
+        return new BlobUploadOptions
+        {
+            HttpHeaders = new BlobHttpHeaders
+            {
+                ContentType = GetContentType(extension)
+            }
+        };
+    }
+
+    private static string GetContentType(string? extension)
+    {
+        return (extension ?? string.Empty).ToLowerInvariant() switch
+        {
+            ".pdf" => "application/pdf",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            ".bmp" => "image/bmp",
+            ".tif" or ".tiff" => "image/tiff",
+            ".xml" => "application/xml",
+            ".html" or ".htm" => "text/html; charset=utf-8",
+            ".json" => "application/json; charset=utf-8",
+            ".txt" => "text/plain; charset=utf-8",
+            _ => "application/octet-stream"
+        };
+    }
+
 }

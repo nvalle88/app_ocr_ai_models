@@ -1,24 +1,19 @@
-﻿@model app_tramites.Models.ViewModel.QueryInput
+@model app_tramites.Models.ViewModel.QueryInput
 
 @{
     ViewData["Title"] = "Demo OCR: Crear y Listar Casos";
 }
 
 <section id="widget-grid">
-    <div class="d-flex justify-content-end align-items-center px-4 py-2" style="background: linear-gradient(90deg, #0d6efd, #0b5ed7); border-radius: 0.5rem 0.5rem 0 0;">
-    </div>
     <div class="row">
         <!-- Widget Subida OCR -->
         <article class="col-lg-12">
             <div class="jarviswidget jarviswidget-color-darken border-0 shadow rounded-4" id="wid-id-upload" data-widget-editbutton="false" data-widget-deletebutton="false">
                 <header class="bg-primary text-white px-4 py-3 d-flex justify-content-between align-items-center rounded-top-4 shadow-sm">
-                    <!-- Lado izquierdo: icono + título -->
                     <div class="d-flex align-items-center">
                         <i class="fa-solid fa-file-circle-plus fs-2 me-2"></i>
                         <h2 class="h5 mb-0 fw-bold">Crear caso</h2>
                     </div>
-
-                    <!-- Lado derecho: “marca” del sistema -->
                     <div class="d-flex align-items-center">
                         <i class="fa-solid fa-robot fs-5 me-1"></i>
                         <span class="fw-semibold">Nexus AI Auditor</span>
@@ -27,12 +22,19 @@
 
                 <div>
                     <div class="widget-body p-4">
-                        <article id="process-buttons" class="col-lg-12 mb-4">
-                            <h3 class="text-primary">Selecciona un Proceso</h3>
+                        <!-- Selección de proceso -->
+                        <div id="process-buttons" class="mb-4">
+                            <h3 class="text-primary mb-3">Selecciona un Proceso</h3>
                             <div id="processContainer" class="d-flex flex-wrap gap-3">
                                 <!-- Botones dinámicos se renderizan aquí -->
                             </div>
-                        </article>
+                            <!-- Indicador de proceso activo -->
+                            <div id="processSelectedIndicator" class="process-selected-indicator d-none mt-3">
+                                <i class="fa-solid fa-circle-check me-1"></i>
+                                Proceso: <strong id="processSelectedName"></strong>
+                            </div>
+                        </div>
+
                         <form id="ocrForm" novalidate autocomplete="off">
                             <input type="hidden" asp-for="ProcessCode" value="" />
                             <div class="row g-4">
@@ -43,9 +45,8 @@
                                          aria-label="Arrastra o haz clic aquí para subir archivos">
                                         <i class="fa fa-cloud-upload-alt fa-3x text-secondary mb-3"></i>
                                         <h6 class="fw-bold mb-2">Arrastra o haz clic aquí</h6>
-                                        <small class="text-muted d-block mb-3">PDF, JPG, PNG • Hasta 10MB</small>
-
-                                        <!-- input INVISIBLE pero CUBRE TODO el area -->
+                                        <small class="text-muted d-block mb-2">PDF, JPG, PNG • Hasta 10MB</small>
+                                        <span id="fileCountBadge" class="badge bg-primary d-none"></span>
                                         <input type="file"
                                                id="files"
                                                multiple
@@ -67,12 +68,9 @@
                                 </div>
                             </div>
                             <div class="form-actions mt-4">
-                                <div class="d-flex justify-content-between">
-                                    <button type="submit" class="btn btn-primary btn-lg icon-action" id="btnCrearCaso">
-                                        <i class="fas fa-plus-circle me-2"></i> Crear
-                                    </button>
-                                </div>
-
+                                <button type="submit" class="btn btn-primary btn-lg icon-action" id="btnCrearCaso" disabled>
+                                    <i class="fas fa-plus-circle me-2"></i> Crear caso
+                                </button>
                             </div>
                         </form>
                     </div>
@@ -94,9 +92,9 @@
                                 <thead class="table-light text-uppercase text-primary">
                                     <tr>
                                         <th>Código</th>
-                                        <th>Fecha de recepci&oacute;n</th>
-                                        <th>Proceso </th>
-                                        <th>Estado de la evaluación </th>
+                                        <th>Fecha de recepción</th>
+                                        <th>Proceso</th>
+                                        <th>Estado</th>
                                         <th>Tipo</th>
                                         <th>Acciones</th>
                                     </tr>
@@ -119,40 +117,47 @@
                                             }
                                             var date = c.StartDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
                                             <tr>
-                                                <!-- Código -->
-                                                <td class="fw-bold"><b> NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))</b></td>
-                                                <!-- Fecha -->
+                                                <td class="fw-bold text-primary">NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))</td>
                                                 <td>@date</td>
-                                                <!-- Proceso -->
                                                 <td>@c.DefinitionCodeNavigation?.Name</td>
-                                                <!-- Estado ícono solamente -->
-                                                <td class="text-left">
-                                                    <i class="fa @(done ? "fa-check-circle text-success" : "fa-hourglass-start text-warning") fa-lg"></i>
+                                                <td>
+                                                    @if (done)
+                                                    {
+                                                        <span class="badge badge-estado bg-success"><i class="fa fa-check-circle me-1"></i>Evaluado</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="badge badge-estado bg-warning text-dark"><i class="fa fa-hourglass-start me-1"></i>Pendiente</span>
+                                                    }
                                                 </td>
-                                                <!-- Tipo -->
-                                                <td class="fw-bold">
-                                                    <i class="fa @(   !done ? "fa-clock text-muted" :
-                                                     resumenCategoria == "No Definido" ? "fa-question text-danger" :
-                                                     resumenCategoria == "Hospital del Día" ? "fa-hospital text-primary" :
-                                                     resumenCategoria == "Hospitalario" ? "fa-briefcase-medical text-info" :
-                                                     resumenCategoria == "Ambulatorio" ? "fa-stethoscope text-warning" :
-                                                     "fa-file-medical text-secondary") me-1"></i>
-                                                    @resumenCategoria
+                                                <td>
+                                                    @{
+                                                        var (tipoIcon, tipoCss, tipoBg) = resumenCategoria switch {
+                                                            "No Definido"     => ("fa-question",          "text-white", "bg-danger"),
+                                                            "Hospital del Día"=> ("fa-hospital",          "text-white", "bg-primary"),
+                                                            "Hospitalario"    => ("fa-briefcase-medical", "text-white", "bg-info"),
+                                                            "Ambulatorio"     => ("fa-stethoscope",       "text-dark",  "bg-warning"),
+                                                            _                 => ("fa-clock",             "text-white", "bg-secondary")
+                                                        };
+                                                    }
+                                                    <span class="badge badge-tipo @tipoBg @tipoCss">
+                                                        <i class="fa @tipoIcon me-1"></i>@resumenCategoria
+                                                    </span>
                                                 </td>
-                                                <!-- Acciones -->
                                                 <td>
                                                     @if (done)
                                                     {
                                                         <button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails"
                                                                 data-nameproccess="NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))"
                                                                 data-casecode="@c.CaseCode" data-processcode=""
-                                                                onclick="handleViewDetails(this)">
+                                                                onclick="handleViewDetails(this)"
+                                                                title="Ver detalles">
                                                             <i class="fa fa-eye"></i>
                                                         </button>
-
-                                                        <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow"
+                                                        <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow ms-1"
                                                                 data-nameproccess="NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))"
-                                                                data-casecode="@c.CaseCode" data-processcode="">
+                                                                data-casecode="@c.CaseCode" data-processcode=""
+                                                                title="Reprocesar">
                                                             <i class="fa fa-play"></i>
                                                         </button>
                                                     }
@@ -160,7 +165,8 @@
                                                     {
                                                         <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow"
                                                                 data-nameproccess="NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))"
-                                                                data-casecode="@c.CaseCode" data-processcode="">
+                                                                data-casecode="@c.CaseCode" data-processcode=""
+                                                                title="Procesar">
                                                             <i class="fa fa-play"></i>
                                                         </button>
                                                     }
@@ -170,7 +176,12 @@
                                     }
                                     else
                                     {
-                                        <tr><td colspan="6" class="text-center text-muted py-4">No hay casos disponibles</td></tr>
+                                        <tr>
+                                            <td colspan="6" class="text-center py-5">
+                                                <i class="fa fa-folder-open fa-2x text-muted mb-2 d-block"></i>
+                                                <span class="text-muted">No hay casos disponibles</span>
+                                            </td>
+                                        </tr>
                                     }
                                 </tbody>
                             </table>
@@ -183,59 +194,71 @@
 </section>
 
 @section Styles {
-        <link rel="stylesheet" href="~/css/app/nexus.index.css" / >
+    <link rel="stylesheet" href="~/css/app/nexus.index.css" />
 }
 @section Scripts {
     <script>
-            // Mostrar y ocultar loading
-            function mostrarLoadingPanel() {
-                if (typeof $ !== 'undefined' && $.fn.waitMe) {
-                    $('#widget-grid').waitMe({ effect: 'bounce', text: 'Cargando...', bg: 'rgba(255,255,255,0.7)', color: '#224abe' });
-                }
+        // Loading
+        function mostrarLoadingPanel() {
+            if (typeof $ !== 'undefined' && $.fn.waitMe) {
+                $('#widget-grid').waitMe({ effect: 'bounce', text: 'Cargando...', bg: 'rgba(255,255,255,0.7)', color: '#224abe' });
             }
-            function ocultarLoadingPanel() {
-                if (typeof $ !== 'undefined' && $.fn.waitMe) {
-                    $('#widget-grid').waitMe('hide');
-                }
+        }
+        function ocultarLoadingPanel() {
+            if (typeof $ !== 'undefined' && $.fn.waitMe) {
+                $('#widget-grid').waitMe('hide');
             }
+        }
 
-            // Drag & Drop y preview
+        // Estado del formulario
+        let hasProcess = false;
+        let hasFiles   = false;
 
-            const uploadArea     = document.getElementById('uploadArea');
+        function actualizarBotonCrear() {
+            document.getElementById('btnCrearCaso').disabled = !(hasProcess && hasFiles);
+        }
+
+        // Drag & Drop y preview
+        const uploadArea     = document.getElementById('uploadArea');
         const filesInput     = document.getElementById('files');
         const previewGallery = document.getElementById('previewGallery');
+        const fileCountBadge = document.getElementById('fileCountBadge');
 
-        // Drag & drop
         uploadArea.addEventListener('dragover', e => {
-          e.preventDefault();
-          uploadArea.classList.add('shadow-lg');
+            e.preventDefault();
+            uploadArea.classList.add('shadow-lg', 'border-primary');
         });
         uploadArea.addEventListener('dragleave', e => {
-          e.preventDefault();
-          uploadArea.classList.remove('shadow-lg');
+            e.preventDefault();
+            uploadArea.classList.remove('shadow-lg', 'border-primary');
         });
         uploadArea.addEventListener('drop', e => {
-          e.preventDefault();
-          uploadArea.classList.remove('shadow-lg');
-
-          const dt = new DataTransfer();
-          Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f));
-          filesInput.files = dt.files;
-
-          filesInput.dispatchEvent(new Event('change'));
+            e.preventDefault();
+            uploadArea.classList.remove('shadow-lg', 'border-primary');
+            const dt = new DataTransfer();
+            Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f));
+            filesInput.files = dt.files;
+            filesInput.dispatchEvent(new Event('change'));
         });
 
-                    filesInput.addEventListener('change', () => {
+        filesInput.addEventListener('change', () => {
             previewGallery.innerHTML = '';
             previewGallery.classList.toggle('d-none', !filesInput.files.length);
 
+            const count = filesInput.files.length;
+            hasFiles = count > 0;
+            if (count > 0) {
+                fileCountBadge.textContent = count === 1 ? '1 archivo' : `${count} archivos`;
+                fileCountBadge.classList.remove('d-none');
+            } else {
+                fileCountBadge.classList.add('d-none');
+            }
+            actualizarBotonCrear();
+
             Array.from(filesInput.files).forEach(f => {
                 const ext = f.name.split('.').pop().toLowerCase();
-
-                // container con clase 'preview-item' para estilos
                 const container = document.createElement('div');
                 container.className = 'preview-item';
-                container.style.marginRight = '0.5rem';
 
                 if (['jpg', 'jpeg', 'png'].includes(ext)) {
                     const reader = new FileReader();
@@ -245,8 +268,6 @@
                         img.alt = f.name;
                         img.className = 'd-block';
                         container.appendChild(img);
-
-                        // opcional: nombre archivo debajo
                         const nameEl = document.createElement('small');
                         nameEl.className = 'filename';
                         nameEl.textContent = f.name;
@@ -257,261 +278,172 @@
                     };
                     reader.readAsDataURL(f);
                 } else if (ext === 'pdf') {
-                    // Icono grande para pdf
                     container.innerHTML = '<i class="fa-solid fa-file-pdf file-icon"></i><small class="filename"></small>';
                 } else {
                     container.innerHTML = '<i class="fa-solid fa-file file-icon"></i><small class="filename"></small>';
                 }
-
                 previewGallery.appendChild(container);
             });
         });
 
+        // Envío OCR
+        document.getElementById('ocrForm').addEventListener('submit', async e => {
+            e.preventDefault();
 
-            // Envío OCR y agregar fila
-            document.getElementById('ocrForm').addEventListener('submit', async e => {
-                e.preventDefault();
-                if (!filesInput.files.length) {
-                    return Swal.fire({
-                                icon: 'warning',
-                                title: 'Advertencia',
-                                text: 'Selecciona al menos un archivo.',
-                    });
-                }
-                    
-                const processCode = document.querySelector('input[name="ProcessCode"]').value;
-                if (!processCode) {
-                    Swal.fire({
-                        icon: 'warning',
-                        title: 'Advertencia',
-                        text: 'Selecciona un proceso antes de continuar.',
-                    });
-                    return;
-                }
-                mostrarLoadingPanel();
+            const processCode = document.querySelector('input[name="ProcessCode"]').value;
 
-                const filesToSend = await Promise.all(Array.from(filesInput.files).map(f => new Promise(res => {
-                    const reader = new FileReader();
-                    reader.onload = () => res({
-                        FileName: f.name,
-                        Content: reader.result.split(',')[1],
-                        Extension: '.' + f.name.split('.').pop().toLowerCase()
-                    });
-                    reader.readAsDataURL(f);
-                })));
+            mostrarLoadingPanel();
 
-                try {
-                    const resp = await fetch('/Nexus/CreateCaseProcess', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ ProcessCode: processCode, Query: '', Files: filesToSend })
-                    });
+            const filesToSend = await Promise.all(Array.from(filesInput.files).map(f => new Promise(res => {
+                const reader = new FileReader();
+                reader.onload = () => res({
+                    FileName: f.name,
+                    Content: reader.result.split(',')[1],
+                    Extension: '.' + f.name.split('.').pop().toLowerCase()
+                });
+                reader.readAsDataURL(f);
+            })));
 
-                    if (!resp.ok) throw new Error(resp.statusText);
-                    const data = await resp.json();
-                    ocultarLoadingPanel();
+            try {
+                const resp = await fetch('/Nexus/CreateCaseProcess', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ProcessCode: processCode, Query: '', Files: filesToSend })
+                });
 
-                    const dateStr = new Date(data.startDate).toLocaleString('es-EC', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    });
+                if (!resp.ok) throw new Error(resp.statusText);
+                const data = await resp.json();
+                ocultarLoadingPanel();
 
-                    const tbody = document.querySelector('#casesTable tbody');
-                    tbody.insertAdjacentHTML('afterbegin', `
-                        <tr>
-                           <td class='fw-bold'>${'NE-' + ((data.caseCode || '').split('-')[0].replace(/^NE/i, ''))}</td>
-                            <td>${dateStr}</td>
-                            <td>${data.nameProccess}</td>
-                            <td class='text-left'>
-                                <i class='fa fa-hourglass-start text-warning fa-lg'></i>
-                            </td>                            
-                            <td class='fw-bold'>
-                                <i class='fa fa-clock text-muted me-1'></i> Pendiente
-                            </td>
-                            <td>
-                                <button class='btn btn-success btn-sm rounded-circle btnProcessRow' data-casecode='${data.caseCode}' data-processcode="" data-nameproccess='${'NE-' + ((data.caseCode || '').split('-')[0].replace(/^NE/i, ''))}'>
-                                    <i class='fa fa-play'></i>
-                                </button>
-                            </td>
-                        </tr>
-                    `);
+                const dateStr = new Date(data.startDate).toLocaleString('es-EC', {
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                });
 
-                    filesInput.value = null;
-                    previewGallery.innerHTML = '';
-                    previewGallery.classList.add('d-none');
-                } catch (err) {
-                    ocultarLoadingPanel();
-                    Swal.fire({
-                        icon: 'warning',
-                        title: 'Advertencia',
-                        text: 'Error al crear el caso: ' + err.message,
-                    });
-                }
-            });
+                const caseShort = 'NE-' + ((data.caseCode || '').split('-')[0].replace(/^NE/i, ''));
+                const tbody = document.querySelector('#casesTable tbody');
 
-            // Función para actualizar badge
-            const badgeClasses = {
-                Pendiente: 'bg-warning text-dark',
-                'Procesando...': 'bg-info text-white',
-                Evaluado: 'bg-success text-white',
-                Error: 'bg-danger text-white'
-            };
-            function updateBadge(el, state) {
-                el.className = 'badge ' + (badgeClasses[state] || 'bg-secondary text-white');
-                el.textContent = state;
+                // Quitar fila de "no hay casos" si existe
+                const emptyRow = tbody.querySelector('td[colspan]');
+                if (emptyRow) emptyRow.closest('tr').remove();
+
+                tbody.insertAdjacentHTML('afterbegin', `
+                    <tr>
+                        <td class="fw-bold text-primary">${caseShort}</td>
+                        <td>${dateStr}</td>
+                        <td>${data.nameProccess}</td>
+                        <td><span class="badge badge-estado bg-warning text-dark"><i class="fa fa-hourglass-start me-1"></i>Pendiente</span></td>
+                        <td><span class="badge badge-tipo bg-secondary text-white"><i class="fa fa-clock me-1"></i>No Evaluado</span></td>
+                        <td>
+                            <button class='btn btn-success btn-sm rounded-circle btnProcessRow'
+                                    data-casecode='${data.caseCode}'
+                                    data-processcode=""
+                                    data-nameproccess='${caseShort}'
+                                    title="Procesar">
+                                <i class='fa fa-play'></i>
+                            </button>
+                        </td>
+                    </tr>
+                `);
+
+                filesInput.value = null;
+                previewGallery.innerHTML = '';
+                previewGallery.classList.add('d-none');
+                fileCountBadge.classList.add('d-none');
+                hasFiles = false;
+                actualizarBotonCrear();
+
+            } catch (err) {
+                ocultarLoadingPanel();
+                Swal.fire({ icon: 'warning', title: 'Advertencia', text: 'Error al crear el caso: ' + err.message });
+            }
+        });
+
+        // Procesar caso
+        let animacionInterval = null;
+
+        async function processCase(btn) {
+            btn.disabled = true;
+            const proccessName = btn.dataset.nameproccess || 'el proceso seleccionado';
+            const orig = btn.innerHTML;
+            btn.innerHTML = `<i class='fa fa-spinner fa-spin'></i>`;
+
+            const row = btn.closest('tr');
+            if (!row) {
+                btn.disabled = false;
+                return;
+            }
+            const estadoEl = row.children[3].querySelector('i, span');
+            const tipoCell = row.children[4];
+            if (!estadoEl || !tipoCell) {
+                btn.disabled = false;
+                return;
             }
 
-            // Procesar caso
-            async function processCase(btn) {
-                btn.disabled = true;
-                /*const process = btn.dataset.processcode;
-                console.log(process);
-                if (!process) {
-                    btn.disabled = false;
-                    return Swal.fire({
-                        icon: 'warning',
-                        title: 'Advertencia',
-                        text: 'Selecciona un proceso.',
-                    });
-                }*/
-                const proccessName = btn.dataset.nameproccess || 'el proceso seleccionado';
-                const orig = btn.innerHTML;
-                btn.innerHTML = `<i class='fa fa-spinner fa-spin'></i>`;
-                const row = btn.closest('tr');
-                if (!row) {
-                    Swal.fire({
-                        icon: 'warning',
-                        title: 'Advertencia',
-                        text: 'No se encontró la fila asociada al botón.',
-                    });                    
-                    btn.disabled = false;
-                    return;
-                }
-                const estadoEl = row.children[3].querySelector('i');
-                if (!estadoEl) {                    
-                    btn.disabled = false;
-                    Swal.fire({
-                        icon: 'warning',
-                        title: 'Advertencia',
-                        text: 'No se encontró el elemento de estado en la fila.',
-                    });
-                    return;
-                }
-                const tipoCell = row.children[4];
-                if (!tipoCell) {                    
-                    btn.disabled = false;
-                    Swal.fire({
-                        icon: 'warning',
-                        title: 'Advertencia',
-                        text: 'No se encontró la celda de tipo en la fila.',
-                    });
-                    return;
-                }
+            row.children[3].innerHTML = `<span class="badge badge-estado bg-info text-white"><i class="fa fa-spinner fa-spin me-1"></i>Procesando</span>`;
 
-                // Mostrar icono spinner y texto animado "Analizando..."
-                estadoEl.className = 'fas fa-spinner fa-spin text-info fa-lg';
-                tipoCell.innerHTML = `<span class="typing-animation">Analizando...</span>`;
+            const mensajes = ["Extrayendo...", "Resumiendo...", "Verificando...", "Leyendo...", "Analizando..."];
+            let indice = 0;
+            tipoCell.innerHTML = `<span class="typing-animation">${mensajes[0]}</span>`;
 
-                        tipoCell.innerHTML = `<span class="typing-animation">Analizando...</span>`;
-
-                // Lista de mensajes
-                const mensajes = [
-                  "Extrayendo...",
-                  "Resumiendo...",
-                  "Verificando...",
-                  "Leyendo...",
-                  "Analizando..."
-                ];
-
-                // Función para colores aleatorios
-                function colorAleatorio() {
-                  const colores = ["#007bff", "#28a745", "#ffc107", "#dc3545", "#17a2b8", "#6610f2"];
-                  return colores[Math.floor(Math.random() * colores.length)];
-                }
-
-                let indice = 0;
-
-                // Cambio cada 0.7 segundos
-                setInterval(() => {
-                  const span = document.querySelector(".typing-animation");
-                  if (span) {
+            if (animacionInterval) clearInterval(animacionInterval);
+            animacionInterval = setInterval(() => {
+                const span = tipoCell.querySelector('.typing-animation');
+                if (span) {
                     indice = (indice + 1) % mensajes.length;
                     span.textContent = mensajes[indice];
-                    span.style.color = colorAleatorio();
-                  }
-                }, 2000);
-
-                try {
-                    const form = new FormData();
-                    form.append('caseCode', btn.dataset.casecode);
-
-                    const res = await fetch('/Nexus/ProcessCaseAjax', {
-                        method: 'POST',
-                        body: form
-                    });
-                    if (!res.ok) throw new Error('Error en la solicitud.');
-                    const json = await res.json();
-
-                    const cat = (json.typeCase || 'Generado').trim().toLowerCase();
-                    
-                    // Icono de estado
-                    estadoEl.className = 'fas fa-check-circle text-success fa-lg';
-
-                    // Seleccionar icono y texto para FA6
-                    let tipoIconClass = 'file-medical text-secondary';
-                    let tipoNombre = 'Generado';
-
-                    if (cat.includes('no definido')) {
-                        tipoIconClass = 'question text-danger';
-                        tipoNombre = 'No Definido';
-                    }
-                    else if (cat.includes('hospital del día')) {
-                        tipoIconClass = 'hospital text-primary';
-                        tipoNombre = 'Hospital del Día';
-                    }
-                    else if (cat.includes('hospitalario')) {
-                        tipoIconClass = 'briefcase-medical text-info';
-                        tipoNombre = 'Hospitalario';
-                    } else if (cat.includes('ambulatorio')) {
-                        tipoIconClass = 'stethoscope text-warning';
-                        tipoNombre = 'Ambulatorio';
-                    }
-                    
-                    tipoCell.innerHTML = `<i class="fas fa-${tipoIconClass} fa-lg me-1"></i> <span>${tipoNombre}</span>`;
-
-
-                          row.children[5].innerHTML =
-                                    `<button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails"
-                                              data-casecode="${btn.dataset.casecode}"
-                                              data-processcode="${btn.dataset.processcode}"
-                                              data-nameproccess="${proccessName}"
-                                              onclick="handleViewDetails(this)">
-                                          <i class="fa fa-eye"></i>
-                                     </button>
-                                     <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow"
-                                              data-casecode="${btn.dataset.casecode}"
-                                              data-processcode="${btn.dataset.processcode}"
-                                              data-nameproccess="${proccessName}">
-                                          <i class="fa fa-play"></i>
-                                     </button>`;
-                
-                } 
-                catch {
-                    estadoEl.className = 'fas fa-times-circle text-danger fa-lg';
-                    
-                    tipoCell.innerHTML = `<i class="fas fa-exclamation-circle text-danger fa-lg"></i>`;
-                    
-                    btn.innerHTML = orig;
-                    
-                    btn.disabled = false;
-                
                 }
-            }
+            }, 2000);
 
-        // Cargar los botones dinámicamente
+            try {
+                const form = new FormData();
+                form.append('caseCode', btn.dataset.casecode);
+
+                const res = await fetch('/Nexus/ProcessCaseAjax', { method: 'POST', body: form });
+                if (!res.ok) throw new Error('Error en la solicitud.');
+                const json = await res.json();
+
+                clearInterval(animacionInterval);
+
+                const cat = (json.typeCase || 'Generado').trim().toLowerCase();
+
+                row.children[3].innerHTML = `<span class="badge badge-estado bg-success"><i class="fa fa-check-circle me-1"></i>Evaluado</span>`;
+
+                let tipoIconClass = 'fa-file-medical', tipoBg = 'bg-secondary', tipoCss = 'text-white', tipoNombre = 'Generado';
+                if (cat.includes('no definido'))        { tipoIconClass = 'fa-question';          tipoBg = 'bg-danger';    tipoNombre = 'No Definido'; }
+                else if (cat.includes('hospital del día')) { tipoIconClass = 'fa-hospital';       tipoBg = 'bg-primary';   tipoNombre = 'Hospital del Día'; }
+                else if (cat.includes('hospitalario'))  { tipoIconClass = 'fa-briefcase-medical'; tipoBg = 'bg-info';      tipoNombre = 'Hospitalario'; }
+                else if (cat.includes('ambulatorio'))   { tipoIconClass = 'fa-stethoscope';       tipoBg = 'bg-warning';   tipoCss = 'text-dark'; tipoNombre = 'Ambulatorio'; }
+
+                tipoCell.innerHTML = `<span class="badge badge-tipo ${tipoBg} ${tipoCss}"><i class="fas ${tipoIconClass} me-1"></i>${tipoNombre}</span>`;
+
+                row.children[5].innerHTML =
+                    `<button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails"
+                              data-casecode="${btn.dataset.casecode}"
+                              data-processcode="${btn.dataset.processcode}"
+                              data-nameproccess="${proccessName}"
+                              onclick="handleViewDetails(this)"
+                              title="Ver detalles">
+                          <i class="fa fa-eye"></i>
+                     </button>
+                     <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow ms-1"
+                              data-casecode="${btn.dataset.casecode}"
+                              data-processcode="${btn.dataset.processcode}"
+                              data-nameproccess="${proccessName}"
+                              title="Reprocesar">
+                          <i class="fa fa-play"></i>
+                     </button>`;
+
+            } catch {
+                clearInterval(animacionInterval);
+                row.children[3].innerHTML = `<span class="badge badge-estado bg-danger"><i class="fa fa-times-circle me-1"></i>Error</span>`;
+                tipoCell.innerHTML = `<span class="badge badge-tipo bg-secondary text-white"><i class="fas fa-exclamation-circle me-1"></i>Error</span>`;
+                btn.innerHTML = orig;
+                btn.disabled = false;
+            }
+        }
+
+        // Cargar botones de proceso
         async function loadProcessButtons() {
             try {
                 const response = await fetch(`/Nexus/GetProcessesByUser`);
@@ -519,109 +451,62 @@
                 const processes = await response.json();
 
                 const container = document.getElementById('processContainer');
-                container.innerHTML = ''; // Limpiar botones existentes
+                container.innerHTML = '';
 
                 processes.processes.forEach(process => {
                     const button = document.createElement('button');
-                    button.className = 'btn btn-primary btn-lg rounded-pill d-flex align-items-center gap-2 btnProcessAgent';
-                    button.textContent = process.processName;
+                    button.type = 'button';
+                    button.className = 'btn btn-outline-primary btn-lg rounded-pill d-flex align-items-center gap-2 btnProcessAgent';
+                    button.innerHTML = `<i class="fa-solid fa-layer-group"></i> ${process.processName}`;
                     button.dataset.processId = process.processId;
-                    button.dataset.agentId = process.processAgentId;
+                    button.dataset.agentId   = process.processAgentId;
 
-                    // Evento para setear el atributo del modelo
                     button.addEventListener('click', () => {
-                        document.querySelector('input[name="ProcessCode"]').value = process.processAgentId;
-                        // Actualizar el atributo data-processcode en todos los botones con la clase btnProcessRow
-                        const allButtons = document.querySelectorAll('.btnProcessRow');
-                        allButtons.forEach(btn => {
-                            btn.setAttribute('data-processcode', process.processAgentId);
-                        });
+                        document.querySelector('input[name="ProcessCode"]').value = process.processId;
 
-                        const allDetailsButtons = document.querySelectorAll('.btnViewDetails');
-                        allDetailsButtons.forEach(btn => {
-                            btn.setAttribute('data-processcode', process.processAgentId);
-                        });
+                        document.querySelectorAll('.btnProcessRow').forEach(b => b.setAttribute('data-processcode', process.processId));
+                        document.querySelectorAll('.btnViewDetails').forEach(b => b.setAttribute('data-processcode', process.processId));
 
-                        const allProcessButtons = document.querySelectorAll('.btnProcessAgent');
-                        allProcessButtons.forEach(btn => {
-                            btn.classList.remove('btn-success');
-                            btn.classList.add('btn-primary');
+                        document.querySelectorAll('.btnProcessAgent').forEach(b => {
+                            b.classList.remove('btn-primary', 'btn-success');
+                            b.classList.add('btn-outline-primary');
                         });
+                        button.classList.remove('btn-outline-primary');
+                        button.classList.add('btn-primary');
 
-                        button.classList.remove('btn-primary');
-                        button.classList.add('btn-success');
-                        
+                        // Indicador visible de proceso activo
+                        document.getElementById('processSelectedName').textContent = process.processName;
+                        document.getElementById('processSelectedIndicator').classList.remove('d-none');
+
+                        hasProcess = true;
+                        actualizarBotonCrear();
                     });
 
                     container.appendChild(button);
                 });
             } catch (error) {
                 console.error(error);
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'No se pudieron cargar los procesos.',
-                });                
+                Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudieron cargar los procesos.' });
             }
         }
 
         function handleViewDetails(button) {
-            // Obtener el valor de data-casecode
             const caseCode = button.dataset.casecode;
-
-            // Validar que el caseCode exista
             if (!caseCode) {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'No se encontró un código de caso válido.',
-                });
+                Swal.fire({ icon: 'error', title: 'Error', text: 'No se encontró un código de caso válido.' });
                 return;
             }
-
-            // Realizar otras validaciones si es necesario
-            /*const processCode = document.querySelector('input[name="ProcessCode"]').value;
-            if (!processCode) {
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Advertencia',
-                    text: 'Selecciona un proceso antes de continuar.',
-                });
-                return;
-            }*/
-
-            Swal.fire({
-                title: '¿Estás seguro?',
-                text: `Vas a ver los detalles del caso ${button.dataset.nameproccess}.`,
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#3085d6',
-                cancelButtonColor: '#d33',
-                confirmButtonText: 'Sí, continuar',
-                cancelButtonText: 'Cancelar'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    cargando();
-                    // Redirigir a la URL con el caseCode
-                    window.location.href = `/Nexus/Details1?caseCode=${caseCode}`;
-                }
-            });
-
+            cargando();
+            window.location.href = `/Nexus/Details1?caseCode=${caseCode}`;
         }
 
-        // Llamar a la función al cargar la página
         document.addEventListener('DOMContentLoaded', () => {
             loadProcessButtons();
         });
 
-        // Eventos globales           
-           
         document.addEventListener('click', e => {
-            const b = e.target.closest('.btnProcessRow'); if (b) processCase(b);
+            const b = e.target.closest('.btnProcessRow');
+            if (b) processCase(b);
         });
-
-
-
     </script>
-   
 }

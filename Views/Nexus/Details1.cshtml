@@ -2,6 +2,10 @@
 @using Markdig
 @{
     Layout = "_Layout"; // o el layout que uses
+    var orderedResults = Model.ProcessCase.FinalResponseResults?
+        .OrderBy(r => r.CreatedDate)
+        .ToList() ?? [];
+    var caseShortCode = ((Model.ProcessCase.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? "");
 }
 
 
@@ -13,74 +17,122 @@
                 <div class="card-header d-flex align-items-center justify-content-between small-header left-header">
                     <div class="d-flex align-items-center gap-2">
                         <i class="fa fa-folder-open me-2"></i>
-                        <strong id="leftHeaderTitle">Fuentes: <small class="text-muted" id="leftCount">@((Model.ProcessCase.DataFile?.Count() ?? 0))</small></strong>
+                        <strong id="leftHeaderTitle">Documentos del caso <small class="text-muted" id="leftCount">@((Model.ProcessCase.DataFile?.Count() ?? 0))</small></strong>
                     </div>
                 </div>
 
                 <div class="card-body p-2 panel-body panel-height d-flex flex-column">
-                    <div id="sourcesWrapper" style="display:block; flex:1 1 auto;">
-                        <table id="sourcesTable" class="table table-borderless table-hover mb-0" style="width:100%;">
-                            <thead class="d-none"></thead>
-                            <tbody> 
-                                @foreach (var file in Model.ProcessCase.DataFile)
-                                {
-                                    var origName = file.IsFileUri && !string.IsNullOrEmpty(file.OriginalName) ? file.OriginalName : file.FileUri;
-                                    var ext = System.IO.Path.GetExtension(origName)?.ToLower().TrimStart('.') ?? "";
-                                    var url = file.FileUri;
-                                    var type = (ext == "pdf") ? "pdf" : (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp") ? "img" : "other";
-                                    <tr class="source-row" data-url="@url" data-type="@type" data-ext="@ext" title="@System.IO.Path.GetFileName(origName)" style="cursor:pointer;">
-                                        <td style="width:56px; padding:.5rem;">
-                                            <div class="thumb-wrap">
-                                                @if (ext == "pdf")
-                                                {
-                                                    <i class="fa fa-file-pdf fa-lg text-danger"></i>
-                                                }
-                                                else
-                                                {
-                                                    <img src="@url" class="thumb-img" onerror="this.style.display='none';" />
-                                                }
-                                            </div>
-                                        </td>
-                                        <td class="align-middle">
-                                            <div class="fw-semibold text-truncate">@origName</div>
-                                            <small class="text-muted">@ext.ToUpper()</small>
-                                        </td>
-                                        <td class="text-end align-middle" style="width:36px;">
-                                            <i class="fa fa-chevron-right text-muted"></i>
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div id="previewWrapper" style="display:none; flex:1 1 auto;">
-                        <div class="d-flex align-items-center justify-content-between mb-2">
-                            <div class="fw-semibold" id="previewTitle">Vista previa</div>
-                            <div class="d-flex gap-1">
-                                <button id="btnBackToList" class="btn btn-sm btn-outline-secondary" title="Volver al listado"><i class="fa fa-arrow-left"></i> Volver</button>
-
-                                <button id="btnDownloadPreview" class="btn btn-sm btn-light" title="Descargar"><i class="fa fa-download"></i></button>
-
-                                <!-- Zoom controls -->
-                                <div class="btn-group ms-2" role="group" aria-label="Zoom controls">
-                                    <button id="btnZoomOut" type="button" class="btn btn-sm btn-light" title="Zoom - (tecla '-')"><i class="fa fa-search-minus"></i></button>
-                                    <button id="btnZoomReset" type="button" class="btn btn-sm btn-light" title="Reset zoom (tecla 0)"><i class="fa fa-ban"></i></button>
-                                    <button id="btnZoomIn" type="button" class="btn btn-sm btn-light" title="Zoom + (tecla '+')"><i class="fa fa-search-plus"></i></button>
+                    <div class="documents-stack">
+                        <section class="documents-surface sources-surface">
+                            <div class="surface-toolbar d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="surface-title">Documentos persistentes</div>
+                                    <small class="text-muted">Adjunta aquí los archivos que deben quedar guardados en el caso.</small>
                                 </div>
-
+                                <div class="surface-toolbar-actions">
+                                    <button id="btnAttachPermanent" type="button" class="btn btn-sm btn-light">
+                                        <i class="fa fa-plus me-1"></i>Adjuntar al caso
+                                    </button>
+                                    <input type="file"
+                                           id="caseFilesInput"
+                                           class="native-file-input"
+                                           hidden
+                                           aria-hidden="true"
+                                           tabindex="-1"
+                                           style="display:none !important;"
+                                           multiple
+                                           accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff,.xml,.html,.htm,image/*,application/pdf,text/xml,application/xml,text/html" />
+                                    <button id="btnRefreshSources" class="btn btn-sm btn-outline-secondary" title="Refrescar lista">
+                                        <i class="fa fa-sync"></i>
+                                    </button>
+                                </div>
                             </div>
-                        </div>
 
-                        <div id="previewContent" style="width:100%; height:100%; min-height:240px;">
-                        </div>
+                            <div id="sourcesWrapper" class="sources-wrapper">
+                                <table id="sourcesTable" class="table table-borderless table-hover mb-0" style="width:100%;">
+                                    <thead class="d-none"></thead>
+                                    <tbody>
+                                        @foreach (var file in Model.ProcessCase.DataFile.OrderByDescending(x => x.CreatedDate))
+                                        {
+                                            var origName = !string.IsNullOrWhiteSpace(file.OriginalName) ? file.OriginalName : file.FileUri;
+                                            var ext = System.IO.Path.GetExtension(origName)?.ToLower().TrimStart('.') ?? "";
+                                            var url = file.FileUri;
+                                            var type = (ext == "pdf") ? "pdf" : (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp" || ext == "bmp" || ext == "tif" || ext == "tiff") ? "img" : (ext == "xml" || ext == "html" || ext == "htm") ? "markup" : "other";
+                                            <tr class="source-row" data-id="@file.Id" data-url="@url" data-type="@type" data-ext="@ext" title="@System.IO.Path.GetFileName(origName)" style="cursor:pointer;">
+                                                <td style="width:56px; padding:.5rem;">
+                                                    <div class="thumb-wrap">
+                                                        @if (ext == "pdf")
+                                                        {
+                                                            <i class="fa fa-file-pdf fa-lg text-danger"></i>
+                                                        }
+                                                        else if (type == "markup")
+                                                        {
+                                                            <i class="fa fa-file-code fa-lg text-primary"></i>
+                                                        }
+                                                        else if (type == "other")
+                                                        {
+                                                            <i class="fa fa-file-lines fa-lg text-muted"></i>
+                                                        }
+                                                        else
+                                                        {
+                                                            <img src="@url" class="thumb-img" onerror="this.style.display='none';" />
+                                                        }
+                                                    </div>
+                                                </td>
+                                                <td class="align-middle">
+                                                    <div class="fw-semibold text-truncate">@origName</div>
+                                                    <small class="text-muted">@ext.ToUpper()</small>
+                                                </td>
+                                                <td class="text-end align-middle" style="width:36px;">
+                                                    <i class="fa fa-chevron-right text-muted"></i>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <section class="documents-surface preview-surface">
+                            <div class="surface-toolbar d-flex align-items-center justify-content-between">
+                                <div>
+                                    <div class="surface-title" id="previewTitle">Vista previa del documento</div>
+                                    <small class="text-muted">Selecciona un archivo del expediente para revisarlo aquí.</small>
+                                </div>
+                                <div class="d-flex gap-1 flex-wrap preview-toolbar-actions">
+                                    <button id="btnBackToList" class="btn btn-sm btn-outline-secondary" title="Limpiar selección">
+                                        <i class="fa fa-eraser"></i>
+                                    </button>
+                                    <button id="btnOpenInViewer" class="btn btn-sm btn-light" title="Abrir en otra pestaña">
+                                        <i class="fa fa-external-link-alt"></i>
+                                    </button>
+                                    <button id="btnDownloadPreview" class="btn btn-sm btn-light" title="Descargar">
+                                        <i class="fa fa-download"></i>
+                                    </button>
+                                    <span id="zoomLabel" class="zoom-status">100%</span>
+                                    <span class="preview-zoom-hint">Ctrl + rueda</span>
+                                    <div class="btn-group ms-2" role="group" aria-label="Zoom controls">
+                                        <button id="btnZoomOut" type="button" class="btn btn-sm btn-light" title="Zoom - (tecla '-')"><i class="fa fa-search-minus"></i></button>
+                                        <button id="btnZoomReset" type="button" class="btn btn-sm btn-light" title="Reset zoom (tecla 0)"><i class="fa fa-ban"></i></button>
+                                        <button id="btnZoomIn" type="button" class="btn btn-sm btn-light" title="Zoom + (tecla '+')"><i class="fa fa-search-plus"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="previewWrapper" class="preview-wrapper">
+                                <div id="previewEmptyState" class="preview-empty-state">
+                                    <i class="fa fa-file-alt"></i>
+                                    <div class="fw-semibold">Sin documento seleccionado</div>
+                                    <div class="text-muted">Haz clic sobre un archivo del expediente para abrir su vista previa aquí.</div>
+                                </div>
+                                <div id="previewContent" style="width:100%; min-height:240px;"></div>
+                            </div>
+                        </section>
                     </div>
 
-                    <div class="mt-2 d-flex justify-content-between align-items-center small">
-                        <div class="text-muted">Mostrar: <span id="shownCount">0</span></div>
-                        <div>
-                            <button id="btnRefreshSources" class="btn btn-sm btn-outline-secondary" title="Refrescar lista"><i class="fa fa-sync"></i></button>
-                        </div>
+                    <div class="mt-2 d-flex justify-content-between align-items-center small documents-footer-meta">
+                        <div class="text-muted">Mostrar: <span id="shownCount">@((Model.ProcessCase.DataFile?.Count() ?? 0))</span></div>
+                        <div id="sourcesStatus" class="text-muted">Listo para adjuntar nuevos documentos</div>
                     </div>
                 </div>
             </div>
@@ -91,50 +143,54 @@
             <div class="card card-panel-center rounded-3 h-100">
                 <div class="card-header d-flex align-items-center justify-content-between small-header center-header">
                     <div class="d-flex align-items-center gap-2">
-                        <h5 class="mb-0 header-title">Resultados del Caso</h5>
-                    </div>
-                    <div class="card-header d-flex align-items-center justify-content-between small-header center-header">
-                        <div class="d-flex align-items-center gap-2">
-                            <a asp-action="Index" onclick="cargando()"
-                               class="btn btn-primary btn-lg d-flex align-items-center gap-2"
-                               id="btnBackPage" title="Volver">
-                                <i class="fa fa-arrow-left"></i>
-                                <span>Volver</span>
-                            </a>
-                        </div>
-
-                        <div class="d-flex align-items-center gap-2">
-                            <button id="btnExportPdf" type="button"
-                                    class="btn btn-primary btn-lg d-flex align-items-center gap-2"
-                                    title="Exportar resultados a PDF">
-                                <i class="fa fa-file-pdf me-1" aria-hidden="true"></i>
-                                <span>Exportar PDF</span>
-                            </button>
+                        <div>
+                            <h5 class="mb-0 header-title">Resultados del Caso</h5>
+                            <small class="case-header-meta">NE-@caseShortCode · @Model.ProcessCase.DefinitionCodeNavigation?.Name</small>
                         </div>
                     </div>
+                    <div class="d-flex align-items-center gap-2 panel-header-actions">
+                        <a asp-action="Index" onclick="cargando()"
+                           class="btn btn-primary btn-lg d-flex align-items-center gap-2"
+                           id="btnBackPage" title="Volver">
+                            <i class="fa fa-arrow-left"></i>
+                            <span>Volver</span>
+                        </a>
 
-
+                        <button id="btnExportPdf" type="button"
+                                class="btn btn-primary btn-lg d-flex align-items-center gap-2"
+                                title="Exportar resultados a PDF">
+                            <i class="fa fa-file-pdf me-1" aria-hidden="true"></i>
+                            <span>Exportar PDF</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="card-body d-flex flex-column panel-body panel-height">
-                    <div class="mb-2 text-muted medium">
-                        <b>NE-@(((Model.ProcessCase.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))</b>
-                        @if (Model.ProcessCase.FinalResponseResults?.Any() == true)
+                    <div class="case-summary-strip mb-3">
+                        <div class="case-summary-pill">
+                            <span class="label">Caso</span>
+                            <strong>NE-@caseShortCode</strong>
+                        </div>
+                        <div class="case-summary-pill">
+                            <span class="label">Documentos</span>
+                            <strong>@(Model.ProcessCase.DataFile?.Count() ?? 0)</strong>
+                        </div>
+                        @if (orderedResults.Any())
                         {
-                            var lastDate = Model.ProcessCase.FinalResponseResults.OrderByDescending(r => r.CreatedDate).FirstOrDefault()?.CreatedDate;
+                            var lastDate = orderedResults.LastOrDefault()?.CreatedDate;
                             if (lastDate != null)
                             {
-                                <span class="mx-2">·</span>
-                                <span>@lastDate.Value.ToLocalTime().ToString("dd/MM/yyyy, HH:mm")</span>
-                                ;
+                                <div class="case-summary-pill">
+                                    <span class="label">Última respuesta</span>
+                                    <strong>@lastDate.Value.ToLocalTime().ToString("dd/MM/yyyy, HH:mm")</strong>
+                                </div>
                             }
                         }
                     </div>
 
-                    <!-- RESULT AREA -->
                     <div class="flex-grow-1 result-area mb-2">
                         <div class="result-panel p-3 h-100">
-                            @if (!Model.ProcessCase!.FinalResponseResults.Any())
+                            @if (!orderedResults.Any())
                             {
                                 <div class="alert alert-warning text-center mb-0">
                                     <i class="fa fa-info-circle me-2"></i>No hay resultados disponibles para este caso.
@@ -142,23 +198,32 @@
                             }
                             else
                             {
-                                var entries = Model.ProcessCase.FinalResponseResults
-                                .OrderBy(r => r.CreatedDate)
-                                .Select(r =>
-                                {
-                                    var req = string.IsNullOrWhiteSpace(r.RequestText) ? null : r.RequestText.Trim();
-                                    var resp = string.IsNullOrWhiteSpace(r.ResponseText) ? null : r.ResponseText.Trim();
-                                    return req == null ? (resp ?? "") : (resp == null ? req : req + "\n\n" + resp);
-                                })
-                                .ToList();
-                                var allMarkdown = string.Join("\n\n---\n\n", entries);
-                                var html = RenderMarkdown(allMarkdown);
-                                <div id="chatOutput" data-content='@Html.Raw(html.Replace("\"", "&quot;"))' style="font-size:15px; line-height:1.6; color:#222;"></div>
+                                <div id="chatOutput" class="chat-thread">
+                                    @foreach (var entry in orderedResults)
+                                    {
+                                        var requestHtml = RenderRequestBubble(entry.RequestText);
+                                        var responseHtml = string.IsNullOrWhiteSpace(entry.ResponseText) ? string.Empty : RenderMarkdown(entry.ResponseText.Trim());
+                                        <article class="chat-turn">
+                                            @if (!string.IsNullOrWhiteSpace(requestHtml))
+                                            {
+                                                <div class="chat-turn-request">
+                                                    @Html.Raw(requestHtml)
+                                                </div>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(responseHtml))
+                                            {
+                                                <div class="chat-turn-response">
+                                                    @Html.Raw(responseHtml)
+                                                </div>
+                                            }
+                                            <div class="chat-turn-meta">@entry.CreatedDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                                        </article>
+                                    }
+                                </div>
                             }
                         </div>
                     </div>
 
-                    <!-- Chat input container: quedará fixed sobre footer (NO movido en DOM) VALIDAR PARA BORRAR-->
                     @{
                         var hasChat = (Model?.HasChat ?? true);
                     }
@@ -166,8 +231,25 @@
                         <div class="chat-input-inner" id="chatInputInner" role="region" aria-label="Chat input area">
                             @if (hasChat)
                             {
+                                 <input type="file"
+                                        id="chatFilesInput"
+                                        class="native-file-input"
+                                        hidden
+                                        aria-hidden="true"
+                                        tabindex="-1"
+                                        style="display:none !important;"
+                                        multiple
+                                        accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff,.xml,.html,.htm,image/*,application/pdf,text/xml,application/xml,text/html" />
+                                <button id="btnAttachTransient"
+                                        type="button"
+                                        class="chat-plus-btn"
+                                        title="Adjuntar solo a este mensaje"
+                                        aria-label="Adjuntar solo a este mensaje">
+                                    <span aria-hidden="true">+</span>
+                                </button>
+                                <div id="chatAttachments" class="chat-attachments d-none"></div>
                                 <textarea id="chatInput" class="chat-input form-control" rows="2"
-                                      placeholder="Comienza a escribir... (Enter = enviar, Shift+Enter = nueva línea)"></textarea>
+                                      placeholder="Pregunta, comenta o adjunta archivos temporales..."></textarea>
 
                                 <button id="sendChat" class="chat-send-btn" title="Enviar" aria-label="Enviar" type="button" aria-busy="false">
                                     <span class="send-icon" aria-hidden="true"><i class="fa-solid fa-paper-plane"></i></span>
@@ -176,6 +258,9 @@
                             }
                             else
                             {
+                                <div class="chat-input-toolbar disabled">
+                                    <span class="chat-tool-copy">Este caso no tiene chat habilitado.</span>
+                                </div>
                                 <textarea id="chatInput" class="chat-input form-control" rows="2"
                                       placeholder="Opción no disponible"
                                       disabled="disabled"
@@ -199,7 +284,7 @@
         <aside class="col-lg-1 right-col" id="colRight" aria-hidden="false">
             <div class="card card-panel-right rounded-3 h-100">
                 <div class="card-header d-flex align-items-center justify-content-between small-header right-header">
-                    <div><strong>Studio</strong></div>
+                    <div><strong>Studio y notas</strong></div>
                     <small class="text-muted"></small>
                 </div>
                 <div class="card-body d-flex flex-column panel-body panel-height studio-panel-body">
@@ -404,7 +489,7 @@
 
               // CSS para evitar cortes internos
               const avoidBreakCss = `
-                .chat-response, .chat-response-final, .chat-divider, .note-detail, .pdf-page-box {
+                .chat-turn, .chat-turn-request, .chat-turn-response, .chat-response, .chat-response-final, .chat-divider, .note-detail, .pdf-page-box {
                   page-break-inside: avoid;
                   break-inside: avoid;
                   -webkit-column-break-inside: avoid;
@@ -529,6 +614,294 @@
 
             function q(sel) { return document.querySelector(sel); }
             function qa(sel) { return Array.from(document.querySelectorAll(sel)); }
+
+            function escapeHtml(value) {
+                return (value ?? '').toString().replace(/[&<>"']/g, ch => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                })[ch]);
+            }
+
+            function decodeHtmlEntities(value) {
+                const textarea = document.createElement('textarea');
+                textarea.innerHTML = (value ?? '').toString();
+                return textarea.value;
+            }
+
+            function tryFormatJsonBlock(value) {
+                const trimmed = (value ?? '').toString().trim();
+                if (!trimmed || trimmed.includes('```')) return null;
+                if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
+
+                try {
+                    return JSON.stringify(JSON.parse(trimmed), null, 2);
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function sanitizeRichHtml(root) {
+                if (!root) return;
+
+                root.querySelectorAll('script,style,iframe,object,embed').forEach(node => node.remove());
+
+                root.querySelectorAll('*').forEach(node => {
+                    Array.from(node.attributes).forEach(attr => {
+                        const attrName = attr.name.toLowerCase();
+                        const attrValue = (attr.value || '').trim();
+
+                        if (attrName.startsWith('on')) {
+                            node.removeAttribute(attr.name);
+                            return;
+                        }
+
+                        if ((attrName === 'href' || attrName === 'src') && /^javascript:/i.test(attrValue)) {
+                            node.setAttribute(attr.name, '#');
+                        }
+                    });
+                });
+            }
+
+            function normalizeCodeLanguage(lang) {
+                const raw = (lang || '').toString().trim().toLowerCase();
+                if (!raw) return '';
+
+                const aliases = {
+                    cs: 'csharp',
+                    'c#': 'csharp',
+                    csharp: 'csharp',
+                    js: 'javascript',
+                    ts: 'typescript',
+                    yml: 'yaml',
+                    ps1: 'powershell',
+                    shell: 'bash',
+                    sh: 'bash',
+                    text: 'plaintext',
+                    txt: 'plaintext'
+                };
+
+                return aliases[raw] || raw;
+            }
+
+            function codeLanguageLabel(lang) {
+                const normalized = normalizeCodeLanguage(lang);
+                if (!normalized) return 'CODE';
+
+                const labels = {
+                    csharp: 'C#',
+                    javascript: 'JavaScript',
+                    typescript: 'TypeScript',
+                    json: 'JSON',
+                    sql: 'SQL',
+                    html: 'HTML',
+                    xml: 'XML',
+                    css: 'CSS',
+                    bash: 'Bash',
+                    powershell: 'PowerShell',
+                    yaml: 'YAML',
+                    plaintext: 'Texto'
+                };
+
+                return labels[normalized] || normalized.toUpperCase();
+            }
+
+            function enhanceMarkdownContent(root) {
+                if (!root) return;
+
+                root.querySelectorAll('pre > code').forEach(code => {
+                    const pre = code.parentElement;
+                    if (!pre) return;
+
+                    const languageClass = (code.className || '')
+                        .split(/\s+/)
+                        .find(cls => cls.startsWith('language-') || cls.startsWith('lang-'));
+
+                    const lang = normalizeCodeLanguage(
+                        languageClass
+                            ? languageClass.replace(/^language-/, '').replace(/^lang-/, '')
+                            : code.dataset.lang || pre.dataset.codeLanguage || ''
+                    );
+
+                    pre.dataset.codeLanguage = codeLanguageLabel(lang);
+                    pre.classList.add('chat-code-block');
+                    code.classList.add('chat-code');
+                });
+
+                root.querySelectorAll('table').forEach(table => {
+                    table.classList.add('table', 'table-sm', 'table-striped', 'markdown-table');
+                });
+
+                root.querySelectorAll('a[href]').forEach(link => {
+                    link.setAttribute('target', '_blank');
+                    link.setAttribute('rel', 'noopener noreferrer');
+                });
+            }
+
+            function renderMarkdownHtml(source) {
+                let raw = decodeHtmlEntities(source);
+                if (!raw) return '';
+
+                const formattedJson = tryFormatJsonBlock(raw);
+                if (formattedJson) {
+                    raw = `\`\`\`json\n${formattedJson}\n\`\`\``;
+                }
+
+                const parsed = (typeof marked !== 'undefined')
+                    ? marked.parse(raw, {
+                        gfm: true,
+                        breaks: true,
+                        mangle: false,
+                        headerIds: false
+                    })
+                    : raw;
+
+                const temp = document.createElement('div');
+                temp.innerHTML = parsed;
+                sanitizeRichHtml(temp);
+                enhanceMarkdownContent(temp);
+                return temp.innerHTML;
+            }
+
+            function normalizeRequestPayload(source) {
+                const raw = decodeHtmlEntities(source || '').trim();
+                if (!raw) {
+                    return { message: '', attachments: '' };
+                }
+
+                const temp = document.createElement('div');
+                temp.innerHTML = raw;
+                sanitizeRichHtml(temp);
+
+                const attachmentParts = [];
+                temp.querySelectorAll('.chat-request-attachments').forEach(node => {
+                    const value = (node.textContent || '').trim();
+                    if (value) attachmentParts.push(value);
+                    node.remove();
+                });
+
+                temp.querySelectorAll('br').forEach(node => node.replaceWith('\n'));
+                temp.querySelectorAll('div, p, li').forEach(node => {
+                    if (node.nextSibling) {
+                        node.after(document.createTextNode('\n'));
+                    }
+                });
+
+                let message = (temp.textContent || '')
+                    .replace(/\r/g, '')
+                    .replace(/\n{3,}/g, '\n\n')
+                    .trim();
+
+                const lines = message
+                    .split('\n')
+                    .map(line => line.trim())
+                    .filter(Boolean);
+
+                const inlineAttachments = lines.filter(line => /^adjuntos?\s+temporales?:/i.test(line));
+                if (inlineAttachments.length) {
+                    attachmentParts.push(...inlineAttachments);
+                    message = lines.filter(line => !/^adjuntos?\s+temporales?:/i.test(line)).join('\n');
+                }
+
+                return {
+                    message: message.trim(),
+                    attachments: attachmentParts.join(' • ').trim()
+                };
+            }
+
+            function renderRequestHtml(source) {
+                const normalized = normalizeRequestPayload(source);
+                if (!normalized.message && !normalized.attachments) return '';
+
+                const parts = [];
+                if (normalized.message) {
+                    parts.push(`<div>${escapeHtml(normalized.message).replace(/\n/g, '<br>')}</div>`);
+                }
+
+                if (normalized.attachments) {
+                    parts.push(`<div class="chat-request-attachments">${escapeHtml(normalized.attachments)}</div>`);
+                }
+
+                return parts.join('');
+            }
+
+            function getDocumentType(extension) {
+                const ext = (extension || '').toLowerCase().replace(/^\./, '');
+                if (ext === 'pdf') return 'pdf';
+                if (['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tif', 'tiff'].includes(ext)) return 'img';
+                if (['xml', 'html', 'htm'].includes(ext)) return 'markup';
+                return 'other';
+            }
+
+            function getDocumentIcon(type, extension) {
+                const ext = (extension || '').toLowerCase().replace(/^\./, '');
+                if (type === 'pdf') return 'fa-file-pdf text-danger';
+                if (type === 'markup') return ext === 'xml' ? 'fa-file-code text-primary' : 'fa-file-lines text-primary';
+                return 'fa-file-lines text-muted';
+            }
+
+            function formatXmlForPreview(xmlText) {
+                const normalized = (xmlText || '').replace(/>\s*</g, '><').trim();
+                if (!normalized) return '';
+
+                const tokens = normalized.replace(/(>)(<)(\/*)/g, '$1\r\n$2$3').split('\r\n');
+                let indent = 0;
+                const formatted = [];
+
+                tokens.forEach(token => {
+                    if (!token) return;
+
+                    if (/^<\//.test(token)) {
+                        indent = Math.max(indent - 1, 0);
+                    }
+
+                    formatted.push(`${'  '.repeat(indent)}${token}`);
+
+                    if (/^<[^!?/][^>]*[^/]?>$/.test(token) && !/<\/[^>]+>$/.test(token)) {
+                        indent += 1;
+                    }
+                });
+
+                return formatted.join('\n').trim();
+            }
+
+            function formatHtmlForPreview(htmlText) {
+                const normalized = decodeHtmlEntities(htmlText || '').replace(/>\s+</g, '><').trim();
+                if (!normalized) return '';
+
+                const tokens = normalized.replace(/(>)(<)(\/*)/g, '$1\r\n$2$3').split('\r\n');
+                const voidTags = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+                let indent = 0;
+                const formatted = [];
+
+                tokens.forEach(token => {
+                    if (!token) return;
+
+                    const trimmed = token.trim();
+                    if (!trimmed) return;
+
+                    const tagMatch = trimmed.match(/^<\s*([^\s/>]+)/);
+                    const tagName = tagMatch ? tagMatch[1].toLowerCase() : '';
+                    const isClosing = /^<\//.test(trimmed);
+                    const isSelfClosing = /\/>$/.test(trimmed) || voidTags.has(tagName);
+                    const isInlinePair = /^<[^!?/][^>]*>.*<\/[^>]+>$/.test(trimmed);
+                    const isDeclaration = /^<!/.test(trimmed) || /^<\?/.test(trimmed);
+
+                    if (isClosing) {
+                        indent = Math.max(indent - 1, 0);
+                    }
+
+                    formatted.push(`${'  '.repeat(indent)}${trimmed}`);
+
+                    if (!isClosing && !isSelfClosing && !isInlinePair && !isDeclaration && /^<[^!?/]/.test(trimmed)) {
+                        indent += 1;
+                    }
+                });
+
+                return formatted.join('\n').trim();
+            }
 
             function combineRequestResponseMd(data) {
                 if (!data) return '';
@@ -661,83 +1034,198 @@
             }
 
             function positionChatInput() {
-                const centerCol = q('#colCenter');
                 const chatInner = q('#chatInputInner');
-                const footer = q('#nexusFooter');
-                if (!centerCol || !chatInner || !footer) return;
+                if (!chatInner) return;
 
-                const rect = centerCol.getBoundingClientRect();
-                const footerH = Math.ceil(footer.getBoundingClientRect().height || 0);
-                const gap = 8;
-
-                const vw = window.innerWidth || document.documentElement.clientWidth;
-                if (vw <= 991) {
-                    chatInner.style.left = '8px';
-                    chatInner.style.width = (vw - 16) + 'px';
-                    chatInner.style.maxWidth = (vw - 16) + 'px';
-                } else {
-                    const left = Math.max(8, rect.left + 8);
-                    const width = Math.max(300, rect.width - 16);
-                    chatInner.style.left = left + 'px';
-                    chatInner.style.width = width + 'px';
-                    chatInner.style.maxWidth = width + 'px';
-                }
-                chatInner.style.position = 'fixed';
-                chatInner.style.bottom = (footerH + gap) + 'px';
-                chatInner.style.zIndex = 1300;
+                chatInner.style.position = 'sticky';
+                chatInner.style.left = '0';
+                chatInner.style.bottom = '0';
+                chatInner.style.width = '100%';
+                chatInner.style.maxWidth = '100%';
+                chatInner.style.zIndex = '5';
 
                 const computedH = chatInner.getBoundingClientRect().height || 72;
                 document.documentElement.style.setProperty('--chat-input-height', computedH + 'px');
-                qa('.result-area').forEach(el => el.style.paddingBottom = (computedH + 28) + 'px');
+                qa('.result-area').forEach(el => el.style.paddingBottom = '18px');
             }
 
-            function stabilizePositionDuringTransition(timeout = 700, threshold = 2, stableFrames = 3) {
-                const chatInner = q('#chatInputInner');
-                const centerCol = q('#colCenter');
-                if (!chatInner || !centerCol) return Promise.resolve(false);
-
-                let lastLeft = null, lastWidth = null, stableCount = 0;
-                const start = performance.now();
-
-                return new Promise(resolve => {
-                    function step() {
-                        const rect = centerCol.getBoundingClientRect();
-                        const vw = window.innerWidth || document.documentElement.clientWidth;
-                        let desiredLeft, desiredWidth;
-                        if (vw <= 991) {
-                            desiredLeft = 8;
-                            desiredWidth = Math.max(300, vw - 16);
-                        } else {
-                            desiredLeft = Math.max(8, rect.left + 8);
-                            desiredWidth = Math.max(300, rect.width - 16);
-                        }
-
-                        if (lastLeft === null) { lastLeft = desiredLeft; lastWidth = desiredWidth; stableCount = 1; }
-                        else {
-                            const dl = Math.abs(desiredLeft - lastLeft);
-                            const dw = Math.abs(desiredWidth - lastWidth);
-                            if (dl <= threshold && dw <= threshold) stableCount++; else stableCount = 1;
-                            lastLeft = desiredLeft; lastWidth = desiredWidth;
-                        }
-
-                        chatInner.style.left = desiredLeft + 'px';
-                        chatInner.style.width = desiredWidth + 'px';
-                        chatInner.style.maxWidth = desiredWidth + 'px';
-                        positionChatInput();
-
-                        if (stableCount >= stableFrames) return resolve(true);
-                        if (performance.now() - start > timeout) return resolve(false);
-                        requestAnimationFrame(step);
-                    }
-                    requestAnimationFrame(step);
-                });
+            function stabilizePositionDuringTransition() {
+                positionChatInput();
+                return Promise.resolve(true);
             }
 
             document.addEventListener('DOMContentLoaded', () => {
                 const textarea = q('#chatInput');
                 const chatInner = q('#chatInputInner');
                 const sendBtn = q('#sendChat');
-                const chatOutputEl = q('#chatOutput');
+                let chatOutputEl = q('#chatOutput');
+                const caseCode = '@Model.ProcessCase.CaseCode';
+                const chatFilesInput = q('#chatFilesInput');
+                const caseFilesInput = q('#caseFilesInput');
+                const attachTransientBtn = q('#btnAttachTransient');
+                const attachPermanentBtn = q('#btnAttachPermanent');
+                const chatAttachmentsEl = q('#chatAttachments');
+                const sourcesStatusEl = q('#sourcesStatus');
+                const previewEmptyState = q('#previewEmptyState');
+                const colRight = q('#colRight');
+                let transientAttachments = [];
+
+                sanitizeRichHtml(chatOutputEl);
+                enhanceMarkdownContent(chatOutputEl);
+
+                function ensureChatOutput() {
+                    if (chatOutputEl) return chatOutputEl;
+
+                    const resultPanel = q('.result-panel');
+                    if (!resultPanel) return null;
+
+                    resultPanel.innerHTML = '<div id="chatOutput" class="chat-thread"></div>';
+                    chatOutputEl = q('#chatOutput');
+                    enhanceMarkdownContent(chatOutputEl);
+                    return chatOutputEl;
+                }
+
+                function setDocumentFocus(enabled) {
+                    document.documentElement.classList.toggle('document-focus', !!enabled);
+                    document.documentElement.classList.toggle('right-hidden', !!enabled);
+                    if (colRight) {
+                        colRight.setAttribute('aria-hidden', enabled ? 'true' : 'false');
+                    }
+                    positionChatInput();
+                }
+
+                function setSourcesStatus(text, tone = 'muted') {
+                    if (!sourcesStatusEl) return;
+                    sourcesStatusEl.textContent = text || '';
+                    sourcesStatusEl.className = tone === 'error' ? 'text-danger' : tone === 'success' ? 'text-success' : 'text-muted';
+                }
+
+                function makeCaseFilePayload(file) {
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve({
+                            FileName: file.name,
+                            Content: (reader.result || '').toString().split(',')[1] || '',
+                            Extension: '.' + (file.name.split('.').pop() || '').toLowerCase()
+                        });
+                        reader.onerror = () => reject(new Error(`No se pudo leer ${file.name}.`));
+                        reader.readAsDataURL(file);
+                    });
+                }
+
+                async function filesToPayload(fileList) {
+                    return Promise.all(Array.from(fileList || []).map(makeCaseFilePayload));
+                }
+
+                function renderTransientAttachments() {
+                    if (!chatAttachmentsEl) return;
+
+                    chatAttachmentsEl.innerHTML = '';
+                    if (!transientAttachments.length) {
+                        chatAttachmentsEl.classList.add('d-none');
+                        return;
+                    }
+
+                    transientAttachments.forEach((file, index) => {
+                        const attachmentType = getDocumentType(file.extension);
+                        const chip = document.createElement('button');
+                        chip.type = 'button';
+                        chip.className = 'attachment-chip';
+                        chip.innerHTML = `
+                            <span class="attachment-chip-name">
+                                <i class="fa ${getDocumentIcon(attachmentType, file.extension)}"></i>
+                                ${file.fileName}
+                            </span>
+                            <span class="attachment-chip-remove" aria-hidden="true"><i class="fa fa-times"></i></span>`;
+                        chip.addEventListener('click', () => {
+                            transientAttachments = transientAttachments.filter((_, currentIndex) => currentIndex !== index);
+                            renderTransientAttachments();
+                            positionChatInput();
+                        });
+                        chatAttachmentsEl.appendChild(chip);
+                    });
+
+                    chatAttachmentsEl.classList.remove('d-none');
+                }
+
+                function clearTransientAttachments() {
+                    transientAttachments = [];
+                    if (chatFilesInput) chatFilesInput.value = '';
+                    renderTransientAttachments();
+                }
+
+                function createSourceRow(file) {
+                    const tr = document.createElement('tr');
+                    const type = (file.type || getDocumentType(file.extension)).toLowerCase();
+                    const ext = ((file.extension || '').replace('.', '') || 'DOC').toUpperCase();
+                    const iconClass = getDocumentIcon(type, file.extension);
+
+                    tr.className = 'source-row';
+                    tr.dataset.id = file.id ?? '';
+                    tr.dataset.url = file.url ?? '';
+                    tr.dataset.type = type;
+                    tr.dataset.ext = (file.extension ?? '').replace('.', '');
+                    tr.title = file.originalName || file.url || 'Documento';
+                    tr.style.cursor = 'pointer';
+                    tr.innerHTML = `
+                        <td style="width:56px; padding:.5rem;">
+                            <div class="thumb-wrap">
+                                ${type === 'img'
+                                    ? `<img src="${file.url || ''}" class="thumb-img" onerror="this.style.display='none'; this.parentElement.innerHTML='<i class=&quot;fa ${iconClass}&quot;></i>';" />`
+                                    : `<i class="fa ${iconClass} fa-lg"></i>`}
+                            </div>
+                        </td>
+                        <td class="align-middle">
+                            <div class="fw-semibold text-truncate">${file.originalName || file.url || 'Documento'}</div>
+                            <small class="text-muted">${ext}</small>
+                        </td>
+                        <td class="text-end align-middle" style="width:36px;">
+                            <i class="fa fa-chevron-right text-muted"></i>
+                        </td>`;
+
+                    return tr;
+                }
+
+                async function loadCaseDocuments(preferredId = null) {
+                    const tbody = document.querySelector('#sourcesTable tbody');
+                    if (!tbody) return;
+
+                    const activeRow = q('.source-row.selected');
+                    const preserveId = preferredId ?? activeRow?.dataset.id ?? null;
+
+                    try {
+                        setSourcesStatus('Actualizando documentos...');
+                        const resp = await fetch(`@Url.Action("GetCaseDocuments", "Nexus")?caseCode=${caseCode}`);
+                        if (!resp.ok) throw new Error(resp.statusText || 'No se pudo obtener el expediente.');
+
+                        const items = await resp.json();
+                        tbody.innerHTML = '';
+
+                        if (!Array.isArray(items) || items.length === 0) {
+                            tbody.innerHTML = `<tr><td colspan="3" class="text-muted text-center py-4">No hay documentos en este caso.</td></tr>`;
+                            updateShownCount();
+                            backToList();
+                            setSourcesStatus('Sin documentos disponibles.');
+                            return;
+                        }
+
+                        items.forEach(item => tbody.appendChild(createSourceRow(item)));
+                        bindTableRows();
+                        setSourcesStatus('Expediente actualizado.', 'success');
+
+                        if (preserveId) {
+                            const rowToSelect = q(`.source-row[data-id="${preserveId}"]`);
+                            if (rowToSelect) {
+                                await onSelectRow(rowToSelect);
+                                return;
+                            }
+                        }
+
+                    } catch (err) {
+                        console.error('documents load error', err);
+                        setSourcesStatus('No se pudo actualizar la lista de documentos.', 'error');
+                    }
+                }
                 // Seleccionamos todas las tiles dinámicas (si no hay, no rompemos)
                 const studioTiles = qa('.studio-tile');
                 // Bind genérico para tiles (si existen)
@@ -748,12 +1236,7 @@
                             const btn = tile;
                             btn.disabled = true;
                             btn.classList.add('loading');
-                            // Recupera caseCode desde el panel (o inyectado desde Razor)
-                            const casePanel = q('#cfTopPanel');
-                            const caseCode = casePanel ? casePanel.dataset.case : '@Model.ProcessCase.CaseCode';
-                            // Mensaje que se enviará al controlador (puedes ajustarlo)
                             const message  = textarea?.value?.trim();
-                            // UI thinking
                             const thinking = startThinking();
                             setBtnLoading(true);
                             try {
@@ -761,23 +1244,18 @@
                                 const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ caseCode: caseCode, message: message, origin: 'BUTTON', id: btn.dataset.agentprocessid})
+                                    body: JSON.stringify(buildPromptPayload('BUTTON', message, { id: btn.dataset.agentprocessid }))
                                 });
                                 setBtnLoading(false);
                                 stopThinking(thinking);
                                 if (!resp.ok) throw new Error(resp.statusText || 'Error en la petición');
                                 const data = await resp.json();
-                                // Convierte la respuesta (markdown) a HTML y la escribe en el panel con la misma animación
-                                const combinedMd = combineRequestResponseMd(data);
-                                const html = (typeof marked !== 'undefined') ? marked.parse(combinedMd || '') : (combinedMd || '');
-                                if (chatOutputEl) {
-                                    await typeWriteInto(chatOutputEl, html, 3);
-                                }
+                                await appendConversationTurn(data, 4);
 
-                                // Limpia / enfoca textarea como en el flujo normal
                                 const ta = q('#chatInput');
                                 if (ta) {
                                     ta.value = '';
+                                    clearTransientAttachments();
                                     try { autoResize(ta); } catch (e) {}
                                     try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
                                 }
@@ -1004,72 +1482,137 @@
                     });
                 }
 
-                async function typeWriteInto(el, html, speed = 3, dividerText = null) {
+                if (attachTransientBtn && chatFilesInput) {
+                    attachTransientBtn.addEventListener('click', () => chatFilesInput.click());
+                    chatFilesInput.addEventListener('change', async () => {
+                        try {
+                            const payloads = await filesToPayload(chatFilesInput.files);
+                            transientAttachments = transientAttachments.concat(payloads.map((payload, index) => ({
+                                fileName: chatFilesInput.files[index].name,
+                                extension: payload.Extension,
+                                payload
+                            })));
+                            renderTransientAttachments();
+                            positionChatInput();
+                        } catch (err) {
+                            console.error('temporary attachments error', err);
+                            Swal.fire({
+                                icon: 'warning',
+                                title: 'Advertencia',
+                                text: err.message || 'No se pudieron adjuntar los archivos temporales.'
+                            });
+                        } finally {
+                            chatFilesInput.value = '';
+                        }
+                    });
+                }
+
+                if (attachPermanentBtn && caseFilesInput) {
+                    attachPermanentBtn.addEventListener('click', () => caseFilesInput.click());
+                    caseFilesInput.addEventListener('change', async () => {
+                        if (!caseFilesInput.files?.length) return;
+
+                        try {
+                            setSourcesStatus('Adjuntando documentos al caso...');
+                            attachPermanentBtn.disabled = true;
+                            const payloads = await filesToPayload(caseFilesInput.files);
+                            const resp = await fetch('@Url.Action("AddCaseDocuments", "Nexus")', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ caseCode, files: payloads })
+                            });
+
+                            if (!resp.ok) throw new Error(resp.statusText || 'No se pudieron adjuntar los documentos.');
+                            const data = await resp.json();
+                            const latestId = Array.isArray(data.items) && data.items.length ? data.items[0].id : null;
+                            await loadCaseDocuments(latestId);
+                            setSourcesStatus('Documentos agregados al expediente.', 'success');
+                        } catch (err) {
+                            console.error('permanent attachments error', err);
+                            setSourcesStatus('No se pudieron adjuntar los documentos.', 'error');
+                            Swal.fire({
+                                icon: 'warning',
+                                title: 'Advertencia',
+                                text: err.message || 'No se pudieron adjuntar los documentos al caso.'
+                            });
+                        } finally {
+                            attachPermanentBtn.disabled = false;
+                            caseFilesInput.value = '';
+                        }
+                    });
+                }
+
+                async function typeWriteInto(el, html, speed = 3) {
                     if (!el) return;
                     __typeToken++;
-                    const myToken = __typeToken;
-
-                    // Si ya hay respuestas previas, añadimos la "raya" separadora
-                    const existingResponses = el.querySelectorAll('.chat-response').length;
-                    if (existingResponses > 0) {
-                        const divider = document.createElement('div');
-                        divider.className = 'chat-divider';
-                        if (dividerText && dividerText.toString().trim() !== '') {
-                            const span = document.createElement('span');
-                            span.textContent = dividerText;
-                            divider.appendChild(span);
-                        }
-                        el.appendChild(divider);
-                    }
-
-                    // Crear un contenedor por respuesta para NO tocar el contenido previo
-                    const container = document.createElement('div');
-                    container.className = 'chat-response';
-                    container.setAttribute('data-content', html);
-                    el.appendChild(container);
-
                     const parentScroll = el.closest('.result-area') || el.parentElement;
+                    el.innerHTML = html || '';
+                    enhanceMarkdownContent(el);
+                    el.classList.remove('chat-response-enter');
+                    void el.offsetWidth;
+                    el.classList.add('chat-response-enter');
 
-                    // --- SCROLL INICIAL UNA ÚNICA VEZ: llevar la vista al punto donde empezará a escribir
                     try {
                         if (parentScroll) {
-                            // único salto inicial para que el cliente note el inicio de la respuesta
                             parentScroll.scrollTop = parentScroll.scrollHeight;
                         }
                     } catch (e) { /* ignore */ }
-
-                    // Ajuste de velocidad: effectiveDelay en ms entre pasos
-                    const effectiveDelay = Math.max(1, Math.round((speed) / 2)); // speed=6 -> ~3ms
-                    const chunk = Math.max(1, Math.round(6 / Math.max(1, effectiveDelay))); // cuantos caracteres avanzamos por tick
-
-                    let i = 0;
-                    return new Promise(resolve => {
-                        function step() {
-                            // cancelado por otro tipeo
-                            if (myToken !== __typeToken) return resolve();
-
-                            // avanzar por "chunks" para que sea perceptiblemente más rápido
-                            i = Math.min(html.length, i + chunk);
-
-                            // Mantener la aproximación original: slice del HTML
-                            container.innerHTML = html.slice(0, i);
-
-                            // **NO** forzamos scroll mientras escribe ni al finalizar (solo el salto inicial ya hecho)
-                            if (i < html.length) {
-                                setTimeout(step, effectiveDelay);
-                            } else {
-                                resolve();
-                            }
-                        }
-                        step();
-                    });
                 }
 
                 function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
 
+                function buildPromptPayload(origin, message, extra = {}) {
+                    return {
+                        caseCode,
+                        message,
+                        origin,
+                        files: transientAttachments.map(item => item.payload),
+                        ...extra
+                    };
+                }
+
+                async function appendConversationTurn(data, speed = 4) {
+                    const thread = ensureChatOutput();
+                    if (!thread) return;
+
+                    thread.closest('.result-panel')?.querySelector('.alert')?.remove();
+
+                    const article = document.createElement('article');
+                    article.className = 'chat-turn chat-turn-live';
+
+                    const requestText = (data.request ?? data.requestText ?? data.RequestText ?? '').toString().trim();
+                    if (requestText) {
+                        const requestEl = document.createElement('div');
+                        requestEl.className = 'chat-turn-request';
+                        requestEl.innerHTML = renderRequestHtml(requestText);
+                        article.appendChild(requestEl);
+                    }
+
+                    const responseEl = document.createElement('div');
+                    responseEl.className = 'chat-turn-response';
+                    article.appendChild(responseEl);
+
+                    const metaEl = document.createElement('div');
+                    metaEl.className = 'chat-turn-meta';
+                    metaEl.textContent = new Date().toLocaleString('es-EC', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                    article.appendChild(metaEl);
+
+                    thread.appendChild(article);
+
+                    const responseText = (data.response ?? data.responseText ?? data.ResponseText ?? '').toString();
+                    const html = renderMarkdownHtml(responseText);
+                    await typeWriteInto(responseEl, html, speed);
+                }
+
                 async function sendMessage() {
                     const text = textarea?.value?.trim();
-                    if (!text) return;
+                    if (!text && transientAttachments.length === 0) return;
                     let thinking = null;
                     try {
                         setBtnLoading(true);
@@ -1082,7 +1625,7 @@
                         const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ caseCode: '@Model.ProcessCase.CaseCode', message: text,origin: 'CHAT' })//chat-nexus
+                            body: JSON.stringify(buildPromptPayload('CHAT', text))
                         });
 
                         stopThinking(thinking);
@@ -1091,11 +1634,11 @@
                         if (!resp.ok) throw new Error(resp.statusText);
                         const data = await resp.json();
 
-                        const combinedMd = combineRequestResponseMd(data);
-                        const html = (typeof marked !== 'undefined') ? marked.parse(combinedMd || '') : (combinedMd || '');
-                        await typeWriteInto(chatOutputEl, html, 6);
+                        await appendConversationTurn(data, 6);
 
-                        textarea.value = ''; autoResize(textarea);
+                        textarea.value = '';
+                        clearTransientAttachments();
+                        autoResize(textarea);
                         try { textarea.focus({ preventScroll: true }); } catch (e) { textarea.focus(); }
                     } catch (err) {
                         console.error(err);
@@ -1111,11 +1654,6 @@
                     }
                 }
                 if (sendBtn) sendBtn.addEventListener('click', sendMessage);
-
-                if (chatOutputEl) {
-                    const content = chatOutputEl.getAttribute('data-content') || '';
-                    if (content) chatOutputEl.innerHTML = content;
-                }
 
                 function bindTableRows() {
                     qa('.source-row').forEach(row => {
@@ -1144,136 +1682,222 @@
                 const btnBackToList = q('#btnBackToList');
                 const btnOpenInViewer = q('#btnOpenInViewer');
                 const btnDownloadPreview = q('#btnDownloadPreview');
-                const btnFlagPreview = q('#btnFlagPreview');
-                let currentPreview = { url: '', type: '' };
+                let currentPreview = { url: '', type: '', ext: '', id: '' };
+
+                async function getMarkupPreviewPayload(fileId) {
+                    const response = await fetch(`@Url.Action("GetCaseDocumentPreview", "Nexus")?caseCode=${caseCode}&fileId=${fileId}`);
+                    if (!response.ok) {
+                        throw new Error(response.statusText || 'No se pudo obtener el contenido del documento.');
+                    }
+
+                    return response.json();
+                }
 
                 async function onSelectRow(row) {
-                    // des-selecciona previos y selecciona este
                     qa('.source-row.selected').forEach(r => r.classList.remove('selected'));
                     row.classList.add('selected');
 
                     const url = row.dataset.url;
                     const type = (row.dataset.type || '').toLowerCase();
+                    const ext = (row.dataset.ext || '').toLowerCase();
                     const title = row.title || (row.querySelector('td:nth-child(2)')?.innerText) || 'Documento';
                     if (previewTitle) previewTitle.textContent = title;
+                    if (previewEmptyState) previewEmptyState.style.display = 'none';
 
-                    // muestra el panel de preview (antes de medir)
-                    if (sourcesWrapper) sourcesWrapper.style.display = 'none';
-                    if (previewWrapper) previewWrapper.style.display = 'block';
-
-                    // Ajusta columnas (hacer grande la columna izquierda y reducir el centro)
-                    const leftCol = q('#colLeft'), centerCol = q('#colCenter'), rightCol = q('#colRight');
-                    if (leftCol && centerCol) {
-                        document.documentElement.classList.add('right-hidden');
-                        leftCol.style.flex = '0 0 70%';
-                        leftCol.style.maxWidth = '70%';
-                        leftCol.style.width = '70%';
-                        centerCol.style.flex = '0 0 30%';
-                        centerCol.style.maxWidth = '30%';
-                        centerCol.style.width = '30%';
-                        if (rightCol) rightCol.setAttribute('aria-hidden', 'true');
-                    }
-
-                    // Espera a que la transición/posicionamiento se estabilice antes de renderizar
-                    // Esto asegura que previewContent.clientWidth tiene el valor correcto
-                    await stabilizePositionDuringTransition(1000);
-
-                    // Guarda la info del preview y renderiza (await para usar dimensiones actualizadas)
-                    currentPreview = { url: url, type: type };
-                    await renderPreview(url, type);
-
-                    // Reposiciona el input chat ahora que todo está renderizado
+                    currentPreview = { url: url, type: type, ext: ext, id: row.dataset.id || '' };
+                    await renderPreview(url, type, ext, row.dataset.id || '');
+                    setDocumentFocus(true);
                     positionChatInput();
                 }
 
                 function backToList() {
                     __pdfRenderToken++;
                     if (previewContent) previewContent.innerHTML = '';
-                    currentPreview = { url: '', type: '' };
-                    if (previewWrapper) previewWrapper.style.display = 'none';
-                    if (sourcesWrapper) sourcesWrapper.style.display = 'block';
+                    if (previewContent) previewContent.dataset.zoomKind = 'none';
+                    currentPreview = { url: '', type: '', ext: '', id: '' };
                     qa('.source-row.selected').forEach(r => r.classList.remove('selected'));
-                    const leftCol = q('#colLeft'), centerCol = q('#colCenter'), rightCol = q('#colRight');
-                    if (leftCol && centerCol) {
-                        document.documentElement.classList.remove('right-hidden');
-                        leftCol.style.width = ''; leftCol.style.flex = ''; leftCol.style.maxWidth = '';
-                        centerCol.style.width = ''; centerCol.style.flex = ''; centerCol.style.maxWidth = '';
-                        if (rightCol) { rightCol.style.display = ''; rightCol.style.width = ''; rightCol.style.flex = ''; rightCol.style.maxWidth = ''; rightCol.setAttribute('aria-hidden','false'); }
-                    }
-                    setTimeout(() => { stabilizePositionDuringTransition(900).then(() => positionChatInput()); }, 40);
+                    if (previewTitle) previewTitle.textContent = 'Vista previa del documento';
+                    if (previewEmptyState) previewEmptyState.style.display = '';
+                    setDocumentFocus(false);
+                    positionChatInput();
                 }
 
                 if (btnBackToList) btnBackToList.addEventListener('click', backToList);
                 if (btnOpenInViewer) btnOpenInViewer.addEventListener('click', () => { if (!currentPreview.url) return Swal.fire({icon: 'error',title: 'Advertencia',text: 'No hay documento en vista previa.',}); window.open(currentPreview.url, '_blank'); });
                 if (btnDownloadPreview) btnDownloadPreview.addEventListener('click', () => { if (!currentPreview.url) return Swal.fire({icon: 'error',title: 'Advertencia',text: 'No hay documento seleccionado.',}); const a = document.createElement('a'); a.href = currentPreview.url; a.download = currentPreview.url.split('/').pop() || 'download'; document.body.appendChild(a); a.click(); a.remove(); });
-                if (btnFlagPreview) btnFlagPreview.addEventListener('click', () => { const selRow = q('.source-row.selected'); if (!selRow) return Swal.fire({icon: 'error',title: 'Advertencia',text: 'Selecciona un documento primero.',}); selRow.classList.toggle('marked'); });
 
-                async function renderPreview(url, type) {
-                    // token para cancelar renders anteriores
+                async function renderPreview(url, type, ext = '', fileId = '') {
                     __pdfRenderToken++;
                     const myToken = __pdfRenderToken;
 
+                    try {
+                        window.NexusPreviewZoom?.reset?.();
+                    } catch (e) { /* ignore */ }
+
                     const previewContent = document.getElementById('previewContent');
                     if (!previewContent) return;
-                    // asegurar estado limpio
                     previewContent.innerHTML = '';
                     previewContent.scrollTop = 0;
-                    // evitar scroll horizontal accidental
+                    previewContent.dataset.zoomKind = 'none';
                     previewContent.style.overflow = 'auto';
                     previewContent.style.webkitOverflowScrolling = 'touch';
                     previewContent.style.boxSizing = 'border-box';
+                    if (previewEmptyState) previewEmptyState.style.display = 'none';
 
                     if (!url) {
-                        previewContent.innerHTML = '<p class="text-muted">No se encontró la URL del documento.</p>';
+                        if (previewEmptyState) previewEmptyState.style.display = '';
                         return;
                     }
 
-                    // Si no es PDF, mostrar imagen (responsive)
-                    if (type !== 'pdf') {
+                    if (type === 'markup') {
+                        previewContent.dataset.zoomKind = 'static';
+                        try {
+                            const markupPayload = await getMarkupPreviewPayload(fileId);
+                            if (myToken !== __pdfRenderToken) return;
+
+                            const markupExt = ((markupPayload.extension || ext || '').toString()).toLowerCase().replace(/^\./, '');
+                            const rawText = (markupPayload.text || '').toString();
+
+                            const zoomWrapper = document.createElement('div');
+                            zoomWrapper.className = 'preview-zoom-wrapper preview-markup-wrapper';
+                            zoomWrapper.style.width = '100%';
+                            zoomWrapper.style.height = '100%';
+                            zoomWrapper.style.overflow = 'auto';
+
+                            const stage = document.createElement('div');
+                            stage.className = 'preview-markup-stage';
+
+                            const shell = document.createElement('div');
+                            shell.className = 'preview-markup-shell';
+
+                            const meta = document.createElement('div');
+                            meta.className = 'preview-markup-meta';
+                            meta.textContent = markupExt === 'xml'
+                                ? 'XML guardado directo, sin OCR.'
+                                : 'HTML guardado directo, sin OCR. Vista previa en modo seguro.';
+                            shell.appendChild(meta);
+
+                            const pre = document.createElement('pre');
+                            pre.className = 'preview-markup-code';
+
+                            const code = document.createElement('code');
+                            const isXml = markupExt === 'xml';
+                            code.className = isXml ? 'language-xml' : 'language-html';
+                            code.textContent = isXml
+                                ? formatXmlForPreview(rawText)
+                                : formatHtmlForPreview(rawText);
+                            pre.appendChild(code);
+                            shell.appendChild(pre);
+
+                            stage.appendChild(shell);
+                            zoomWrapper.appendChild(stage);
+                            previewContent.appendChild(zoomWrapper);
+                            stabilizePositionDuringTransition(320).then(() => positionChatInput());
+                        } catch (err) {
+                            console.error('markup preview error', err);
+                            previewContent.innerHTML = '<p class="text-danger">No se pudo cargar la vista previa del documento markup.</p>';
+                            stabilizePositionDuringTransition(320).then(() => positionChatInput());
+                        }
+                        return;
+                    }
+
+                    if (type === 'img') {
+                        previewContent.dataset.zoomKind = 'img';
+                        const zoomWrapper = document.createElement('div');
+                        zoomWrapper.className = 'preview-zoom-wrapper is-grab preview-image-scroll';
+                        zoomWrapper.style.width = '100%';
+                        zoomWrapper.style.height = '100%';
+                        zoomWrapper.style.overflow = 'auto';
+                        zoomWrapper.style.touchAction = 'none';
+
+                        const stage = document.createElement('div');
+                        stage.className = 'preview-image-stage';
+
                         const img = document.createElement('img');
                         img.src = url;
                         img.className = 'img-fluid rounded preview-image';
-                        img.style.maxHeight = '100%';
+                        img.style.maxHeight = 'none';
                         img.style.width = '100%';
                         img.style.objectFit = 'contain';
-                        img.onerror = () => { previewContent.innerHTML = '<p class="text-danger">Error al cargar la imagen.</p>'; };
-                        previewContent.appendChild(img);
-                        img.onload = () => { stabilizePositionDuringTransition(400).then(() => positionChatInput()); };
+                        img.onerror = () => {
+                            previewContent.innerHTML = '<p class="text-danger">Error al cargar la imagen.</p>';
+                            if (previewEmptyState) previewEmptyState.style.display = 'none';
+                        };
+                        img.onload = () => {
+                            const availableWidth = Math.max(160, (zoomWrapper.clientWidth || previewContent.clientWidth || img.naturalWidth || 0) - 18);
+                            const availableHeight = Math.max(160, (zoomWrapper.clientHeight || previewContent.clientHeight || img.naturalHeight || 0) - 18);
+                            const naturalWidth = img.naturalWidth || availableWidth;
+                            const naturalHeight = img.naturalHeight || availableHeight;
+                            const fitScale = Math.min(availableWidth / naturalWidth, availableHeight / naturalHeight, 1);
+                            const baseWidth = Math.max(140, Math.round(naturalWidth * fitScale));
+                            const baseHeight = Math.max(140, Math.round(naturalHeight * fitScale));
+
+                            stage.dataset.baseWidth = baseWidth.toString();
+                            stage.dataset.baseHeight = baseHeight.toString();
+                            img.dataset.baseWidth = baseWidth.toString();
+                            img.dataset.baseHeight = baseHeight.toString();
+
+                            stage.style.width = `${baseWidth}px`;
+                            stage.style.height = `${baseHeight}px`;
+                            img.style.width = '100%';
+                            img.style.height = '100%';
+                            img.style.maxWidth = 'none';
+                            img.style.maxHeight = 'none';
+
+                            zoomWrapper.scrollLeft = 0;
+                            zoomWrapper.scrollTop = 0;
+                            stabilizePositionDuringTransition(400).then(() => positionChatInput());
+                        };
+
+                        stage.appendChild(img);
+                        zoomWrapper.appendChild(stage);
+                        previewContent.appendChild(zoomWrapper);
                         return;
                     }
 
-                    // Barra de progreso
+                    if (type !== 'pdf') {
+                        previewContent.dataset.zoomKind = 'static';
+                        previewContent.innerHTML = '<div class="preview-empty-state"><i class="fa fa-file-lines"></i><div class="fw-semibold">Vista previa no disponible</div><div class="text-muted">Puedes abrir o descargar este archivo desde la barra superior.</div></div>';
+                        stabilizePositionDuringTransition(260).then(() => positionChatInput());
+                        return;
+                    }
+
                     const progressWrap = document.createElement('div');
+                    previewContent.dataset.zoomKind = 'pdf';
                     progressWrap.className = 'pdf-progress-wrap mb-2';
                     progressWrap.innerHTML = `<div class="pdf-progress-label">Cargando PDF…</div>
                                                 <div class="progress"><div class="progress-bar" role="progressbar" style="width:0%"></div></div>`;
                     previewContent.appendChild(progressWrap);
 
                     try {
-                        // Cargar PDF con pdf.js (pdfjsLib debe estar disponible)
                         const loadingTask = pdfjsLib.getDocument(url);
                         const pdf = await loadingTask.promise;
 
-                        // Si otro render se inició, abortar y liberar
                         if (myToken !== __pdfRenderToken) { try { pdf.destroy?.(); } catch (e) {} return; }
 
                         const total = pdf.numPages;
                         const progressBar = progressWrap.querySelector('.progress-bar');
 
-                        // Contenedor de páginas (vertical y centrado)
+                        const zoomWrapper = document.createElement('div');
+                        zoomWrapper.className = 'preview-zoom-wrapper is-grab';
+                        zoomWrapper.style.width = '100%';
+                        zoomWrapper.style.height = '100%';
+                        zoomWrapper.style.overflow = 'auto';
+                        zoomWrapper.style.touchAction = 'none';
+                        previewContent.appendChild(zoomWrapper);
+
                         const pagesContainer = document.createElement('div');
                         pagesContainer.className = 'pdf-pages-container';
                         pagesContainer.style.display = 'flex';
                         pagesContainer.style.flexDirection = 'column';
                         pagesContainer.style.gap = '12px';
                         pagesContainer.style.alignItems = 'center';
-                        previewContent.appendChild(pagesContainer);
+                        pagesContainer.style.minHeight = '100%';
+                        zoomWrapper.appendChild(pagesContainer);
 
                         for (let p = 1; p <= total; p++) {
-                            // abort si hay render nuevo
                             if (myToken !== __pdfRenderToken) { try { pdf.destroy?.(); } catch (e) {} return; }
 
-                            // Page box: columna para canvas + caption
                             const pageBox = document.createElement('div');
                             pageBox.className = 'pdf-page-box mb-3';
                             pageBox.setAttribute('data-page', p);
@@ -1283,7 +1907,6 @@
                             pageBox.style.alignItems = 'center';
                             pageBox.style.padding = '8px';
                             pageBox.style.boxSizing = 'border-box';
-                            pageBox.style.width = '100%';
 
                             const loader = document.createElement('div');
                             loader.className = 'pdf-page-loader';
@@ -1293,46 +1916,32 @@
 
                             const page = await pdf.getPage(p);
 
-                            // Calcula ancho disponible del previewContent (restando paddings)
                             const cs = getComputedStyle(previewContent);
                             const paddingX = (parseFloat(cs.paddingLeft || 0) || 0) + (parseFloat(cs.paddingRight || 0) || 0);
                             const availableWidth = Math.max(300, (previewContent.clientWidth || 800) - paddingX - 24);
 
-                            // Viewport original sin escala
                             const unscaledViewport = page.getViewport({ scale: 1 });
-
-                            // Escala CSS para que la página quepa en el contenedor
                             const scale = Math.max(0.5, (availableWidth) / unscaledViewport.width);
-
-                            // viewport en CSS pixels (lo que mostraremos)
                             const cssViewport = page.getViewport({ scale });
-
-                            // factor de dispositivo (Retina)
                             const outputScale = Math.max(1, window.devicePixelRatio || 1);
-
-                            // viewport en píxeles reales para el canvas
                             const pixelViewport = page.getViewport({ scale: scale * outputScale });
-
-                            // Crear canvas con dimensiones en píxeles reales
+                            pageBox.style.width = Math.floor(cssViewport.width + 18) + 'px';
+                            pageBox.dataset.baseWidth = Math.floor(cssViewport.width).toString();
                             const canvas = document.createElement('canvas');
                             canvas.width = Math.floor(pixelViewport.width);
                             canvas.height = Math.floor(pixelViewport.height);
-
-                            // Mostrar canvas con tamaño CSS y centrado
                             canvas.style.width = Math.floor(cssViewport.width) + 'px';
-                            canvas.style.height = 'auto'; // permitir ajuste proporcional
+                            canvas.style.height = 'auto';
                             canvas.style.display = 'block';
                             canvas.style.margin = '0 auto';
                             canvas.style.maxWidth = '100%';
                             canvas.className = 'pdf-page-canvas rounded';
+                            canvas.dataset.baseWidth = Math.floor(cssViewport.width).toString();
 
                             const ctx = canvas.getContext('2d', { alpha: false });
-
-                            // Verificar token antes de render
                             if (myToken !== __pdfRenderToken) { try { page.cleanup?.(); } catch (e) {} return; }
 
                             try {
-                                // Render usando viewport en píxeles reales para conservar nitidez
                                 await page.render({ canvasContext: ctx, viewport: pixelViewport }).promise;
                             } catch (errRender) {
                                 console.error('Error renderizando página', p, errRender);
@@ -1340,7 +1949,6 @@
                                 continue;
                             }
 
-                            // Reemplazar loader por canvas y caption (caption debajo, centrado)
                             pageBox.removeChild(loader);
                             pageBox.appendChild(canvas);
 
@@ -1352,18 +1960,18 @@
                             caption.style.marginTop = '8px';
                             pageBox.appendChild(caption);
 
-                            // Actualiza progreso
                             const percent = Math.round((p / total) * 100);
                             if (progressBar) progressBar.style.width = percent + '%';
-
-                            // pequeña pausa cooperativa para UI
                             await new Promise(res => setTimeout(res, 20));
                         }
 
-                        // remover progress bar
+                        const firstCanvas = pagesContainer.querySelector('.pdf-page-canvas');
+                        if (firstCanvas) {
+                            pagesContainer.dataset.baseWidth = firstCanvas.dataset.baseWidth || '';
+                        }
+
                         if (progressWrap && progressWrap.parentNode) progressWrap.parentNode.removeChild(progressWrap);
 
-                        // Después de renderizar, intentar estabilizar layout y reposicionar input chat
                         if (previewContent) { stabilizePositionDuringTransition(500).then(() => positionChatInput()); }
                     } catch (err) {
                         console.error('Error al cargar PDF completo', err);
@@ -1374,8 +1982,10 @@
 
 
                 const btnRefresh = q('#btnRefreshSources');
-                if (btnRefresh) btnRefresh.addEventListener('click', () => bindTableRows());
+                if (btnRefresh) btnRefresh.addEventListener('click', () => loadCaseDocuments(currentPreview.id || null));
                 bindTableRows();
+                renderTransientAttachments();
+                setDocumentFocus(false);
 
                 window.addEventListener('resize', () => { positionChatInput(); stabilizePositionDuringTransition(); });
                 const mo = new MutationObserver(() => { positionChatInput(); stabilizePositionDuringTransition(); });
@@ -1916,15 +2526,23 @@
             if (!previewContent) return;
 
             // Constantes
-            const MIN_SCALE = 0.2;
-            const MAX_SCALE = 4.0;
-            const STEP      = 0.1;
+            const MIN_SCALE = 0.35;
+            const MAX_SCALE = 4.5;
+            const STEP      = 0.15;
             let currentScale = 1.0;
 
             // helpers
             function findPrimary() {
                 const wrapper = previewContent.querySelector('.preview-zoom-wrapper');
-                if (wrapper) return { el: wrapper.firstElementChild, isWrapper: true, wrapper };
+                if (wrapper) {
+                    const image = wrapper.querySelector('img.preview-image, img');
+                    if (image) return { el: image, isImage: true, wrapper };
+                    const frame = wrapper.querySelector('iframe, embed, object');
+                    if (frame) return { el: frame, isFrame: true, wrapper };
+                    const firstChild = wrapper.firstElementChild;
+                    if (!firstChild) return { el: wrapper, isWrapper: true, wrapper };
+                    return { el: firstChild, isWrapper: true, wrapper };
+                }
                 const img = previewContent.querySelector('img.preview-image, img');
                 if (img) return { el: img, isImage: true };
                 const frame = previewContent.querySelector('iframe, embed, object');
@@ -1947,6 +2565,7 @@
                 // permitimos scroll/pan dentro del wrapper
                 wrapper.style.overflow = 'auto';
                 wrapper.style.width = '100%';
+                wrapper.style.height = '100%';
                 wrapper.style.boxSizing = 'border-box';
                 wrapper.style.touchAction = 'none';
 
@@ -1973,8 +2592,76 @@
                 if (zoomLabel) zoomLabel.textContent = Math.round(currentScale * 100) + '%';
             }
 
+            function preserveWrapperScroll(wrapper, applyChanges) {
+                const prevScrollLeft = wrapper.scrollLeft || 0;
+                const prevScrollTop = wrapper.scrollTop || 0;
+                const prevScrollWidth = wrapper.scrollWidth || 1;
+                const prevScrollHeight = wrapper.scrollHeight || 1;
+                const visibleW = wrapper.clientWidth || previewContent.clientWidth || 1;
+                const visibleH = wrapper.clientHeight || previewContent.clientHeight || 1;
+
+                applyChanges();
+
+                try {
+                    const prevMaxX = Math.max(0, prevScrollWidth - visibleW);
+                    const newMaxX  = Math.max(0, wrapper.scrollWidth - visibleW);
+                    const ratioX = prevMaxX > 0 ? (prevScrollLeft / prevMaxX) : 0;
+                    wrapper.scrollLeft = Math.round(ratioX * newMaxX);
+
+                    const prevMaxY = Math.max(0, prevScrollHeight - visibleH);
+                    const newMaxY  = Math.max(0, wrapper.scrollHeight - visibleH);
+                    const ratioY = prevMaxY > 0 ? (prevScrollTop / prevMaxY) : 0;
+                    wrapper.scrollTop = Math.round(ratioY * newMaxY);
+                } catch (e) { /* ignore */ }
+            }
+
+            function syncPdfScale(wrapper) {
+                const pagesContainer = wrapper.querySelector('.pdf-pages-container');
+                const pdfCanvases = Array.from(wrapper.querySelectorAll('.pdf-page-canvas'));
+                if (!pagesContainer || !pdfCanvases.length) return false;
+
+                preserveWrapperScroll(wrapper, () => {
+                    let maxScaledWidth = 0;
+
+                    pdfCanvases.forEach(canvas => {
+                        const baseWidth = parseFloat(canvas.dataset.baseWidth || canvas.width || 0) || canvas.width || 0;
+                        const scaledWidth = Math.max(180, Math.round(baseWidth * currentScale));
+                        canvas.dataset.baseWidth = baseWidth.toString();
+                        canvas.style.width = `${scaledWidth}px`;
+                        canvas.style.height = 'auto';
+                        canvas.style.maxWidth = 'none';
+
+                        const pageBox = canvas.closest('.pdf-page-box');
+                        if (pageBox) {
+                            const boxBaseWidth = parseFloat(pageBox.dataset.baseWidth || baseWidth) || baseWidth;
+                            const scaledBoxWidth = Math.round(boxBaseWidth * currentScale + 18);
+                            pageBox.style.width = `${scaledBoxWidth}px`;
+                            maxScaledWidth = Math.max(maxScaledWidth, scaledBoxWidth);
+                        } else {
+                            maxScaledWidth = Math.max(maxScaledWidth, scaledWidth);
+                        }
+                    });
+
+                    pagesContainer.style.width = currentScale <= 1 ? '100%' : `${maxScaledWidth}px`;
+                    pagesContainer.style.minWidth = currentScale <= 1 ? '100%' : `${maxScaledWidth}px`;
+                    pagesContainer.style.alignItems = 'center';
+                    wrapper.style.width = '100%';
+                    wrapper.style.height = '100%';
+                    wrapper.style.overflow = 'auto';
+                });
+
+                return true;
+            }
+
             // Aplicar escala (mantiene comportamiento previo para frames/otros y mejora imágenes)
             function applyScale(scale) {
+                const zoomKind = previewContent.dataset.zoomKind || '';
+                if (zoomKind === 'static' || zoomKind === 'none') {
+                    currentScale = 1.0;
+                    updateZoomLabel();
+                    return;
+                }
+
                 currentScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
                 updateZoomLabel();
 
@@ -1987,100 +2674,66 @@
                 // --- Imágenes: escalamos cambiando el width (no transform) para que el layout genere scroll natural ---
                 if (primary.isImage) {
                     let img = primary.el;
-                    // Asegurar wrapper
-                    let wrapper = img && img.parentElement && img.parentElement.classList && img.parentElement.classList.contains('preview-zoom-wrapper')
+                    const wrapper = primary.wrapper || (img && img.parentElement && img.parentElement.classList && img.parentElement.classList.contains('preview-zoom-wrapper')
                         ? img.parentElement
-                        : ensureWrapperIfNeeded();
+                        : ensureWrapperIfNeeded());
+                    const stage = wrapper ? (wrapper.querySelector('.preview-image-stage') || img.parentElement) : null;
 
-                    if (!img || !wrapper) return;
+                    if (!img || !wrapper || !stage) return;
 
-                    // Guardar medidas y scroll previos (para preservar posición)
-                    const prevScrollLeft = wrapper.scrollLeft || 0;
-                    const prevScrollTop = wrapper.scrollTop || 0;
-                    const prevScrollWidth = wrapper.scrollWidth || 1;
-                    const prevScrollHeight = wrapper.scrollHeight || 1;
-                    const visibleW = wrapper.clientWidth || previewContent.clientWidth || 1;
-                    const visibleH = wrapper.clientHeight || previewContent.clientHeight || 1;
+                    const baseW = parseFloat(stage.dataset.baseWidth || img.dataset.baseWidth || img.naturalWidth || img.clientWidth || 0) || 1;
+                    const baseH = parseFloat(stage.dataset.baseHeight || img.dataset.baseHeight || img.naturalHeight || img.clientHeight || 0) || 1;
+                    img.dataset.baseWidth = baseW.toString();
+                    img.dataset.baseHeight = baseH.toString();
+                    stage.dataset.baseWidth = baseW.toString();
+                    stage.dataset.baseHeight = baseH.toString();
 
-                    // Asegurarnos estado base (sin transform) para medir correctamente
-                    img.style.transition = 'none';
-                    img.style.transform = 'none';
-                    img.style.maxWidth = '100%';
-                    img.style.height = 'auto';
-                    img.style.display = 'block';
-                    img.style.boxSizing = 'border-box';
+                    preserveWrapperScroll(wrapper, () => {
+                        const scaledW = Math.max(120, Math.round(baseW * currentScale));
+                        const scaledH = Math.max(120, Math.round(baseH * currentScale));
 
-                    // Forzar reflow y obtener tamaño base (ancho/alto visibles ahora)
-                    const baseRect = img.getBoundingClientRect();
-                    const baseW = Math.max(1, Math.round(baseRect.width));
-                    const baseH = Math.max(1, Math.round(baseRect.height));
+                        stage.style.width = `${scaledW}px`;
+                        stage.style.height = `${scaledH}px`;
+                        stage.style.minWidth = currentScale <= 1 ? '' : `${scaledW}px`;
+                        stage.style.minHeight = `${scaledH}px`;
 
-                    // Si volvemos a scale = 1, restauramos comportamiento responsive
+                        img.style.transition = 'none';
+                        img.style.transform = 'none';
+                        img.style.display = 'block';
+                        img.style.boxSizing = 'border-box';
+                        img.style.width = '100%';
+                        img.style.height = '100%';
+                        img.style.maxWidth = 'none';
+                        img.style.maxHeight = 'none';
+                        img.style.objectFit = 'contain';
+
+                        wrapper.style.width = '100%';
+                        wrapper.style.height = '100%';
+                        wrapper.style.overflow = 'auto';
+                        wrapper.style.boxSizing = 'border-box';
+                    });
+
                     if (currentScale === 1) {
-                        img.style.width = '';          // vuelve a responsive (max-width:100% toma efecto)
-                        img.style.maxWidth = '100%';
-                        img.style.height = 'auto';
-                        wrapper.style.width = '';
-                        wrapper.style.height = '';
-                        wrapper.style.overflow = '';   // hereda de CSS/previewContent
-                        // Restaurar scroll proporcionalmente (si acaso)
-                        try {
-                            const prevMaxX = Math.max(0, prevScrollWidth - visibleW);
-                            const newMaxX  = Math.max(0, wrapper.scrollWidth - visibleW);
-                            const ratioX = prevMaxX > 0 ? (prevScrollLeft / prevMaxX) : 0;
-                            wrapper.scrollLeft = Math.round(ratioX * newMaxX);
-
-                            const prevMaxY = Math.max(0, prevScrollHeight - visibleH);
-                            const newMaxY  = Math.max(0, wrapper.scrollHeight - visibleH);
-                            const ratioY = prevMaxY > 0 ? (prevScrollTop / prevMaxY) : 0;
-                            wrapper.scrollTop = Math.round(ratioY * newMaxY);
-                        } catch (e) { /* ignore */ }
-                        return;
+                        wrapper.scrollLeft = 0;
+                        wrapper.scrollTop = 0;
                     }
-
-                    // Calcular nuevo ancho/alto basado en la vista actual (esto evita el salto)
-                    const newW = Math.max(40, Math.round(baseW * currentScale));
-                    const newH = Math.max(40, Math.round(baseH * currentScale));
-
-                    // Aplicar ancho en píxeles (esto cambia layout y genera scroll natural)
-                    img.style.width = newW + 'px';
-                    img.style.maxWidth = 'none';
-                    img.style.height = 'auto';
-
-                    // Asegurar que el wrapper sea lo suficientemente grande para scrollear
-                    wrapper.style.width = newW + 'px';
-                    // No fijamos wrapper.height a newH obligatoriamente: permitir que el flujo determine altura,
-                    // pero si quieres forzar el scroll vertical, utiliza la línea siguiente (opcional)
-                    wrapper.style.height = newH + 'px';
-                    wrapper.style.overflow = 'auto';
-                    wrapper.style.boxSizing = 'border-box';
-
-                    // Restaurar scroll proporcional al nuevo tamaño (mantiene el punto de vista)
-                    try {
-                        const prevMaxX = Math.max(0, prevScrollWidth - visibleW);
-                        const newMaxX  = Math.max(0, wrapper.scrollWidth - visibleW);
-                        const ratioX = prevMaxX > 0 ? (prevScrollLeft / prevMaxX) : 0;
-                        wrapper.scrollLeft = Math.round(ratioX * newMaxX);
-
-                        const prevMaxY = Math.max(0, prevScrollHeight - visibleH);
-                        const newMaxY  = Math.max(0, wrapper.scrollHeight - visibleH);
-                        const ratioY = prevMaxY > 0 ? (prevScrollTop / prevMaxY) : 0;
-                        wrapper.scrollTop = Math.round(ratioY * newMaxY);
-                    } catch (e) { /* ignore */ }
-
                     return;
                 }
 
 
                 // --- Iframes / objetos: mantén la lógica previa (escalado del wrapper) ---
                 if (primary.isFrame || primary.isWrapper) {
-                    let wrapper = previewContent.querySelector('.preview-zoom-wrapper');
+                    let wrapper = primary.wrapper || previewContent.querySelector('.preview-zoom-wrapper');
                     if (!wrapper) wrapper = ensureWrapperIfNeeded();
                     if (!wrapper) return;
 
+                    if (syncPdfScale(wrapper)) {
+                        return;
+                    }
+
                     // Para iframes/embeds, escalamos el wrapper (no usar transform en el iframe)
-                    wrapper.style.width  = (currentScale * 100) + '%';
-                    wrapper.style.height = 'auto';
+                    wrapper.style.width  = '100%';
+                    wrapper.style.height = '100%';
 
                     const inner = wrapper.firstElementChild;
                     if (inner && (inner.tagName === 'IFRAME' || inner.tagName === 'EMBED' || inner.tagName === 'OBJECT')) {
@@ -2113,21 +2766,26 @@
 
             // Handlers para rueda+Ctrl y teclas
             function wheelHandler(e) {
-                if (!e.ctrlKey) return;
+                if (!e.ctrlKey && !e.metaKey) return;
                 e.preventDefault();
+                e.stopPropagation();
                 (e.deltaY < 0) ? zoomIn() : zoomOut();
             }
 
             function keyHandler(e) {
                 const tag = (document.activeElement && document.activeElement.tagName) || '';
                 if (['INPUT','TEXTAREA','SELECT'].includes(tag)) return;
-                if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); }
-                else if (e.key === '-') { e.preventDefault(); zoomOut(); }
-                else if (e.key === '0') { e.preventDefault(); zoomReset(); }
+                const zoomModifier = e.ctrlKey || e.metaKey;
+                const isZoomIn = e.key === '+' || e.code === 'NumpadAdd' || (zoomModifier && e.key === '=');
+                const isZoomOut = e.key === '-' || e.code === 'NumpadSubtract';
+                const isZoomReset = e.key === '0';
+                if (isZoomIn) { e.preventDefault(); zoomIn(); }
+                else if (isZoomOut) { e.preventDefault(); zoomOut(); }
+                else if (isZoomReset) { e.preventDefault(); zoomReset(); }
             }
 
             // Panning (drag) — funciona con wrapper (overflow: auto)
-                   let isDown = false, startX = 0, startY = 0, scrollLeft = 0, scrollTop = 0, panWrapper = null;
+                   let isDown = false, startX = 0, startY = 0, scrollLeft = 0, scrollTop = 0, previewScrollTop = 0, panWrapper = null;
 
             function startPan(e) {
                 const wrapper = previewContent.querySelector('.preview-zoom-wrapper');
@@ -2142,6 +2800,7 @@
                 startY = (e.pageY || (e.touches && e.touches[0] && e.touches[0].pageY)) || 0;
                 scrollLeft = panWrapper.scrollLeft;
                 scrollTop  = panWrapper.scrollTop;
+                previewScrollTop = previewContent.scrollTop;
 
                 e.preventDefault && e.preventDefault();
             }
@@ -2151,7 +2810,11 @@
                 const x = (e.pageX || (e.touches && e.touches[0] && e.touches[0].pageX)) || 0;
                 const y = (e.pageY || (e.touches && e.touches[0] && e.touches[0].pageY)) || 0;
                 panWrapper.scrollLeft = scrollLeft - (x - startX);
-                panWrapper.scrollTop  = scrollTop  - (y - startY);
+                if (panWrapper.scrollHeight > panWrapper.clientHeight) {
+                    panWrapper.scrollTop = scrollTop - (y - startY);
+                } else {
+                    previewContent.scrollTop = previewScrollTop - (y - startY);
+                }
             }
 
             function endPan() {
@@ -2238,10 +2901,151 @@
 }
 
 @functions {
+    private static (string Message, string Attachments) SplitRequestText(string? requestText)
+    {
+        if (string.IsNullOrWhiteSpace(requestText))
+            return (string.Empty, string.Empty);
+
+        var decoded = System.Net.WebUtility.HtmlDecode(requestText);
+
+        var attachmentMatches = System.Text.RegularExpressions.Regex.Matches(
+            decoded,
+            @"<div[^>]*class\s*=\s*[""'][^""']*chat-request-attachments[^""']*[""'][^>]*>(.*?)</div>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        var attachments = attachmentMatches
+            .Select(match => match.Groups[1].Value)
+            .Select(value => System.Text.RegularExpressions.Regex.Replace(value, @"<br\s*/?>", "\n", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            .Select(value => System.Text.RegularExpressions.Regex.Replace(value, @"<[^>]+>", string.Empty, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            .Select(value => System.Net.WebUtility.HtmlDecode(value).Trim())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToList();
+
+        var cleaned = System.Text.RegularExpressions.Regex.Replace(decoded, @"<br\s*/?>", "\n", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"</(div|p|li|tr|h\d)>", "\n", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"<[^>]+>", string.Empty, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        cleaned = System.Net.WebUtility.HtmlDecode(cleaned);
+
+        var lines = cleaned
+            .Replace("\r", string.Empty)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToList();
+
+        var inlineAttachmentLines = lines
+            .Where(line => System.Text.RegularExpressions.Regex.IsMatch(line, @"^adjuntos?\s+temporales?:", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            .ToList();
+
+        if (inlineAttachmentLines.Count > 0)
+            attachments.AddRange(inlineAttachmentLines);
+
+        var message = string.Join("\n", lines.Where(line =>
+            !System.Text.RegularExpressions.Regex.IsMatch(line, @"^adjuntos?\s+temporales?:", System.Text.RegularExpressions.RegexOptions.IgnoreCase)));
+
+        return (message.Trim(), string.Join(" • ", attachments.Distinct(StringComparer.OrdinalIgnoreCase)));
+    }
+
+    public static string RenderRequestBubble(string? requestText)
+    {
+        var (message, attachments) = SplitRequestText(requestText);
+        if (string.IsNullOrWhiteSpace(message) && string.IsNullOrWhiteSpace(attachments))
+            return string.Empty;
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            parts.Add($"<div>{System.Net.WebUtility.HtmlEncode(message).Replace("\n", "<br>")}</div>");
+        }
+
+        if (!string.IsNullOrWhiteSpace(attachments))
+        {
+            parts.Add($"<div class=\"chat-request-attachments\">{System.Net.WebUtility.HtmlEncode(attachments)}</div>");
+        }
+
+        return string.Join(string.Empty, parts);
+    }
+
+    private static string NormalizeResponseMarkdown(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
+
+        var decodedMarkdown = System.Net.WebUtility.HtmlDecode(markdown).Trim();
+        if (decodedMarkdown.Contains("```")) return decodedMarkdown;
+
+        if (TryFormatJsonMarkdown(decodedMarkdown, out var formattedJson))
+        {
+            return $"```json\n{formattedJson}\n```";
+        }
+
+        return decodedMarkdown;
+    }
+
+    private static bool TryFormatJsonMarkdown(string content, out string formattedJson)
+    {
+        formattedJson = string.Empty;
+        var trimmed = (content ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) return false;
+        if (!(trimmed.StartsWith("{") || trimmed.StartsWith("["))) return false;
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(trimmed);
+            formattedJson = System.Text.Json.JsonSerializer.Serialize(
+                document.RootElement,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public string RenderMarkdown(string markdown)
     {
         if (string.IsNullOrEmpty(markdown)) return string.Empty;
-        var pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
-        return Markdig.Markdown.ToHtml(markdown, pipeline);
+        // DisableHtml() hace que Markdig ESCAPE todo HTML crudo (<script>, <style>, etc.)
+        // en lugar de pasarlo tal cual al output. Esto evita cualquier inyección de script
+        // independientemente de lo que devuelva la IA, sin importar formato o encoding.
+        var pipeline = new MarkdownPipelineBuilder()
+            .UseAdvancedExtensions()
+            .UseSoftlineBreakAsHardlineBreak()
+            .DisableHtml()
+            .Build();
+
+        var normalizedMarkdown = NormalizeResponseMarkdown(markdown);
+        var html = Markdig.Markdown.ToHtml(normalizedMarkdown, pipeline);
+
+        // 1. Eliminar pares completos <script>...</script>, <style>...</style>, etc.
+        html = System.Text.RegularExpressions.Regex.Replace(
+            html,
+            @"<\s*(script|style|iframe|object|embed)[^>]*>.*?<\s*/\s*\1\s*>",
+            string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        // 2. Eliminar etiquetas <script> o </script> sueltas que el parser del browser
+        //    interpreta como inicio/fin de un script element, corrompiendo toda la página.
+        html = System.Text.RegularExpressions.Regex.Replace(
+            html,
+            @"<\s*/?\s*script[^>]*>",
+            string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        // 3. Eliminar atributos de evento on*
+        html = System.Text.RegularExpressions.Regex.Replace(
+            html,
+            @"\son\w+\s*=\s*(""[^""]*""|'[^']*'|[^\s>]+)",
+            string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        // 4. Eliminar href/src con javascript:
+        html = System.Text.RegularExpressions.Regex.Replace(
+            html,
+            @"\b(href|src)\s*=\s*(""|')\s*javascript:[^""']*\2",
+            "$1=\"#\"",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        return html;
     }
 }

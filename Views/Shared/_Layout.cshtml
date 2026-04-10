@@ -39,8 +39,6 @@
 
     <link  href="~/css/cssdetails.css" rel="stylesheet" />
 
-    <script src="~/js/waitme/waitme.min.js"></script>
-    <script src="~/js/waitme/waitme.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
     <style>
         /* Oculta el panel lateral si existe */
@@ -52,7 +50,7 @@
             display: none !important;
         }
 
-        /* Elimina márgenes/paddings reservados */
+        /* Elimina mï¿½rgenes/paddings reservados */
         #main,
         #content,
         .page-content,
@@ -83,6 +81,8 @@
     </div>
 
     @{ await Html.RenderPartialAsync("_Scripts"); }
+    <script src="~/js/waitme/waitme.min.js"></script>
+    <script src="~/js/waitme/waitme.js"></script>
     <script>
         $(function () {
             // DO NOT REMOVE : GLOBAL FUNCTIONS!

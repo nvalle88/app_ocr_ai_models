@@ -1,4 +1,4 @@
-#region Using
+Ôªø#region Using
 using app_ocr_ai_models.Data;
 using app_tramites.Extensions;
 using app_tramites.Models.Dto;
@@ -57,7 +57,7 @@ namespace SmartAdmin.Web.Controllers
         public async Task<IActionResult> AddNote([FromBody] AddNoteDto dto)
         {
             if (dto == null || string.IsNullOrWhiteSpace(dto.caseCode))
-                return BadRequest(new { success = false, error = "Payload inv·lido" });
+                return BadRequest(new { success = false, error = "Payload inv√°lido" });
 
             dto.title = (dto.title ?? "").Trim();
             dto.detail = (dto.detail ?? "").Trim();
@@ -135,7 +135,7 @@ namespace SmartAdmin.Web.Controllers
         [HttpPost("DeleteNote")]
         public async Task<IActionResult> DeleteNote([FromBody] DeleteDto dto)
         {
-            if (dto == null || dto.id <= 0) return BadRequest(new { success = false, error = "id inv·lido" });
+            if (dto == null || dto.id <= 0) return BadRequest(new { success = false, error = "id inv√°lido" });
 
             var note = await db.Note.FindAsync(dto.id);
             if (note == null) return NotFound(new { success = false, error = "Nota no encontrada" });
@@ -156,9 +156,9 @@ namespace SmartAdmin.Web.Controllers
         [HttpPost]
         public async Task<IActionResult> SubmitFeedback([FromBody] SubmitFeedbackDto dto)
         {
-            if (dto == null) return BadRequest(new { success = false, message = "Payload inv·lido" });
+            if (dto == null) return BadRequest(new { success = false, message = "Payload inv√°lido" });
 
-            // ValidaciÛn b·sica
+            // Validaci√≥n b√°sica
             if (string.IsNullOrWhiteSpace(dto.CaseCode))
             {
                 return BadRequest(new { success = false, message = "caseCode es requerido" });
@@ -181,11 +181,11 @@ namespace SmartAdmin.Web.Controllers
                 db.CaseReview.Add(entity);
                 await db.SaveChangesAsync();
 
-                return Ok(new { success = true, message = "ReseÒa guardada" });
+                return Ok(new { success = true, message = "Rese√±a guardada" });
             }
             catch (DbUpdateException dbEx)
             {
-                // Log aquÌ si tienes logger
+                // Log aqu√≠ si tienes logger
                 return StatusCode(500, new { success = false, message = "Error guardando en la base de datos" });
             }
             catch (Exception ex)
@@ -219,10 +219,57 @@ namespace SmartAdmin.Web.Controllers
             return View(processCase);
         }
 
+        [HttpGet]
+        public async Task<IActionResult> GetCaseDocuments(Guid caseCode)
+        {
+            if (caseCode == Guid.Empty)
+                return BadRequest(new { success = false, message = "caseCode es requerido." });
+
+            var processCase = await nexusService.ObtenerProcessCase(caseCode);
+            if (processCase == null)
+                return NotFound(new { success = false, message = "Caso no encontrado." });
+
+            var items = processCase.DataFile
+                .OrderByDescending(x => x.CreatedDate)
+                .Select(MapDataFile)
+                .ToList();
+
+            return Json(items);
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetCaseDocumentPreview(Guid caseCode, int fileId)
+        {
+            if (caseCode == Guid.Empty || fileId <= 0)
+                return BadRequest(new { success = false, message = "caseCode y fileId son requeridos." });
+
+            var processCase = await nexusService.ObtenerProcessCase(caseCode);
+            if (processCase == null)
+                return NotFound(new { success = false, message = "Caso no encontrado." });
+
+            var file = processCase.DataFile.FirstOrDefault(x => x.Id == fileId);
+            if (file == null)
+                return NotFound(new { success = false, message = "Documento no encontrado." });
+
+            var originalName = !string.IsNullOrWhiteSpace(file.OriginalName)
+                ? file.OriginalName
+                : file.FileUri;
+            var extension = Path.GetExtension(originalName)?.ToLowerInvariant() ?? string.Empty;
+
+            return Json(new
+            {
+                id = file.Id,
+                text = file.Text ?? string.Empty,
+                originalName,
+                extension,
+                type = GetDocumentType(extension)
+            });
+        }
+
         public async Task<IActionResult> Index()
         {
             var vm = new QueryInput { ProcessCode = "" };
-            // Validar que el usuario estÈ autenticado
+            // Validar que el usuario est√© autenticado
             var user = await userManager.GetUserAsync(User);
             if (user == null)
             {
@@ -260,8 +307,8 @@ namespace SmartAdmin.Web.Controllers
 
             // Detectar tipo de caso
             string resumenCategoria;
-            if (txt.Contains("**hospital del dÌa**"))
-                resumenCategoria = "Hospital del DÌa";
+            if (txt.Contains("**hospital del d√≠a**"))
+                resumenCategoria = "Hospital del D√≠a";
             else if (txt.Contains("**hospitalario**"))
                 resumenCategoria = "Hospitalario";
             else if (txt.Contains("**ambulatorio**"))
@@ -319,7 +366,7 @@ namespace SmartAdmin.Web.Controllers
         //    if (req == null
         //        || req.CaseCode == Guid.Empty
         //        )
-        //        return BadRequest("Datos inv·lidos.");
+        //        return BadRequest("Datos inv√°lidos.");
 
         //    // 1) Recupera el caso y sus archivos
         //    var processCase = await db.ProcessCase
@@ -330,8 +377,8 @@ namespace SmartAdmin.Web.Controllers
 
         //    var usuario = await userManager.GetUserAsync(User);
 
-        //    // 2) LÛgica para elegir prompt / agent seg˙n req.Origin
-        //    //    Si Origin est· vacÌo -> usar el prompt / agente por defecto ("chat-nexus")
+        //    // 2) L√≥gica para elegir prompt / agent seg√∫n req.Origin
+        //    //    Si Origin est√° vac√≠o -> usar el prompt / agente por defecto ("chat-nexus")
         //    OPAIPrompt prompt = null;
         //    Agent agent = null;
         //    FinalResponseConfig config = null;
@@ -357,24 +404,24 @@ namespace SmartAdmin.Web.Controllers
         //    }
         //    else
         //    {
-        //        // Intentar localizar un prompt con el cÛdigo enviado en Origin
+        //        // Intentar localizar un prompt con el c√≥digo enviado en Origin
         //        prompt = await db.OPAIPrompt.FirstOrDefaultAsync(x => x.Code == req.Origin);
 
         //        if (prompt != null)
         //        {
-        //            // Encontramos un prompt especÌfico: usamos su contenido
-        //            // (a˙n usamos el config/agent por defecto salvo que tengas mapping adicional)
+        //            // Encontramos un prompt espec√≠fico: usamos su contenido
+        //            // (a√∫n usamos el config/agent por defecto salvo que tengas mapping adicional)
         //            config = db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
         //            promtModel = db.OPAIModelPrompt.FirstOrDefault(x => x.PromptCode ==prompt.Code);
         //            agent = await db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == promtModel.ModelCode);
         //        }
         //        else
         //        {
-        //            // Si no hay prompt, intentar buscar un Agent con ese cÛdigo
+        //            // Si no hay prompt, intentar buscar un Agent con ese c√≥digo
         //            agent = await db.Agent.Include(a => a.AgentConfig).FirstOrDefaultAsync(x => x.Code == req.Origin);
         //            if (agent != null)
         //            {
-        //                // Si existe un Agent con ese cÛdigo, intentar obtener la FinalResponseConfig relacionado
+        //                // Si existe un Agent con ese c√≥digo, intentar obtener la FinalResponseConfig relacionado
         //                config = db.FinalResponseConfig.FirstOrDefault(x => x.AgentCode == agent.Code && x.IsEnabled)
         //                         ?? db.FinalResponseConfig.FirstOrDefault(x => x.ProcessCode == "A-HOSP" && x.IsEnabled);
         //            }
@@ -404,13 +451,13 @@ namespace SmartAdmin.Web.Controllers
 
         //    var allText = combined.ToString();
 
-        //    // Si el cliente enviÛ file URLs explÌcitas, podemos anexarlas o hacer algo con ellas:
+        //    // Si el cliente envi√≥ file URLs expl√≠citas, podemos anexarlas o hacer algo con ellas:
         //    if (req.FileUrls != null && req.FileUrls.Any())
         //    {
         //        userContent += "\n\nArchivos remitidos por el cliente:\n" + string.Join("\n", req.FileUrls);
         //    }
 
-        //    userContent += $"\n\nInformaciÛn del Caso n˙mero NE-{(processCase.CaseCode.ToString()?.Split('-').FirstOrDefault() ?? "")}: Usuario que consulta: Auditor de Saldusa\n"
+        //    userContent += $"\n\nInformaci√≥n del Caso n√∫mero NE-{(processCase.CaseCode.ToString()?.Split('-').FirstOrDefault() ?? "")}: Usuario que consulta: Auditor de Saldusa\n"
         //                   + allText;
 
         //    var metadata = !string.IsNullOrWhiteSpace(config.MetadataJson)
@@ -473,6 +520,45 @@ namespace SmartAdmin.Web.Controllers
                 {
                     error = true,
                     message = ex.Message,
+                });
+            }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> AddCaseDocuments([FromBody] CaseDocumentsRequest request)
+        {
+            try
+            {
+                if (request == null)
+                    return BadRequest(new { error = true, message = "Payload inv√°lido." });
+
+                var files = await nexusService.AddDocumentsToCase(request.CaseCode, request.Files);
+                var items = files
+                    .OrderByDescending(x => x.CreatedDate)
+                    .Select(MapDataFile)
+                    .ToList();
+
+                return Ok(new
+                {
+                    success = true,
+                    items
+                });
+            }
+            catch (NegocioException e)
+            {
+                return NotFound(new
+                {
+                    error = true,
+                    message = e.Message,
+                    errorCode = e.ErrorCode
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new
+                {
+                    error = true,
+                    message = ex.Message
                 });
             }
         }
@@ -561,7 +647,7 @@ namespace SmartAdmin.Web.Controllers
         //    }
         //    catch (TaskCanceledException ex)
         //    {
-        //        throw new TimeoutException($"El procesamiento del archivo superÛ el tiempo lÌmite de {timeoutMilliseconds} ms.");
+        //        throw new TimeoutException($"El procesamiento del archivo super√≥ el tiempo l√≠mite de {timeoutMilliseconds} ms.");
         //    }
         //}
 
@@ -609,7 +695,7 @@ namespace SmartAdmin.Web.Controllers
         public async Task<IActionResult> GetProcessesByUser()
         {
 
-            // Validar que el usuario estÈ autenticado
+            // Validar que el usuario est√© autenticado
             var user = await userManager.GetUserAsync(User);
             if (user == null)
             {
@@ -636,14 +722,14 @@ namespace SmartAdmin.Web.Controllers
         {
             var user = await userManager.GetUserAsync(User);
             if (req == null || req.CaseCode == Guid.Empty || string.IsNullOrEmpty(req.Origin))
-                return BadRequest("Datos inv·lidos.");
+                return BadRequest("Datos inv√°lidos.");
 
             req.Usuario = user?.UserName ?? "Sistema";
             var respuesta =  await nexusService.EjecutarPrompt(req);
 
             if (respuesta == null)
             {
-                return NotFound("No se puede ejecutar la acciÛn con los datos proporcionados.");
+                return NotFound("No se puede ejecutar la acci√≥n con los datos proporcionados.");
             }
 
             return Json(new
@@ -653,5 +739,36 @@ namespace SmartAdmin.Web.Controllers
                 request = respuesta.RequestText
             });
         }
+
+        private static object MapDataFile(DataFile file)
+        {
+            var originalName = !string.IsNullOrWhiteSpace(file.OriginalName)
+                ? file.OriginalName
+                : file.FileUri;
+            var extension = Path.GetExtension(originalName)?.ToLowerInvariant() ?? string.Empty;
+            var type = GetDocumentType(extension);
+
+            return new
+            {
+                id = file.Id,
+                url = file.FileUri,
+                originalName,
+                extension,
+                type,
+                createdDate = file.CreatedDate
+            };
+        }
+
+        private static string GetDocumentType(string extension)
+        {
+            return extension.ToLowerInvariant() switch
+            {
+                ".pdf" => "pdf",
+                ".jpg" or ".jpeg" or ".png" or ".webp" or ".bmp" or ".tif" or ".tiff" => "img",
+                ".xml" or ".html" or ".htm" => "markup",
+                _ => "other"
+            };
+        }
     }
 }
+

@@ -24,5 +24,6 @@ namespace app_tramites.Services.NexusProcess
         Task<ViewProcessUser> GetProcessesByUser(IdentityUser? user, IList<string>? roles);
         Task<ViewCreateCase> CreateCaseProcess(QueryInput input);
         Task<ViewCaseDetails?> ObtenerDetailsProcessCase(Guid caseCode, IdentityUser? user);
+        Task<List<DataFile>> AddDocumentsToCase(Guid caseCode, IReadOnlyCollection<OcrFile> files);
     }
 }

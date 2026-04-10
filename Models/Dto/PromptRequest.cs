@@ -1,10 +1,13 @@
-﻿namespace app_tramites.Models.Dto;
+using app_tramites.Models.ViewModel;
+
+namespace app_tramites.Models.Dto;
 
 public class PromptRequest
 {
     public Guid CaseCode { get; set; }
     public string Message { get; set; } = "";
     public List<string> FileUrls { get; set; } = new();
+    public List<OcrFile> Files { get; set; } = [];
     public string Origin { get; set; } = string.Empty;
     public string? Usuario { get; set; } = string.Empty;
     public int Id { get; set; } = 0;
