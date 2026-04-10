@@ -266,6 +266,41 @@ namespace SmartAdmin.Web.Controllers
             });
         }
 
+        [HttpGet]
+        public async Task<IActionResult> DownloadCaseDocument(Guid caseCode, int fileId)
+        {
+            if (caseCode == Guid.Empty || fileId <= 0)
+                return BadRequest(new { success = false, message = "caseCode y fileId son requeridos." });
+
+            var processCase = await nexusService.ObtenerProcessCase(caseCode);
+            if (processCase == null)
+                return NotFound(new { success = false, message = "Caso no encontrado." });
+
+            var file = processCase.DataFile.FirstOrDefault(x => x.Id == fileId);
+            if (file == null)
+                return NotFound(new { success = false, message = "Documento no encontrado." });
+
+            if (string.IsNullOrWhiteSpace(file.FileUri))
+                return BadRequest(new { success = false, message = "El documento no tiene una ubicación válida." });
+
+            using var httpClient = new HttpClient();
+            using var response = await httpClient.GetAsync(file.FileUri, HttpCompletionOption.ResponseHeadersRead);
+            if (!response.IsSuccessStatusCode)
+                return StatusCode((int)response.StatusCode, new { success = false, message = "No se pudo descargar el documento." });
+
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            var originalName = !string.IsNullOrWhiteSpace(file.OriginalName)
+                ? file.OriginalName
+                : Path.GetFileName(file.FileUri);
+            var extension = Path.GetExtension(originalName)?.ToLowerInvariant() ?? string.Empty;
+            var contentType = response.Content.Headers.ContentType?.ToString();
+
+            if (string.IsNullOrWhiteSpace(contentType))
+                contentType = GetContentTypeForExtension(extension);
+
+            return File(bytes, contentType, originalName);
+        }
+
         public async Task<IActionResult> Index()
         {
             var vm = new QueryInput { ProcessCode = "" };
@@ -767,6 +802,23 @@ namespace SmartAdmin.Web.Controllers
                 ".jpg" or ".jpeg" or ".png" or ".webp" or ".bmp" or ".tif" or ".tiff" => "img",
                 ".xml" or ".html" or ".htm" => "markup",
                 _ => "other"
+            };
+        }
+
+        private static string GetContentTypeForExtension(string extension)
+        {
+            return extension.ToLowerInvariant() switch
+            {
+                ".pdf" => "application/pdf",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".png" => "image/png",
+                ".webp" => "image/webp",
+                ".bmp" => "image/bmp",
+                ".tif" or ".tiff" => "image/tiff",
+                ".xml" => "application/xml",
+                ".html" or ".htm" => "text/html; charset=utf-8",
+                ".txt" => "text/plain; charset=utf-8",
+                _ => "application/octet-stream"
             };
         }
     }

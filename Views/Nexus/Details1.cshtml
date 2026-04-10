@@ -6,6 +6,9 @@
         .OrderBy(r => r.CreatedDate)
         .ToList() ?? [];
     var caseShortCode = ((Model.ProcessCase.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? "");
+    var documentCount = Model.ProcessCase.DataFile?.Count() ?? 0;
+    var lastResponseDate = orderedResults.LastOrDefault()?.CreatedDate;
+    var processTitle = Model.ProcessCase.DefinitionCodeNavigation?.Name?.Trim();
 }
 
 
@@ -30,8 +33,12 @@
                                     <small class="text-muted">Adjunta aquí los archivos que deben quedar guardados en el caso.</small>
                                 </div>
                                 <div class="surface-toolbar-actions">
-                                    <button id="btnAttachPermanent" type="button" class="btn btn-sm btn-light">
-                                        <i class="fa fa-plus me-1"></i>Adjuntar al caso
+                                    <button id="btnAttachPermanent" type="button" class="btn btn-sm btn-light btn-persistent-upload">
+                                        <span class="btn-persistent-upload-icon"><i class="fa fa-cloud-arrow-up"></i></span>
+                                        <span class="btn-persistent-upload-copy">
+                                            <strong>Adicionar</strong>
+                                            <small>Documentos persistentes</small>
+                                        </span>
                                     </button>
                                     <input type="file"
                                            id="caseFilesInput"
@@ -47,6 +54,8 @@
                                     </button>
                                 </div>
                             </div>
+
+                            <div id="persistentUploadQueue" class="persistent-upload-queue d-none" aria-live="polite"></div>
 
                             <div id="sourcesWrapper" class="sources-wrapper">
                                 <table id="sourcesTable" class="table table-borderless table-hover mb-0" style="width:100%;">
@@ -100,8 +109,8 @@
                                     <small class="text-muted">Selecciona un archivo del expediente para revisarlo aquí.</small>
                                 </div>
                                 <div class="d-flex gap-1 flex-wrap preview-toolbar-actions">
-                                    <button id="btnBackToList" class="btn btn-sm btn-outline-secondary" title="Limpiar selección">
-                                        <i class="fa fa-eraser"></i>
+                                    <button id="btnBackToList" class="btn btn-sm btn-outline-secondary" title="Volver a la lista">
+                                        <i class="fa fa-arrow-left"></i>
                                     </button>
                                     <button id="btnOpenInViewer" class="btn btn-sm btn-light" title="Abrir en otra pestaña">
                                         <i class="fa fa-external-link-alt"></i>
@@ -141,53 +150,51 @@
         <!-- CENTER: Chat / Resultados -->
         <main class="col-lg-8 center-col" id="colCenter">
             <div class="card card-panel-center rounded-3 h-100">
-                <div class="card-header d-flex align-items-center justify-content-between small-header center-header">
-                    <div class="d-flex align-items-center gap-2">
-                        <div>
+                <div class="card-header small-header center-header">
+                    <div class="center-header-layout">
+                        <div class="case-header-block">
                             <h5 class="mb-0 header-title">Resultados del Caso</h5>
-                            <small class="case-header-meta">NE-@caseShortCode · @Model.ProcessCase.DefinitionCodeNavigation?.Name</small>
+                            @if (!string.IsNullOrWhiteSpace(processTitle))
+                            {
+                                <small class="case-header-meta">@processTitle</small>
+                            }
+                            <div class="case-header-stats" role="list" aria-label="Resumen del caso">
+                                <div class="case-header-pill" role="listitem">
+                                    <span class="label">Caso</span>
+                                    <strong>NE-@caseShortCode</strong>
+                                </div>
+                                <div class="case-header-pill" role="listitem">
+                                    <span class="label">Documentos</span>
+                                    <strong>@documentCount</strong>
+                                </div>
+                                @if (lastResponseDate != null)
+                                {
+                                    <div class="case-header-pill" role="listitem">
+                                        <span class="label">Última respuesta</span>
+                                        <strong>@lastResponseDate.Value.ToLocalTime().ToString("dd/MM/yyyy, HH:mm")</strong>
+                                    </div>
+                                }
+                            </div>
                         </div>
-                    </div>
-                    <div class="d-flex align-items-center gap-2 panel-header-actions">
-                        <a asp-action="Index" onclick="cargando()"
-                           class="btn btn-primary btn-lg d-flex align-items-center gap-2"
-                           id="btnBackPage" title="Volver">
-                            <i class="fa fa-arrow-left"></i>
-                            <span>Volver</span>
-                        </a>
+                        <div class="d-flex align-items-center gap-2 panel-header-actions">
+                            <a asp-action="Index" onclick="cargando()"
+                               class="btn btn-primary btn-lg d-flex align-items-center gap-2"
+                               id="btnBackPage" title="Volver">
+                                <i class="fa fa-arrow-left"></i>
+                                <span>Volver</span>
+                            </a>
 
-                        <button id="btnExportPdf" type="button"
-                                class="btn btn-primary btn-lg d-flex align-items-center gap-2"
-                                title="Exportar resultados a PDF">
-                            <i class="fa fa-file-pdf me-1" aria-hidden="true"></i>
-                            <span>Exportar PDF</span>
-                        </button>
+                            <button id="btnExportPdf" type="button"
+                                    class="btn btn-primary btn-lg d-flex align-items-center gap-2"
+                                    title="Exportar resultados a PDF">
+                                <i class="fa fa-file-pdf me-1" aria-hidden="true"></i>
+                                <span>Exportar PDF</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
                 <div class="card-body d-flex flex-column panel-body panel-height">
-                    <div class="case-summary-strip mb-3">
-                        <div class="case-summary-pill">
-                            <span class="label">Caso</span>
-                            <strong>NE-@caseShortCode</strong>
-                        </div>
-                        <div class="case-summary-pill">
-                            <span class="label">Documentos</span>
-                            <strong>@(Model.ProcessCase.DataFile?.Count() ?? 0)</strong>
-                        </div>
-                        @if (orderedResults.Any())
-                        {
-                            var lastDate = orderedResults.LastOrDefault()?.CreatedDate;
-                            if (lastDate != null)
-                            {
-                                <div class="case-summary-pill">
-                                    <span class="label">Última respuesta</span>
-                                    <strong>@lastDate.Value.ToLocalTime().ToString("dd/MM/yyyy, HH:mm")</strong>
-                                </div>
-                            }
-                        }
-                    </div>
-
                     <div class="flex-grow-1 result-area mb-2">
                         <div class="result-panel p-3 h-100">
                             @if (!orderedResults.Any())
@@ -203,6 +210,7 @@
                                     {
                                         var requestHtml = RenderRequestBubble(entry.RequestText);
                                         var responseHtml = string.IsNullOrWhiteSpace(entry.ResponseText) ? string.Empty : RenderMarkdown(entry.ResponseText.Trim());
+                                        var copyPayload = EncodeCopyPayload(entry.ResponseText);
                                         <article class="chat-turn">
                                             @if (!string.IsNullOrWhiteSpace(requestHtml))
                                             {
@@ -213,7 +221,19 @@
                                             @if (!string.IsNullOrWhiteSpace(responseHtml))
                                             {
                                                 <div class="chat-turn-response">
-                                                    @Html.Raw(responseHtml)
+                                                    <div class="chat-turn-response-actions">
+                                                        <button type="button"
+                                                                class="chat-copy-btn"
+                                                                title="Copiar respuesta"
+                                                                aria-label="Copiar respuesta"
+                                                                data-copy-source="@copyPayload">
+                                                            <i class="fa-regular fa-copy"></i>
+                                                            <span>Copiar</span>
+                                                        </button>
+                                                    </div>
+                                                    <div class="chat-turn-response-body">
+                                                        @Html.Raw(responseHtml)
+                                                    </div>
                                                 </div>
                                             }
                                             <div class="chat-turn-meta">@entry.CreatedDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
@@ -631,6 +651,29 @@
                 return textarea.value;
             }
 
+            function encodeBase64Utf8(value) {
+                try {
+                    const source = (value ?? '').toString();
+                    const bytes = new TextEncoder().encode(source);
+                    let binary = '';
+                    bytes.forEach(byte => binary += String.fromCharCode(byte));
+                    return btoa(binary);
+                } catch (e) {
+                    return '';
+                }
+            }
+
+            function decodeBase64Utf8(value) {
+                try {
+                    if (!value) return '';
+                    const binary = atob(value);
+                    const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
+                    return new TextDecoder().decode(bytes);
+                } catch (e) {
+                    return '';
+                }
+            }
+
             function tryFormatJsonBlock(value) {
                 const trimmed = (value ?? '').toString().trim();
                 if (!trimmed || trimmed.includes('```')) return null;
@@ -646,7 +689,7 @@
             function sanitizeRichHtml(root) {
                 if (!root) return;
 
-                root.querySelectorAll('script,style,iframe,object,embed').forEach(node => node.remove());
+                root.querySelectorAll('script,style,iframe,object,embed,textarea,input,select,button,form').forEach(node => node.remove());
 
                 root.querySelectorAll('*').forEach(node => {
                     Array.from(node.attributes).forEach(attr => {
@@ -903,6 +946,178 @@
                 return formatted.join('\n').trim();
             }
 
+            function normalizeMarkupSource(value) {
+                return decodeHtmlEntities(value || '').replace(/^\uFEFF/, '').trim();
+            }
+
+            function sanitizePreviewMarkupRoot(root) {
+                if (!root) return;
+
+                root.querySelectorAll('script,iframe,object,embed,noscript').forEach(node => node.remove());
+
+                root.querySelectorAll('*').forEach(node => {
+                    Array.from(node.attributes).forEach(attr => {
+                        const attrName = attr.name.toLowerCase();
+                        const attrValue = (attr.value || '').trim();
+
+                        if (attrName.startsWith('on')) {
+                            node.removeAttribute(attr.name);
+                            return;
+                        }
+
+                        if ((attrName === 'href' || attrName === 'src' || attrName === 'xlink:href') && /^javascript:/i.test(attrValue)) {
+                            node.setAttribute(attr.name, '#');
+                        }
+                    });
+                });
+            }
+
+            function createDomTreePreview(rootNode, options = {}) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'preview-markup-tree';
+
+                const rootLabel = options.rootLabel || '';
+                if (rootLabel) {
+                    const intro = document.createElement('div');
+                    intro.className = 'preview-markup-tree-label';
+                    intro.textContent = rootLabel;
+                    wrapper.appendChild(intro);
+                }
+
+                function renderNode(node, depth = 0) {
+                    if (!node) return null;
+
+                    if (node.nodeType === Node.TEXT_NODE || node.nodeType === Node.CDATA_SECTION_NODE) {
+                        const text = (node.textContent || '').trim();
+                        if (!text) return null;
+
+                        const value = document.createElement('div');
+                        value.className = 'xml-tree-value';
+                        value.textContent = text;
+                        return value;
+                    }
+
+                    if (node.nodeType !== Node.ELEMENT_NODE) {
+                        return null;
+                    }
+
+                    const attrs = Array.from(node.attributes || []);
+                    const childNodes = Array.from(node.childNodes || [])
+                        .map(child => renderNode(child, depth + 1))
+                        .filter(Boolean);
+
+                    const hasChildren = childNodes.length > 0;
+
+                    if (!hasChildren) {
+                        const leaf = document.createElement('div');
+                        leaf.className = 'xml-tree-leaf';
+
+                        const tag = document.createElement('div');
+                        tag.className = 'xml-tree-line';
+                        tag.innerHTML = `<span class="xml-tree-tag">&lt;${escapeHtml(node.nodeName)}&gt;</span>`;
+                        leaf.appendChild(tag);
+
+                        attrs.forEach(attr => {
+                            const attrLine = document.createElement('div');
+                            attrLine.className = 'xml-tree-attr';
+                            attrLine.innerHTML = `<span class="xml-tree-attr-name">${escapeHtml(attr.name)}</span>="<span class="xml-tree-attr-value">${escapeHtml(attr.value)}</span>"`;
+                            leaf.appendChild(attrLine);
+                        });
+
+                        return leaf;
+                    }
+
+                    const details = document.createElement('details');
+                    details.className = 'xml-tree-node';
+                    details.open = depth < 2;
+
+                    const summary = document.createElement('summary');
+                    summary.className = 'xml-tree-summary';
+                    summary.innerHTML = `<span class="xml-tree-tag">&lt;${escapeHtml(node.nodeName)}&gt;</span><span class="xml-tree-count">${childNodes.length} nodo${childNodes.length === 1 ? '' : 's'}</span>`;
+                    details.appendChild(summary);
+
+                    const content = document.createElement('div');
+                    content.className = 'xml-tree-children';
+
+                    attrs.forEach(attr => {
+                        const attrLine = document.createElement('div');
+                        attrLine.className = 'xml-tree-attr';
+                        attrLine.innerHTML = `<span class="xml-tree-attr-name">${escapeHtml(attr.name)}</span>="<span class="xml-tree-attr-value">${escapeHtml(attr.value)}</span>"`;
+                        content.appendChild(attrLine);
+                    });
+
+                    childNodes.forEach(child => content.appendChild(child));
+                    details.appendChild(content);
+                    return details;
+                }
+
+                const renderedRoot = renderNode(rootNode);
+                if (renderedRoot) {
+                    wrapper.appendChild(renderedRoot);
+                }
+
+                return wrapper;
+            }
+
+            function createMarkupCodeBlock(markupExt, rawText) {
+                const pre = document.createElement('pre');
+                pre.className = 'preview-markup-code';
+
+                const code = document.createElement('code');
+                const isXml = markupExt === 'xml';
+                code.className = isXml ? 'language-xml' : 'language-html';
+                code.textContent = isXml
+                    ? formatXmlForPreview(normalizeMarkupSource(rawText))
+                    : formatHtmlForPreview(normalizeMarkupSource(rawText));
+
+                pre.appendChild(code);
+                return pre;
+            }
+
+            function createRenderedHtmlPreview(rawHtml) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'preview-markup-rendered';
+
+                const source = normalizeMarkupSource(rawHtml);
+                const body = document.createElement('div');
+                body.className = 'preview-markup-rendered-body';
+                body.innerHTML = source;
+                sanitizeRichHtml(body);
+                enhanceMarkdownContent(body);
+                wrapper.appendChild(body);
+                return wrapper;
+            }
+
+            function createXmlTreePreview(rawXml) {
+                const source = normalizeMarkupSource(rawXml);
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(source || '<root />', 'application/xml');
+                const parseError = xmlDoc.querySelector('parsererror') || xmlDoc.getElementsByTagName('parsererror')[0];
+
+                if (parseError) {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'preview-markup-tree';
+                    const warning = document.createElement('div');
+                    warning.className = 'preview-markup-tree-error';
+                    warning.textContent = 'No se pudo estructurar el XML. Mostrando contenido formateado.';
+                    wrapper.appendChild(warning);
+                    wrapper.appendChild(createMarkupCodeBlock('xml', source));
+                    return wrapper;
+                }
+
+                const tree = createDomTreePreview(xmlDoc.documentElement, { rootLabel: 'Estructura XML' });
+
+                const declarationMatch = source.match(/^<\?xml[\s\S]*?\?>/i);
+                if (declarationMatch) {
+                    const declaration = document.createElement('div');
+                    declaration.className = 'xml-tree-comment';
+                    declaration.textContent = declarationMatch[0];
+                    tree.insertBefore(declaration, tree.firstChild);
+                }
+
+                return tree;
+            }
+
             function combineRequestResponseMd(data) {
                 if (!data) return '';
                 const req = (data.request ?? data.requestText ?? data.RequestText ?? '').toString().trim();
@@ -1049,9 +1264,19 @@
                 qa('.result-area').forEach(el => el.style.paddingBottom = '18px');
             }
 
-            function stabilizePositionDuringTransition() {
+            function stabilizePositionDuringTransition(delayMs = 0) {
                 positionChatInput();
-                return Promise.resolve(true);
+
+                return new Promise(resolve => {
+                    window.requestAnimationFrame(() => {
+                        if (!delayMs) {
+                            resolve(true);
+                            return;
+                        }
+
+                        window.setTimeout(() => resolve(true), delayMs);
+                    });
+                });
             }
 
             document.addEventListener('DOMContentLoaded', () => {
@@ -1066,9 +1291,12 @@
                 const attachPermanentBtn = q('#btnAttachPermanent');
                 const chatAttachmentsEl = q('#chatAttachments');
                 const sourcesStatusEl = q('#sourcesStatus');
+                const persistentUploadQueueEl = q('#persistentUploadQueue');
                 const previewEmptyState = q('#previewEmptyState');
                 const colRight = q('#colRight');
                 let transientAttachments = [];
+                let persistentUploadDrafts = [];
+                let persistentUploadTicker = null;
 
                 sanitizeRichHtml(chatOutputEl);
                 enhanceMarkdownContent(chatOutputEl);
@@ -1085,6 +1313,21 @@
                     return chatOutputEl;
                 }
 
+                document.addEventListener('click', async (event) => {
+                    const copyBtn = event.target.closest('.chat-copy-btn');
+                    if (!copyBtn) return;
+
+                    const responseWrap = copyBtn.closest('.chat-turn-response');
+                    const responseBody = responseWrap?.querySelector('.chat-turn-response-body');
+                    const textToCopy = (decodeBase64Utf8(copyBtn.dataset.copySource) || responseBody?.innerText || '').trim();
+
+                    if (!textToCopy) {
+                        return;
+                    }
+
+                    await copyTextToClipboard(copyBtn, textToCopy);
+                });
+
                 function setDocumentFocus(enabled) {
                     document.documentElement.classList.toggle('document-focus', !!enabled);
                     document.documentElement.classList.toggle('right-hidden', !!enabled);
@@ -1098,6 +1341,142 @@
                     if (!sourcesStatusEl) return;
                     sourcesStatusEl.textContent = text || '';
                     sourcesStatusEl.className = tone === 'error' ? 'text-danger' : tone === 'success' ? 'text-success' : 'text-muted';
+                }
+
+                function getPersistentUploadStages(file) {
+                    const type = getDocumentType(file.name?.split('.').pop() || '');
+                    if (type === 'markup') {
+                        return ['Validando formato', 'Guardando contenido', 'Actualizando expediente'];
+                    }
+                    return ['Preparando archivo', 'Subiendo archivo', 'Extrayendo texto', 'Actualizando expediente'];
+                }
+
+                function clearPersistentUploadTicker() {
+                    if (persistentUploadTicker) {
+                        clearInterval(persistentUploadTicker);
+                        persistentUploadTicker = null;
+                    }
+                }
+
+                function cleanupPersistentUploadDrafts() {
+                    persistentUploadDrafts.forEach(item => {
+                        if (item.previewUrl) {
+                            try { URL.revokeObjectURL(item.previewUrl); } catch (e) { /* ignore */ }
+                        }
+                    });
+                    persistentUploadDrafts = [];
+                    clearPersistentUploadTicker();
+                    renderPersistentUploadQueue();
+                }
+
+                function renderPersistentUploadQueue() {
+                    if (!persistentUploadQueueEl) return;
+
+                    persistentUploadQueueEl.innerHTML = '';
+                    if (!persistentUploadDrafts.length) {
+                        persistentUploadQueueEl.classList.add('d-none');
+                        return;
+                    }
+
+                    persistentUploadDrafts.forEach(item => {
+                        const article = document.createElement('article');
+                        article.className = `upload-draft-card is-${item.state}`;
+
+                        const thumb = item.previewUrl
+                            ? `<img src="${item.previewUrl}" alt="${escapeHtml(item.fileName)}" class="upload-draft-thumb-image" />`
+                            : `<span class="upload-draft-thumb-icon"><i class="fa ${getDocumentIcon(item.type, item.extension)}"></i></span>`;
+
+                        article.innerHTML = `
+                            <div class="upload-draft-thumb">${thumb}</div>
+                            <div class="upload-draft-copy">
+                                <div class="upload-draft-name">${escapeHtml(item.fileName)}</div>
+                                <div class="upload-draft-status-row">
+                                    <span class="upload-draft-status">${escapeHtml(item.status)}</span>
+                                    <span class="upload-draft-badge">${escapeHtml(item.badge)}</span>
+                                </div>
+                                <div class="upload-draft-progress">
+                                    <span class="upload-draft-progress-bar"></span>
+                                </div>
+                            </div>`;
+
+                        persistentUploadQueueEl.appendChild(article);
+                    });
+
+                    persistentUploadQueueEl.classList.remove('d-none');
+                }
+
+                function startPersistentUploadTicker() {
+                    clearPersistentUploadTicker();
+                    persistentUploadTicker = setInterval(() => {
+                        let hasActive = false;
+                        persistentUploadDrafts = persistentUploadDrafts.map(item => {
+                            if (item.state !== 'uploading') return item;
+                            hasActive = true;
+                            const nextIndex = (item.stageIndex + 1) % item.stages.length;
+                            return {
+                                ...item,
+                                stageIndex: nextIndex,
+                                status: item.stages[nextIndex]
+                            };
+                        });
+                        renderPersistentUploadQueue();
+                        if (!hasActive) clearPersistentUploadTicker();
+                    }, 1600);
+                }
+
+                function beginPersistentUploadPreview(files) {
+                    cleanupPersistentUploadDrafts();
+                    persistentUploadDrafts = Array.from(files || []).map((file, index) => {
+                        const extension = '.' + (file.name.split('.').pop() || '').toLowerCase();
+                        const type = getDocumentType(extension);
+                        const stages = getPersistentUploadStages(file);
+                        return {
+                            id: `${Date.now()}-${index}`,
+                            fileName: file.name,
+                            extension,
+                            type,
+                            previewUrl: type === 'img' ? URL.createObjectURL(file) : '',
+                            stages,
+                            stageIndex: 0,
+                            status: stages[0],
+                            badge: type === 'markup' ? 'Sin OCR' : 'OCR',
+                            state: 'uploading'
+                        };
+                    });
+                    renderPersistentUploadQueue();
+                    startPersistentUploadTicker();
+                }
+
+                function finishPersistentUploadPreview(success = true) {
+                    clearPersistentUploadTicker();
+                    persistentUploadDrafts = persistentUploadDrafts.map(item => ({
+                        ...item,
+                        state: success ? 'done' : 'error',
+                        status: success ? 'Documento integrado al caso' : 'No se pudo integrar',
+                        badge: success ? 'Listo' : 'Error'
+                    }));
+                    renderPersistentUploadQueue();
+                    setTimeout(() => cleanupPersistentUploadDrafts(), success ? 1800 : 2600);
+                }
+
+                async function copyTextToClipboard(button, text) {
+                    if (!text) return;
+
+                    const original = button.innerHTML;
+                    try {
+                        await navigator.clipboard.writeText(text);
+                        button.classList.add('is-copied');
+                        button.innerHTML = '<i class="fa-solid fa-check"></i><span>Copiado</span>';
+                    } catch (err) {
+                        console.error('copy error', err);
+                        button.classList.add('is-copied');
+                        button.innerHTML = '<i class="fa-solid fa-check"></i><span>Listo</span>';
+                    } finally {
+                        window.setTimeout(() => {
+                            button.classList.remove('is-copied');
+                            button.innerHTML = original;
+                        }, 1600);
+                    }
                 }
 
                 function makeCaseFilePayload(file) {
@@ -1512,10 +1891,12 @@
                     caseFilesInput.addEventListener('change', async () => {
                         if (!caseFilesInput.files?.length) return;
 
+                        const selectedFiles = Array.from(caseFilesInput.files);
                         try {
                             setSourcesStatus('Adjuntando documentos al caso...');
                             attachPermanentBtn.disabled = true;
-                            const payloads = await filesToPayload(caseFilesInput.files);
+                            beginPersistentUploadPreview(selectedFiles);
+                            const payloads = await filesToPayload(selectedFiles);
                             const resp = await fetch('@Url.Action("AddCaseDocuments", "Nexus")', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -1526,9 +1907,11 @@
                             const data = await resp.json();
                             const latestId = Array.isArray(data.items) && data.items.length ? data.items[0].id : null;
                             await loadCaseDocuments(latestId);
+                            finishPersistentUploadPreview(true);
                             setSourcesStatus('Documentos agregados al expediente.', 'success');
                         } catch (err) {
                             console.error('permanent attachments error', err);
+                            finishPersistentUploadPreview(false);
                             setSourcesStatus('No se pudieron adjuntar los documentos.', 'error');
                             Swal.fire({
                                 icon: 'warning',
@@ -1590,6 +1973,16 @@
 
                     const responseEl = document.createElement('div');
                     responseEl.className = 'chat-turn-response';
+
+                    const actionsEl = document.createElement('div');
+                    actionsEl.className = 'chat-turn-response-actions';
+                    actionsEl.innerHTML = '<button type="button" class="chat-copy-btn" title="Copiar respuesta" aria-label="Copiar respuesta"><i class="fa-regular fa-copy"></i><span>Copiar</span></button>';
+
+                    const responseBodyEl = document.createElement('div');
+                    responseBodyEl.className = 'chat-turn-response-body';
+
+                    responseEl.appendChild(actionsEl);
+                    responseEl.appendChild(responseBodyEl);
                     article.appendChild(responseEl);
 
                     const metaEl = document.createElement('div');
@@ -1606,8 +1999,12 @@
                     thread.appendChild(article);
 
                     const responseText = (data.response ?? data.responseText ?? data.ResponseText ?? '').toString();
+                    const copyButton = actionsEl.querySelector('.chat-copy-btn');
+                    if (copyButton) {
+                        copyButton.dataset.copySource = encodeBase64Utf8(responseText);
+                    }
                     const html = renderMarkdownHtml(responseText);
-                    await typeWriteInto(responseEl, html, speed);
+                    await typeWriteInto(responseBodyEl, html, speed);
                 }
 
                 async function sendMessage() {
@@ -1705,8 +2102,10 @@
                     if (previewEmptyState) previewEmptyState.style.display = 'none';
 
                     currentPreview = { url: url, type: type, ext: ext, id: row.dataset.id || '' };
-                    await renderPreview(url, type, ext, row.dataset.id || '');
+                    const requiresLayoutExpand = !document.documentElement.classList.contains('document-focus');
                     setDocumentFocus(true);
+                    await stabilizePositionDuringTransition(requiresLayoutExpand ? 190 : 0);
+                    await renderPreview(url, type, ext, row.dataset.id || '');
                     positionChatInput();
                 }
 
@@ -1724,7 +2123,20 @@
 
                 if (btnBackToList) btnBackToList.addEventListener('click', backToList);
                 if (btnOpenInViewer) btnOpenInViewer.addEventListener('click', () => { if (!currentPreview.url) return Swal.fire({icon: 'error',title: 'Advertencia',text: 'No hay documento en vista previa.',}); window.open(currentPreview.url, '_blank'); });
-                if (btnDownloadPreview) btnDownloadPreview.addEventListener('click', () => { if (!currentPreview.url) return Swal.fire({icon: 'error',title: 'Advertencia',text: 'No hay documento seleccionado.',}); const a = document.createElement('a'); a.href = currentPreview.url; a.download = currentPreview.url.split('/').pop() || 'download'; document.body.appendChild(a); a.click(); a.remove(); });
+                if (btnDownloadPreview) btnDownloadPreview.addEventListener('click', () => {
+                    if (!currentPreview.url) {
+                        return Swal.fire({ icon: 'error', title: 'Advertencia', text: 'No hay documento seleccionado.' });
+                    }
+
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = currentPreview.id
+                        ? `@Url.Action("DownloadCaseDocument", "Nexus")?caseCode=${caseCode}&fileId=${currentPreview.id}`
+                        : currentPreview.url;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                });
 
                 async function renderPreview(url, type, ext = '', fileId = '') {
                     __pdfRenderToken++;
@@ -1772,22 +2184,63 @@
 
                             const meta = document.createElement('div');
                             meta.className = 'preview-markup-meta';
-                            meta.textContent = markupExt === 'xml'
+                            const metaText = document.createElement('div');
+                            metaText.className = 'preview-markup-copy';
+                            metaText.textContent = markupExt === 'xml'
                                 ? 'XML guardado directo, sin OCR.'
-                                : 'HTML guardado directo, sin OCR. Vista previa en modo seguro.';
+                                : 'HTML guardado directo, sin OCR. Puedes alternar entre código y render.';
+
+                            const metaActions = document.createElement('div');
+                            metaActions.className = 'preview-markup-actions';
+
+                            const viewerHost = document.createElement('div');
+                            viewerHost.className = 'preview-markup-viewer';
+
+                            const modes = markupExt === 'xml'
+                                ? [
+                                    { key: 'code', label: 'Código' },
+                                    { key: 'tree', label: 'Estructura' }
+                                ]
+                                : [
+                                    { key: 'code', label: 'Código' },
+                                    { key: 'render', label: 'Render' }
+                                ];
+
+                            function paintMarkupMode(mode) {
+                                viewerHost.innerHTML = '';
+
+                                if (mode === 'render') {
+                                    viewerHost.appendChild(createRenderedHtmlPreview(rawText));
+                                } else if (mode === 'tree') {
+                                    viewerHost.appendChild(createXmlTreePreview(rawText));
+                                } else {
+                                    viewerHost.appendChild(createMarkupCodeBlock(markupExt, rawText));
+                                }
+
+                                Array.from(metaActions.querySelectorAll('.preview-markup-mode')).forEach(button => {
+                                    button.classList.toggle('is-active', button.dataset.mode === mode);
+                                });
+                            }
+
+                            modes.forEach((mode, index) => {
+                                const button = document.createElement('button');
+                                button.type = 'button';
+                                button.className = 'preview-markup-mode';
+                                button.dataset.mode = mode.key;
+                                button.textContent = mode.label;
+                                button.addEventListener('click', () => paintMarkupMode(mode.key));
+                                metaActions.appendChild(button);
+
+                                if (index === 0) {
+                                    button.classList.add('is-active');
+                                }
+                            });
+
+                            meta.appendChild(metaText);
+                            meta.appendChild(metaActions);
                             shell.appendChild(meta);
-
-                            const pre = document.createElement('pre');
-                            pre.className = 'preview-markup-code';
-
-                            const code = document.createElement('code');
-                            const isXml = markupExt === 'xml';
-                            code.className = isXml ? 'language-xml' : 'language-html';
-                            code.textContent = isXml
-                                ? formatXmlForPreview(rawText)
-                                : formatHtmlForPreview(rawText);
-                            pre.appendChild(code);
-                            shell.appendChild(pre);
+                            paintMarkupMode(modes[0].key);
+                            shell.appendChild(viewerHost);
 
                             stage.appendChild(shell);
                             zoomWrapper.appendChild(stage);
@@ -3002,16 +3455,20 @@
         }
     }
 
+    private static string EncodeCopyPayload(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return string.Empty;
+
+        return Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(text));
+    }
+
     public string RenderMarkdown(string markdown)
     {
         if (string.IsNullOrEmpty(markdown)) return string.Empty;
-        // DisableHtml() hace que Markdig ESCAPE todo HTML crudo (<script>, <style>, etc.)
-        // en lugar de pasarlo tal cual al output. Esto evita cualquier inyección de script
-        // independientemente de lo que devuelva la IA, sin importar formato o encoding.
         var pipeline = new MarkdownPipelineBuilder()
             .UseAdvancedExtensions()
             .UseSoftlineBreakAsHardlineBreak()
-            .DisableHtml()
             .Build();
 
         var normalizedMarkdown = NormalizeResponseMarkdown(markdown);
@@ -3020,7 +3477,13 @@
         // 1. Eliminar pares completos <script>...</script>, <style>...</style>, etc.
         html = System.Text.RegularExpressions.Regex.Replace(
             html,
-            @"<\s*(script|style|iframe|object|embed)[^>]*>.*?<\s*/\s*\1\s*>",
+            @"<\s*(script|style|iframe|object|embed|textarea|button|select|form)[^>]*>.*?<\s*/\s*\1\s*>",
+            string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        html = System.Text.RegularExpressions.Regex.Replace(
+            html,
+            @"<\s*input\b[^>]*\/?>",
             string.Empty,
             System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
 
