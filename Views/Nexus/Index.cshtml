@@ -1,192 +1,497 @@
 @model app_tramites.Models.ViewModel.QueryInput
+@using app_tramites.Models.ModelAi
 
 @{
-    ViewData["Title"] = "Demo OCR: Crear y Listar Casos";
+    ViewData["Title"] = "Nexus";
+
+    var processCases = ViewBag.ProcessCases as List<ProcessCase> ?? [];
+
+    bool IsEvaluated(ProcessCase currentCase) => currentCase.FinalResponseResults?.Any() ?? false;
+
+    string BuildShortCaseCode(Guid caseCode)
+    {
+        var raw = caseCode.ToString() ?? string.Empty;
+        var shortCode = raw.Split('-').FirstOrDefault() ?? raw;
+        return $"NE-{shortCode}";
+    }
+
+    string ResolveCaseCategory(ProcessCase currentCase)
+    {
+        if (!IsEvaluated(currentCase))
+        {
+            return "No Evaluado";
+        }
+
+        var text = string.Join(" ", currentCase.FinalResponseResults.Select(r => r.ResponseText?.ToLowerInvariant() ?? string.Empty));
+
+        if (text.Contains("**hospital del dia**") || text.Contains("**hospital del día**"))
+            return "Hospital del dia";
+        if (text.Contains("**hospitalario**"))
+            return "Hospitalario";
+        if (text.Contains("**ambulatorio**"))
+            return "Ambulatorio";
+        return "No Definido";
+    }
+
+    (string Icon, string Tone) ResolveTypeVisual(string category) => category switch
+    {
+        "Hospital del dia" => ("fa-hospital", "primary"),
+        "Hospitalario" => ("fa-briefcase-medical", "info"),
+        "Ambulatorio" => ("fa-stethoscope", "warning"),
+        "No Definido" => ("fa-circle-question", "danger"),
+        _ => ("fa-wave-square", "muted")
+    };
+
+    var totalCases = processCases.Count;
+    var evaluatedCases = processCases.Count(IsEvaluated);
+    var pendingCases = totalCases - evaluatedCases;
+    var totalProcesses = processCases
+        .Select(x => x.DefinitionCodeNavigation?.Name?.Trim())
+        .Where(x => !string.IsNullOrWhiteSpace(x))
+        .Distinct()
+        .Count();
+    var processOptions = processCases
+        .Select(x => x.DefinitionCodeNavigation?.Name?.Trim())
+        .Where(x => !string.IsNullOrWhiteSpace(x))
+        .Distinct()
+        .OrderBy(x => x)
+        .ToList();
 }
 
-<section id="widget-grid">
-    <div class="row">
-        <!-- Widget Subida OCR -->
-        <article class="col-lg-12">
-            <div class="jarviswidget jarviswidget-color-darken border-0 shadow rounded-4" id="wid-id-upload" data-widget-editbutton="false" data-widget-deletebutton="false">
-                <header class="bg-primary text-white px-4 py-3 d-flex justify-content-between align-items-center rounded-top-4 shadow-sm">
-                    <div class="d-flex align-items-center">
-                        <i class="fa-solid fa-file-circle-plus fs-2 me-2"></i>
-                        <h2 class="h5 mb-0 fw-bold">Crear caso</h2>
-                    </div>
-                    <div class="d-flex align-items-center">
-                        <i class="fa-solid fa-robot fs-5 me-1"></i>
-                        <span class="fw-semibold">Nexus AI Auditor</span>
-                    </div>
-                </header>
+<section id="widget-grid" class="nexus-index-page">
+    <section class="nexus-hero-panel">
+        <div class="nexus-hero-copy">
+            <span class="nexus-hero-kicker">
+                <i class="fa-solid fa-sparkles"></i>
+                Nexus AI Auditor
+            </span>
+            <h1>Centro de auditoria OCR y seguimiento de casos</h1>
+            <p>
+                Crea expedientes, controla el avance del OCR y revisa el estado de cada caso desde una sola consola de trabajo.
+            </p>
+        </div>
 
+        <div class="nexus-hero-metrics" aria-label="Resumen general">
+            <article class="hero-metric-card">
+                <span class="hero-metric-icon tone-blue"><i class="fa-solid fa-folders"></i></span>
                 <div>
-                    <div class="widget-body p-4">
-                        <!-- Selección de proceso -->
-                        <div id="process-buttons" class="mb-4">
-                            <h3 class="text-primary mb-3">Selecciona un Proceso</h3>
-                            <div id="processContainer" class="d-flex flex-wrap gap-3">
-                                <!-- Botones dinámicos se renderizan aquí -->
-                            </div>
-                            <!-- Indicador de proceso activo -->
-                            <div id="processSelectedIndicator" class="process-selected-indicator d-none mt-3">
-                                <i class="fa-solid fa-circle-check me-1"></i>
-                                Proceso: <strong id="processSelectedName"></strong>
+                    <small>Total de casos</small>
+                    <strong id="metricTotalCases">@totalCases</strong>
+                </div>
+            </article>
+            <article class="hero-metric-card">
+                <span class="hero-metric-icon tone-green"><i class="fa-solid fa-circle-check"></i></span>
+                <div>
+                    <small>Evaluados</small>
+                    <strong id="metricEvaluatedCases">@evaluatedCases</strong>
+                </div>
+            </article>
+            <article class="hero-metric-card">
+                <span class="hero-metric-icon tone-amber"><i class="fa-solid fa-hourglass-half"></i></span>
+                <div>
+                    <small>Pendientes</small>
+                    <strong id="metricPendingCases">@pendingCases</strong>
+                </div>
+            </article>
+            <article class="hero-metric-card">
+                <span class="hero-metric-icon tone-cyan"><i class="fa-solid fa-diagram-project"></i></span>
+                <div>
+                    <small>Procesos</small>
+                    <strong id="metricProcessCount">@totalProcesses</strong>
+                </div>
+            </article>
+        </div>
+    </section>
+
+    <div class="nexus-index-grid">
+        <article class="nexus-card nexus-create-card">
+            <div class="nexus-card-head">
+                <div>
+                    <span class="section-kicker">Crear caso</span>
+                    <h2>Ingreso inteligente de expedientes</h2>
+                    <p>Selecciona un proceso, adjunta documentos y monitorea la preparacion del caso paso a paso.</p>
+                    <div class="creation-signal-bar" aria-label="Capacidades del flujo">
+                        <span class="creation-signal-pill">
+                            <i class="fa-solid fa-cloud-arrow-up"></i>
+                            Carga segura
+                        </span>
+                        <span class="creation-signal-pill">
+                            <i class="fa-solid fa-file-waveform"></i>
+                            OCR guiado
+                        </span>
+                        <span class="creation-signal-pill">
+                            <i class="fa-solid fa-list-check"></i>
+                            Trazabilidad inmediata
+                        </span>
+                    </div>
+                </div>
+                <div id="processSelectedIndicator" class="process-selected-indicator d-none" aria-live="polite">
+                    <i class="fa-solid fa-circle-check"></i>
+                    <span>Proceso activo: <strong id="processSelectedName"></strong></span>
+                </div>
+            </div>
+
+            <div class="create-case-layout">
+                <section class="nexus-subpanel process-panel">
+                    <div class="subpanel-head">
+                        <div>
+                            <span class="subpanel-step">Paso 1</span>
+                            <h3>Proceso de auditoria</h3>
+                        </div>
+                        <span class="subpanel-caption">Seleccion dinamica por usuario</span>
+                    </div>
+                    <p class="subpanel-description">
+                        Cada proceso define el criterio del OCR y la evaluacion posterior del caso.
+                    </p>
+                    <div id="processContainer" class="process-chip-grid" aria-live="polite">
+                        <div class="process-loading-card">
+                            <i class="fa-solid fa-atom fa-spin"></i>
+                            <span>Cargando procesos autorizados...</span>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="nexus-subpanel upload-panel">
+                    <div class="subpanel-head">
+                        <div>
+                            <span class="subpanel-step">Paso 2</span>
+                            <h3>Documentos del expediente</h3>
+                        </div>
+                        <span id="uploadMeta" class="subpanel-caption">Agrega archivos para habilitar la creacion del caso</span>
+                    </div>
+
+                    <form id="ocrForm" novalidate autocomplete="off" class="create-case-form">
+                        <input type="hidden" asp-for="ProcessCode" value="" />
+
+                        <div class="upload-stage-grid">
+                            <button type="button"
+                                    id="uploadArea"
+                                    class="upload-dropzone"
+                                    aria-label="Arrastra o haz clic aqui para subir archivos">
+                                <div class="upload-dropzone-icon">
+                                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                                </div>
+                                <div class="upload-dropzone-copy">
+                                    <strong>Arrastra documentos o haz clic para seleccionar</strong>
+                                    <span>PDF, JPG, JPEG, PNG, XML y HTML. Preparamos el expediente, enviamos al OCR cuando aplica y registramos el caso al terminar.</span>
+                                </div>
+                                <span id="fileCountBadge" class="upload-count-badge d-none"></span>
+                            </button>
+
+                            <div class="preview-stage">
+                                <div class="preview-stage-head">
+                                    <div>
+                                        <strong>Vista previa de carga</strong>
+                                        <small>Confirma rapidamente lo que entrara al caso.</small>
+                                    </div>
+                                    <button id="btnClearUpload" type="button" class="btn btn-outline-secondary btn-sm">
+                                        <i class="fa-solid fa-rotate-left me-1"></i>
+                                        Limpiar
+                                    </button>
+                                </div>
+                                <div id="previewGallery" class="preview-gallery" aria-live="polite">
+                                    <div class="preview-gallery-empty">
+                                        <i class="fa-solid fa-inbox"></i>
+                                        <span>Aun no hay archivos listos para procesar.</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <form id="ocrForm" novalidate autocomplete="off">
-                            <input type="hidden" asp-for="ProcessCode" value="" />
-                            <div class="row g-4">
-                                <div class="col-12 col-md-4 position-relative">
-                                    <div id="uploadArea"
-                                         class="border border-2 border-dashed border-secondary rounded-4 p-4 text-center bg-light"
-                                         style="min-height:200px; transition: box-shadow .3s; cursor:pointer;"
-                                         aria-label="Arrastra o haz clic aquí para subir archivos">
-                                        <i class="fa fa-cloud-upload-alt fa-3x text-secondary mb-3"></i>
-                                        <h6 class="fw-bold mb-2">Arrastra o haz clic aquí</h6>
-                                        <small class="text-muted d-block mb-2">PDF, JPG, PNG • Hasta 10MB</small>
-                                        <span id="fileCountBadge" class="badge bg-primary d-none"></span>
-                                        <input type="file"
-                                               id="files"
-                                               multiple
-                                               accept=".pdf,.jpg,.jpeg,.png"
-                                               style="
-                                              position: absolute;
-                                              top: 0; left: 0;
-                                              width: 100%; height: 100%;
-                                              opacity: 0;
-                                              cursor: pointer;
-                                            " />
+                        <input type="file"
+                               id="files"
+                               multiple
+                               accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff,.xml,.html,.htm"
+                               hidden />
+
+                        <div id="caseCreationWorkflow" class="creation-workflow d-none" aria-live="polite">
+                            <div class="creation-workflow-head">
+                                <div>
+                                    <span class="workflow-kicker">Seguimiento en vivo</span>
+                                    <h3 id="creationStageTitle">Preparando caso</h3>
+                                    <p id="creationStageDetail">Validando el proceso y los documentos seleccionados.</p>
+                                </div>
+                                <span id="creationStageBadge" class="workflow-badge">En progreso</span>
+                            </div>
+
+                            <div class="creation-workflow-steps" role="list" aria-label="Progreso de creacion del caso">
+                                <div class="workflow-step" data-step="validate" role="listitem">
+                                    <span class="step-dot"></span>
+                                    <div>
+                                        <strong>Validar</strong>
+                                        <small>Entradas y formato</small>
                                     </div>
                                 </div>
-                                <div class="col-12 col-md-8">
-                                    <label class="form-label fw-semibold mb-2">Previsualizaciones</label>
-                                    <div id="previewGallery"
-                                         class="d-flex flex-row flex-nowrap gap-3 border p-2 rounded-4 bg-white overflow-auto"
-                                         style="min-height:120px; max-height:140px;"></div>
+                                <div class="workflow-step" data-step="upload" role="listitem">
+                                    <span class="step-dot"></span>
+                                    <div>
+                                        <strong>Preparar</strong>
+                                        <small>Empaquetando archivos</small>
+                                    </div>
+                                </div>
+                                <div class="workflow-step" data-step="ocr" role="listitem">
+                                    <span class="step-dot"></span>
+                                    <div>
+                                        <strong>OCR</strong>
+                                        <small>Enviando al motor</small>
+                                    </div>
+                                </div>
+                                <div class="workflow-step" data-step="extract" role="listitem">
+                                    <span class="step-dot"></span>
+                                    <div>
+                                        <strong>Extraer</strong>
+                                        <small>Texto y metadatos</small>
+                                    </div>
+                                </div>
+                                <div class="workflow-step" data-step="register" role="listitem">
+                                    <span class="step-dot"></span>
+                                    <div>
+                                        <strong>Registrar</strong>
+                                        <small>Guardando expediente</small>
+                                    </div>
+                                </div>
+                                <div class="workflow-step" data-step="ready" role="listitem">
+                                    <span class="step-dot"></span>
+                                    <div>
+                                        <strong>Listo</strong>
+                                        <small>Caso disponible</small>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="form-actions mt-4">
-                                <button type="submit" class="btn btn-primary btn-lg icon-action" id="btnCrearCaso" disabled>
-                                    <i class="fas fa-plus-circle me-2"></i> Crear caso
-                                </button>
+
+                            <div id="creationWorkflowLog" class="creation-workflow-log"></div>
+                        </div>
+
+                        <div class="create-case-actions">
+                            <div class="create-case-hint">
+                                <i class="fa-solid fa-shield-heart"></i>
+                                <span>La creacion del expediente organiza los archivos, registra el caso y deja el procesamiento listo para auditar.</span>
                             </div>
-                        </form>
-                    </div>
-                </div>
+
+                            <button type="submit" class="btn btn-primary btn-lg create-case-btn" id="btnCrearCaso" disabled>
+                                <i class="fa-solid fa-wand-magic-sparkles me-2"></i>
+                                Crear caso
+                            </button>
+                        </div>
+                    </form>
+                </section>
             </div>
         </article>
 
-        <!-- Widget Tabla Casos -->
-        <article class="col-lg-12">
-            <div class="jarviswidget jarviswidget-color-darken border-0 shadow rounded-4" id="wid-id-table" data-widget-editbutton="false" data-widget-deletebutton="false">
-                <header class="bg-primary text-white rounded-top-4 px-4 py-3">
-                    <span class="widget-icon"><i class="fa fa-history"></i></span>
-                    <h2 class="d-inline ms-2">Casos Existentes</h2>
-                </header>
+        <article class="nexus-card nexus-table-card">
+            <div class="nexus-card-head">
                 <div>
-                    <div class="widget-body p-0">
-                        <div class="table-responsive rounded-bottom-4">
-                            <table id="casesTable" class="table table-hover mb-0">
-                                <thead class="table-light text-uppercase text-primary">
-                                    <tr>
-                                        <th>Código</th>
-                                        <th>Fecha de recepción</th>
-                                        <th>Proceso</th>
-                                        <th>Estado</th>
-                                        <th>Tipo</th>
-                                        <th>Acciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @if (ViewBag.ProcessCases != null && ((List<app_tramites.Models.ModelAi.ProcessCase>)ViewBag.ProcessCases).Any())
-                                    {
-                                        foreach (var c in (List<app_tramites.Models.ModelAi.ProcessCase>)ViewBag.ProcessCases)
+                    <span class="section-kicker">Casos existentes</span>
+                    <h2>Monitoreo del backlog</h2>
+                    <p>Filtra, procesa y entra al detalle de cada expediente desde una tabla optimizada para trabajo operativo.</p>
+                </div>
+                <div class="table-head-meta">
+                    <span class="results-meta-pill" id="casesResultsMeta">
+                        @(totalCases > 0 ? $"{totalCases} casos visibles" : "Aun no hay casos cargados")
+                    </span>
+                </div>
+            </div>
+
+            <div class="table-toolbar">
+                <label class="filter-field filter-search-field">
+                    <span class="filter-field-icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+                    <input id="filterSearch" type="search" placeholder="Buscar por codigo, proceso, estado o tipo" />
+                </label>
+
+                <div class="filter-group">
+                    <label class="filter-field">
+                        <span>Estado</span>
+                        <select id="filterStatus">
+                            <option value="">Todos</option>
+                            <option value="evaluado">Evaluado</option>
+                            <option value="pendiente">Pendiente</option>
+                            <option value="error">Error</option>
+                        </select>
+                    </label>
+
+                    <label class="filter-field">
+                        <span>Tipo</span>
+                        <select id="filterType">
+                            <option value="">Todos</option>
+                            <option value="ambulatorio">Ambulatorio</option>
+                            <option value="hospitalario">Hospitalario</option>
+                            <option value="hospital del dia">Hospital del dia</option>
+                            <option value="no definido">No Definido</option>
+                            <option value="no evaluado">No Evaluado</option>
+                        </select>
+                    </label>
+
+                    <label class="filter-field">
+                        <span>Proceso</span>
+                        <select id="filterProcess">
+                            <option value="">Todos los procesos</option>
+                            @foreach (var processName in processOptions)
+                            {
+                                <option value="@processName">@processName</option>
+                            }
+                        </select>
+                    </label>
+
+                    <label class="filter-field">
+                        <span>Periodo</span>
+                        <select id="filterPeriod">
+                            <option value="">Todo el historial visible</option>
+                            <option value="today">Hoy</option>
+                            <option value="48h">Ultimas 48 horas</option>
+                            <option value="7d">Ultimos 7 dias</option>
+                        </select>
+                    </label>
+
+                    <button type="button" id="btnResetFilters" class="btn btn-outline-secondary filter-reset-btn">
+                        <i class="fa-solid fa-filter-circle-xmark me-1"></i>
+                        Limpiar filtros
+                    </button>
+                </div>
+            </div>
+
+            <div id="activeFiltersShell" class="active-filters-shell d-none" aria-live="polite">
+                <div class="active-filters-head">
+                    <span>Filtros activos</span>
+                    <button type="button" id="btnResetFiltersInline" class="active-filters-reset">
+                        Restablecer
+                    </button>
+                </div>
+                <div id="activeFilterChips" class="active-filter-chips"></div>
+            </div>
+
+            <div class="table-shell">
+                <div class="table-responsive">
+                    <table id="casesTable" class="table nexus-cases-table mb-0">
+                        <thead>
+                            <tr>
+                                <th>Caso</th>
+                                <th>Recepcion</th>
+                                <th>Proceso</th>
+                                <th>Estado</th>
+                                <th>Tipo</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="casesTableBody">
+                            @foreach (var currentCase in processCases.OrderByDescending(x => x.StartDate))
+                            {
+                                var isDone = IsEvaluated(currentCase);
+                                var category = ResolveCaseCategory(currentCase);
+                                var typeVisual = ResolveTypeVisual(category);
+                                var processName = currentCase.DefinitionCodeNavigation?.Name?.Trim() ?? "Proceso sin nombre";
+                                var shortCaseCode = BuildShortCaseCode(currentCase.CaseCode);
+                                var dateText = currentCase.StartDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
+                                var rowStatus = isDone ? "evaluado" : "pendiente";
+                                var rowSearch = $"{shortCaseCode} {processName} {category} {dateText}";
+
+                                <tr class="case-row"
+                                    data-case-code="@currentCase.CaseCode"
+                                    data-case-label="@shortCaseCode"
+                                    data-process-name="@processName"
+                                    data-status="@rowStatus"
+                                    data-type-label="@category"
+                                    data-start-iso="@currentCase.StartDate.ToUniversalTime().ToString("o")"
+                                    data-search="@rowSearch">
+                                    <td data-label="Caso">
+                                        <div class="case-identity">
+                                            <strong class="case-code">@shortCaseCode</strong>
+                                            <span class="case-support">Expediente OCR</span>
+                                        </div>
+                                    </td>
+                                    <td data-label="Recepcion">
+                                        <div class="case-date">@dateText</div>
+                                        <span class="case-support">Ingreso local</span>
+                                    </td>
+                                    <td data-label="Proceso">
+                                        <span class="table-process-pill">
+                                            <i class="fa-solid fa-diagram-project"></i>
+                                            <span>@processName</span>
+                                        </span>
+                                    </td>
+                                    <td data-label="Estado" data-cell="status">
+                                        @if (isDone)
                                         {
-                                            bool done = c.FinalResponseResults?.Any() ?? false;
-                                            string resumenCategoria = "No Evaluado";
-                                            if (done)
-                                            {
-                                                var txt = string.Join(" ", c.FinalResponseResults.Select(r => r.ResponseText?.ToLower() ?? ""));
-                                                if (txt.Contains("**desconocido**")) resumenCategoria = "No Definido";
-                                                else if (txt.Contains("**ambulatorio**")) resumenCategoria = "Ambulatorio";
-                                                else if (txt.Contains("**hospitalario**")) resumenCategoria = "Hospitalario";
-                                                else if (txt.Contains("**hospital del día**")) resumenCategoria = "Hospital del Día";
-                                                else resumenCategoria = "No Definido";
-                                            }
-                                            var date = c.StartDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
-                                            <tr>
-                                                <td class="fw-bold text-primary">NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))</td>
-                                                <td>@date</td>
-                                                <td>@c.DefinitionCodeNavigation?.Name</td>
-                                                <td>
-                                                    @if (done)
-                                                    {
-                                                        <span class="badge badge-estado bg-success"><i class="fa fa-check-circle me-1"></i>Evaluado</span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="badge badge-estado bg-warning text-dark"><i class="fa fa-hourglass-start me-1"></i>Pendiente</span>
-                                                    }
-                                                </td>
-                                                <td>
-                                                    @{
-                                                        var (tipoIcon, tipoCss, tipoBg) = resumenCategoria switch {
-                                                            "No Definido"     => ("fa-question",          "text-white", "bg-danger"),
-                                                            "Hospital del Día"=> ("fa-hospital",          "text-white", "bg-primary"),
-                                                            "Hospitalario"    => ("fa-briefcase-medical", "text-white", "bg-info"),
-                                                            "Ambulatorio"     => ("fa-stethoscope",       "text-dark",  "bg-warning"),
-                                                            _                 => ("fa-clock",             "text-white", "bg-secondary")
-                                                        };
-                                                    }
-                                                    <span class="badge badge-tipo @tipoBg @tipoCss">
-                                                        <i class="fa @tipoIcon me-1"></i>@resumenCategoria
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    @if (done)
-                                                    {
-                                                        <button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails"
-                                                                data-nameproccess="NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))"
-                                                                data-casecode="@c.CaseCode" data-processcode=""
-                                                                onclick="handleViewDetails(this)"
-                                                                title="Ver detalles">
-                                                            <i class="fa fa-eye"></i>
-                                                        </button>
-                                                        <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow ms-1"
-                                                                data-nameproccess="NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))"
-                                                                data-casecode="@c.CaseCode" data-processcode=""
-                                                                title="Reprocesar">
-                                                            <i class="fa fa-play"></i>
-                                                        </button>
-                                                    }
-                                                    else
-                                                    {
-                                                        <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow"
-                                                                data-nameproccess="NE-@(((c.CaseCode.ToString() ?? "").Split('-').FirstOrDefault() ?? ""))"
-                                                                data-casecode="@c.CaseCode" data-processcode=""
-                                                                title="Procesar">
-                                                            <i class="fa fa-play"></i>
-                                                        </button>
-                                                    }
-                                                </td>
-                                            </tr>
+                                            <span class="status-pill is-evaluated">
+                                                <i class="fa-solid fa-circle-check"></i>
+                                                Evaluado
+                                            </span>
                                         }
-                                    }
-                                    else
-                                    {
-                                        <tr>
-                                            <td colspan="6" class="text-center py-5">
-                                                <i class="fa fa-folder-open fa-2x text-muted mb-2 d-block"></i>
-                                                <span class="text-muted">No hay casos disponibles</span>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                                        else
+                                        {
+                                            <span class="status-pill is-pending">
+                                                <i class="fa-solid fa-hourglass-half"></i>
+                                                Pendiente
+                                            </span>
+                                        }
+                                    </td>
+                                    <td data-label="Tipo" data-cell="type">
+                                        <span class="type-pill tone-@typeVisual.Tone">
+                                            <i class="fa-solid @typeVisual.Icon"></i>
+                                            @category
+                                        </span>
+                                    </td>
+                                    <td data-label="Acciones" data-cell="actions">
+                                        <div class="table-actions">
+                                            @if (isDone)
+                                            {
+                                                <button type="button"
+                                                        class="btn btn-outline-primary btn-sm icon-action btnViewDetails"
+                                                        data-nameproccess="@shortCaseCode"
+                                                        data-casecode="@currentCase.CaseCode"
+                                                        data-processcode=""
+                                                        title="Ver detalles">
+                                                    <i class="fa-solid fa-eye"></i>
+                                                </button>
+                                                <button type="button"
+                                                        class="btn btn-success btn-sm icon-action btnProcessRow"
+                                                        data-nameproccess="@shortCaseCode"
+                                                        data-casecode="@currentCase.CaseCode"
+                                                        data-processcode=""
+                                                        title="Reprocesar">
+                                                    <i class="fa-solid fa-rotate-right"></i>
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <button type="button"
+                                                        class="btn btn-success btn-sm icon-action btnProcessRow"
+                                                        data-nameproccess="@shortCaseCode"
+                                                        data-casecode="@currentCase.CaseCode"
+                                                        data-processcode=""
+                                                        title="Procesar">
+                                                    <i class="fa-solid fa-play"></i>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+
+                            <tr id="emptyCasesRow" class="table-empty-row @(totalCases > 0 ? "d-none" : "")">
+                                <td colspan="6">
+                                    <div class="table-empty-state">
+                                        <i class="fa-solid fa-folder-open"></i>
+                                        <div>
+                                            <strong>No hay casos disponibles todavia</strong>
+                                            <span>Crea el primer expediente desde el panel superior para comenzar a trabajar.</span>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+
+                            <tr id="filterEmptyRow" class="table-empty-row d-none">
+                                <td colspan="6">
+                                    <div class="table-empty-state">
+                                        <i class="fa-solid fa-filter-circle-xmark"></i>
+                                        <div>
+                                            <strong>No hay coincidencias con los filtros actuales</strong>
+                                            <span>Ajusta la busqueda o limpia los filtros para recuperar resultados.</span>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </article>
@@ -196,317 +501,15 @@
 @section Styles {
     <link rel="stylesheet" href="~/css/app/nexus.index.css" />
 }
+
 @section Scripts {
     <script>
-        // Loading
-        function mostrarLoadingPanel() {
-            if (typeof $ !== 'undefined' && $.fn.waitMe) {
-                $('#widget-grid').waitMe({ effect: 'bounce', text: 'Cargando...', bg: 'rgba(255,255,255,0.7)', color: '#224abe' });
-            }
-        }
-        function ocultarLoadingPanel() {
-            if (typeof $ !== 'undefined' && $.fn.waitMe) {
-                $('#widget-grid').waitMe('hide');
-            }
-        }
-
-        // Estado del formulario
-        let hasProcess = false;
-        let hasFiles   = false;
-
-        function actualizarBotonCrear() {
-            document.getElementById('btnCrearCaso').disabled = !(hasProcess && hasFiles);
-        }
-
-        // Drag & Drop y preview
-        const uploadArea     = document.getElementById('uploadArea');
-        const filesInput     = document.getElementById('files');
-        const previewGallery = document.getElementById('previewGallery');
-        const fileCountBadge = document.getElementById('fileCountBadge');
-
-        uploadArea.addEventListener('dragover', e => {
-            e.preventDefault();
-            uploadArea.classList.add('shadow-lg', 'border-primary');
-        });
-        uploadArea.addEventListener('dragleave', e => {
-            e.preventDefault();
-            uploadArea.classList.remove('shadow-lg', 'border-primary');
-        });
-        uploadArea.addEventListener('drop', e => {
-            e.preventDefault();
-            uploadArea.classList.remove('shadow-lg', 'border-primary');
-            const dt = new DataTransfer();
-            Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f));
-            filesInput.files = dt.files;
-            filesInput.dispatchEvent(new Event('change'));
-        });
-
-        filesInput.addEventListener('change', () => {
-            previewGallery.innerHTML = '';
-            previewGallery.classList.toggle('d-none', !filesInput.files.length);
-
-            const count = filesInput.files.length;
-            hasFiles = count > 0;
-            if (count > 0) {
-                fileCountBadge.textContent = count === 1 ? '1 archivo' : `${count} archivos`;
-                fileCountBadge.classList.remove('d-none');
-            } else {
-                fileCountBadge.classList.add('d-none');
-            }
-            actualizarBotonCrear();
-
-            Array.from(filesInput.files).forEach(f => {
-                const ext = f.name.split('.').pop().toLowerCase();
-                const container = document.createElement('div');
-                container.className = 'preview-item';
-
-                if (['jpg', 'jpeg', 'png'].includes(ext)) {
-                    const reader = new FileReader();
-                    reader.onload = e => {
-                        const img = document.createElement('img');
-                        img.src = e.target.result;
-                        img.alt = f.name;
-                        img.className = 'd-block';
-                        container.appendChild(img);
-                        const nameEl = document.createElement('small');
-                        nameEl.className = 'filename';
-                        nameEl.textContent = f.name;
-                        container.appendChild(nameEl);
-                    };
-                    reader.onerror = () => {
-                        container.innerHTML = '<i class="fa-solid fa-triangle-exclamation file-icon"></i>';
-                    };
-                    reader.readAsDataURL(f);
-                } else if (ext === 'pdf') {
-                    container.innerHTML = '<i class="fa-solid fa-file-pdf file-icon"></i><small class="filename"></small>';
-                } else {
-                    container.innerHTML = '<i class="fa-solid fa-file file-icon"></i><small class="filename"></small>';
-                }
-                previewGallery.appendChild(container);
-            });
-        });
-
-        // Envío OCR
-        document.getElementById('ocrForm').addEventListener('submit', async e => {
-            e.preventDefault();
-
-            const processCode = document.querySelector('input[name="ProcessCode"]').value;
-
-            mostrarLoadingPanel();
-
-            const filesToSend = await Promise.all(Array.from(filesInput.files).map(f => new Promise(res => {
-                const reader = new FileReader();
-                reader.onload = () => res({
-                    FileName: f.name,
-                    Content: reader.result.split(',')[1],
-                    Extension: '.' + f.name.split('.').pop().toLowerCase()
-                });
-                reader.readAsDataURL(f);
-            })));
-
-            try {
-                const resp = await fetch('/Nexus/CreateCaseProcess', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ProcessCode: processCode, Query: '', Files: filesToSend })
-                });
-
-                if (!resp.ok) throw new Error(resp.statusText);
-                const data = await resp.json();
-                ocultarLoadingPanel();
-
-                const dateStr = new Date(data.startDate).toLocaleString('es-EC', {
-                    day: '2-digit', month: '2-digit', year: 'numeric',
-                    hour: '2-digit', minute: '2-digit'
-                });
-
-                const caseShort = 'NE-' + ((data.caseCode || '').split('-')[0].replace(/^NE/i, ''));
-                const tbody = document.querySelector('#casesTable tbody');
-
-                // Quitar fila de "no hay casos" si existe
-                const emptyRow = tbody.querySelector('td[colspan]');
-                if (emptyRow) emptyRow.closest('tr').remove();
-
-                tbody.insertAdjacentHTML('afterbegin', `
-                    <tr>
-                        <td class="fw-bold text-primary">${caseShort}</td>
-                        <td>${dateStr}</td>
-                        <td>${data.nameProccess}</td>
-                        <td><span class="badge badge-estado bg-warning text-dark"><i class="fa fa-hourglass-start me-1"></i>Pendiente</span></td>
-                        <td><span class="badge badge-tipo bg-secondary text-white"><i class="fa fa-clock me-1"></i>No Evaluado</span></td>
-                        <td>
-                            <button class='btn btn-success btn-sm rounded-circle btnProcessRow'
-                                    data-casecode='${data.caseCode}'
-                                    data-processcode=""
-                                    data-nameproccess='${caseShort}'
-                                    title="Procesar">
-                                <i class='fa fa-play'></i>
-                            </button>
-                        </td>
-                    </tr>
-                `);
-
-                filesInput.value = null;
-                previewGallery.innerHTML = '';
-                previewGallery.classList.add('d-none');
-                fileCountBadge.classList.add('d-none');
-                hasFiles = false;
-                actualizarBotonCrear();
-
-            } catch (err) {
-                ocultarLoadingPanel();
-                Swal.fire({ icon: 'warning', title: 'Advertencia', text: 'Error al crear el caso: ' + err.message });
-            }
-        });
-
-        // Procesar caso
-        let animacionInterval = null;
-
-        async function processCase(btn) {
-            btn.disabled = true;
-            const proccessName = btn.dataset.nameproccess || 'el proceso seleccionado';
-            const orig = btn.innerHTML;
-            btn.innerHTML = `<i class='fa fa-spinner fa-spin'></i>`;
-
-            const row = btn.closest('tr');
-            if (!row) {
-                btn.disabled = false;
-                return;
-            }
-            const estadoEl = row.children[3].querySelector('i, span');
-            const tipoCell = row.children[4];
-            if (!estadoEl || !tipoCell) {
-                btn.disabled = false;
-                return;
-            }
-
-            row.children[3].innerHTML = `<span class="badge badge-estado bg-info text-white"><i class="fa fa-spinner fa-spin me-1"></i>Procesando</span>`;
-
-            const mensajes = ["Extrayendo...", "Resumiendo...", "Verificando...", "Leyendo...", "Analizando..."];
-            let indice = 0;
-            tipoCell.innerHTML = `<span class="typing-animation">${mensajes[0]}</span>`;
-
-            if (animacionInterval) clearInterval(animacionInterval);
-            animacionInterval = setInterval(() => {
-                const span = tipoCell.querySelector('.typing-animation');
-                if (span) {
-                    indice = (indice + 1) % mensajes.length;
-                    span.textContent = mensajes[indice];
-                }
-            }, 2000);
-
-            try {
-                const form = new FormData();
-                form.append('caseCode', btn.dataset.casecode);
-
-                const res = await fetch('/Nexus/ProcessCaseAjax', { method: 'POST', body: form });
-                if (!res.ok) throw new Error('Error en la solicitud.');
-                const json = await res.json();
-
-                clearInterval(animacionInterval);
-
-                const cat = (json.typeCase || 'Generado').trim().toLowerCase();
-
-                row.children[3].innerHTML = `<span class="badge badge-estado bg-success"><i class="fa fa-check-circle me-1"></i>Evaluado</span>`;
-
-                let tipoIconClass = 'fa-file-medical', tipoBg = 'bg-secondary', tipoCss = 'text-white', tipoNombre = 'Generado';
-                if (cat.includes('no definido'))        { tipoIconClass = 'fa-question';          tipoBg = 'bg-danger';    tipoNombre = 'No Definido'; }
-                else if (cat.includes('hospital del día')) { tipoIconClass = 'fa-hospital';       tipoBg = 'bg-primary';   tipoNombre = 'Hospital del Día'; }
-                else if (cat.includes('hospitalario'))  { tipoIconClass = 'fa-briefcase-medical'; tipoBg = 'bg-info';      tipoNombre = 'Hospitalario'; }
-                else if (cat.includes('ambulatorio'))   { tipoIconClass = 'fa-stethoscope';       tipoBg = 'bg-warning';   tipoCss = 'text-dark'; tipoNombre = 'Ambulatorio'; }
-
-                tipoCell.innerHTML = `<span class="badge badge-tipo ${tipoBg} ${tipoCss}"><i class="fas ${tipoIconClass} me-1"></i>${tipoNombre}</span>`;
-
-                row.children[5].innerHTML =
-                    `<button type="button" class="btn btn-outline-primary btn-sm icon-action rounded-circle btnViewDetails"
-                              data-casecode="${btn.dataset.casecode}"
-                              data-processcode="${btn.dataset.processcode}"
-                              data-nameproccess="${proccessName}"
-                              onclick="handleViewDetails(this)"
-                              title="Ver detalles">
-                          <i class="fa fa-eye"></i>
-                     </button>
-                     <button type="button" class="btn btn-success btn-sm rounded-circle btnProcessRow ms-1"
-                              data-casecode="${btn.dataset.casecode}"
-                              data-processcode="${btn.dataset.processcode}"
-                              data-nameproccess="${proccessName}"
-                              title="Reprocesar">
-                          <i class="fa fa-play"></i>
-                     </button>`;
-
-            } catch {
-                clearInterval(animacionInterval);
-                row.children[3].innerHTML = `<span class="badge badge-estado bg-danger"><i class="fa fa-times-circle me-1"></i>Error</span>`;
-                tipoCell.innerHTML = `<span class="badge badge-tipo bg-secondary text-white"><i class="fas fa-exclamation-circle me-1"></i>Error</span>`;
-                btn.innerHTML = orig;
-                btn.disabled = false;
-            }
-        }
-
-        // Cargar botones de proceso
-        async function loadProcessButtons() {
-            try {
-                const response = await fetch(`/Nexus/GetProcessesByUser`);
-                if (!response.ok) throw new Error("Error al cargar los procesos.");
-                const processes = await response.json();
-
-                const container = document.getElementById('processContainer');
-                container.innerHTML = '';
-
-                processes.processes.forEach(process => {
-                    const button = document.createElement('button');
-                    button.type = 'button';
-                    button.className = 'btn btn-outline-primary btn-lg rounded-pill d-flex align-items-center gap-2 btnProcessAgent';
-                    button.innerHTML = `<i class="fa-solid fa-layer-group"></i> ${process.processName}`;
-                    button.dataset.processId = process.processId;
-                    button.dataset.agentId   = process.processAgentId;
-
-                    button.addEventListener('click', () => {
-                        document.querySelector('input[name="ProcessCode"]').value = process.processId;
-
-                        document.querySelectorAll('.btnProcessRow').forEach(b => b.setAttribute('data-processcode', process.processId));
-                        document.querySelectorAll('.btnViewDetails').forEach(b => b.setAttribute('data-processcode', process.processId));
-
-                        document.querySelectorAll('.btnProcessAgent').forEach(b => {
-                            b.classList.remove('btn-primary', 'btn-success');
-                            b.classList.add('btn-outline-primary');
-                        });
-                        button.classList.remove('btn-outline-primary');
-                        button.classList.add('btn-primary');
-
-                        // Indicador visible de proceso activo
-                        document.getElementById('processSelectedName').textContent = process.processName;
-                        document.getElementById('processSelectedIndicator').classList.remove('d-none');
-
-                        hasProcess = true;
-                        actualizarBotonCrear();
-                    });
-
-                    container.appendChild(button);
-                });
-            } catch (error) {
-                console.error(error);
-                Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudieron cargar los procesos.' });
-            }
-        }
-
-        function handleViewDetails(button) {
-            const caseCode = button.dataset.casecode;
-            if (!caseCode) {
-                Swal.fire({ icon: 'error', title: 'Error', text: 'No se encontró un código de caso válido.' });
-                return;
-            }
-            cargando();
-            window.location.href = `/Nexus/Details1?caseCode=${caseCode}`;
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            loadProcessButtons();
-        });
-
-        document.addEventListener('click', e => {
-            const b = e.target.closest('.btnProcessRow');
-            if (b) processCase(b);
-        });
+        window.nexusIndexConfig = {
+            createCaseUrl: '@Url.Action("CreateCaseProcess", "Nexus")',
+            processCaseUrl: '@Url.Action("ProcessCaseAjax", "Nexus")',
+            processesUrl: '@Url.Action("GetProcessesByUser", "Nexus")',
+            detailsUrlTemplate: '@Url.Action("Details1", "Nexus")?caseCode=__CASE__'
+        };
     </script>
+    <script src="~/js/app/nexus.index.js"></script>
 }
