@@ -330,33 +330,214 @@ public class NexusService : INexusService
         return details;
     }
 
-    public async Task<List<ProcessCase>?> ObtenerProcesos(IdentityUser? user, IList<string>? roles)
+    public async Task<ViewPagedProcessCases> ObtenerProcesos(
+        IdentityUser? user,
+        IList<string>? roles,
+        int pageNumber = 1,
+        int pageSize = 10,
+        int windowDays = 0,
+        string? search = null,
+        string? status = null,
+        string? type = null,
+        string? process = null,
+        string? period = null)
     {
-        //a partir de los roles que tiene el usuario necesito obtener los procesos, para posteriormente filtrar los casos
         var procesosUsuario = await GetProcessesByUser(user, roles);
+        pageSize = Math.Clamp(pageSize, 6, 30);
+        var searchTerm = (search ?? string.Empty).Trim();
+        var statusFilter = (status ?? string.Empty).Trim().ToLowerInvariant();
+        var typeFilter = (type ?? string.Empty).Trim().ToLowerInvariant();
+        var processFilter = (process ?? string.Empty).Trim();
+        var periodFilter = (period ?? string.Empty).Trim().ToLowerInvariant();
+        var availableProcesses = procesosUsuario.Processes
+            .Select(p => p.ProcessName?.Trim())
+            .OfType<string>()
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name)
+            .ToList();
+
         if (procesosUsuario.Processes.Count == 0)
-            return [];
+            return new ViewPagedProcessCases
+            {
+                AvailableProcesses = availableProcesses,
+                PageNumber = 1,
+                PageSize = pageSize,
+                TotalPages = 1,
+                WindowDays = Math.Max(windowDays, 0),
+                SearchTerm = searchTerm,
+                StatusFilter = statusFilter,
+                TypeFilter = typeFilter,
+                ProcessFilter = processFilter,
+                PeriodFilter = periodFilter
+            };
 
         var codigos = procesosUsuario.Processes
             .Where(p => !string.IsNullOrWhiteSpace(p.ProcessId))
             .Select(p => p.ProcessId!)
             .ToList();
-        var s = DateTime.Now.AddDays(-10).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
-        var today = DateTime.ParseExact(s, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
-        int pageNumber = 1; // página actual
-        int pageSize = 200;  // registros por página
-
-        return await db.ProcessCase
+        var baseQuery = db.ProcessCase
             .AsNoTracking()
+            .Where(x => codigos.Contains(x.DefinitionCode));
+
+        if (windowDays > 0)
+        {
+            var cutoffDate = DateTime.UtcNow.AddDays(-windowDays);
+            baseQuery = baseQuery.Where(x => x.StartDate > cutoffDate);
+        }
+
+        if (!string.IsNullOrWhiteSpace(processFilter))
+        {
+            baseQuery = baseQuery.Where(x =>
+                x.DefinitionCodeNavigation != null &&
+                x.DefinitionCodeNavigation.Name != null &&
+                x.DefinitionCodeNavigation.Name == processFilter);
+        }
+
+        if (!string.IsNullOrWhiteSpace(periodFilter))
+        {
+            var utcNow = DateTime.UtcNow;
+            if (periodFilter == "today")
+            {
+                var startOfToday = utcNow.Date;
+                baseQuery = baseQuery.Where(x => x.StartDate >= startOfToday);
+            }
+            else if (periodFilter == "48h")
+            {
+                var cutoff48h = utcNow.AddHours(-48);
+                baseQuery = baseQuery.Where(x => x.StartDate >= cutoff48h);
+            }
+            else if (periodFilter == "7d")
+            {
+                var cutoff7d = utcNow.AddDays(-7);
+                baseQuery = baseQuery.Where(x => x.StartDate >= cutoff7d);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(statusFilter))
+        {
+            if (statusFilter == "evaluado")
+            {
+                baseQuery = baseQuery.Where(x => x.FinalResponseResults.Any());
+            }
+            else if (statusFilter == "pendiente")
+            {
+                baseQuery = baseQuery.Where(x => !x.FinalResponseResults.Any());
+            }
+            else if (statusFilter == "error")
+            {
+                baseQuery = baseQuery.Where(x =>
+                    x.FinalResponseResults.Any(r =>
+                        (r.ResponseText ?? string.Empty).ToLower().Contains("error")));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(typeFilter))
+        {
+            if (typeFilter == "ambulatorio")
+            {
+                baseQuery = baseQuery.Where(x =>
+                    x.FinalResponseResults.Any(r =>
+                        (r.ResponseText ?? string.Empty).ToLower().Contains("ambulatorio")));
+            }
+            else if (typeFilter == "hospitalario")
+            {
+                baseQuery = baseQuery.Where(x =>
+                    x.FinalResponseResults.Any(r =>
+                        (r.ResponseText ?? string.Empty).ToLower().Contains("hospitalario")));
+            }
+            else if (typeFilter == "hospital del dia")
+            {
+                baseQuery = baseQuery.Where(x =>
+                    x.FinalResponseResults.Any(r =>
+                        (r.ResponseText ?? string.Empty).ToLower().Contains("hospital del dia") ||
+                        (r.ResponseText ?? string.Empty).ToLower().Contains("hospital del d")));
+            }
+            else if (typeFilter == "no evaluado")
+            {
+                baseQuery = baseQuery.Where(x => !x.FinalResponseResults.Any());
+            }
+            else if (typeFilter == "no definido")
+            {
+                baseQuery = baseQuery.Where(x =>
+                    x.FinalResponseResults.Any() &&
+                    !x.FinalResponseResults.Any(r =>
+                        (r.ResponseText ?? string.Empty).ToLower().Contains("ambulatorio") ||
+                        (r.ResponseText ?? string.Empty).ToLower().Contains("hospitalario") ||
+                        (r.ResponseText ?? string.Empty).ToLower().Contains("hospital del dia") ||
+                        (r.ResponseText ?? string.Empty).ToLower().Contains("hospital del d")));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var searchPattern = $"%{searchTerm}%";
+            var searchCaseCode = searchTerm.StartsWith("NE-", StringComparison.OrdinalIgnoreCase)
+                ? searchTerm[3..]
+                : searchTerm;
+            var searchCasePattern = $"%{searchCaseCode}%";
+            var searchLower = searchTerm.ToLowerInvariant();
+            var matchesEvaluated = searchLower.Contains("evaluad");
+            var matchesPending = searchLower.Contains("pendient");
+            var matchesAmbulatory = searchLower.Contains("ambulatorio");
+            var matchesHospital = searchLower.Contains("hospitalario");
+            var matchesDayHospital = searchLower.Contains("hospital del dia") || searchLower.Contains("hospital del d");
+            var matchesUndefined = searchLower.Contains("no definido");
+
+            baseQuery = baseQuery.Where(x =>
+                EF.Functions.Like(x.CaseCode.ToString(), searchCasePattern) ||
+                EF.Functions.Like(x.DefinitionCode, searchPattern) ||
+                (x.DefinitionCodeNavigation != null &&
+                 x.DefinitionCodeNavigation.Name != null &&
+                 EF.Functions.Like(x.DefinitionCodeNavigation.Name, searchPattern)) ||
+                (matchesEvaluated && x.FinalResponseResults.Any()) ||
+                (matchesPending && !x.FinalResponseResults.Any()) ||
+                (matchesAmbulatory && x.FinalResponseResults.Any(r => (r.ResponseText ?? string.Empty).ToLower().Contains("ambulatorio"))) ||
+                (matchesHospital && x.FinalResponseResults.Any(r => (r.ResponseText ?? string.Empty).ToLower().Contains("hospitalario"))) ||
+                (matchesDayHospital && x.FinalResponseResults.Any(r =>
+                    (r.ResponseText ?? string.Empty).ToLower().Contains("hospital del dia") ||
+                    (r.ResponseText ?? string.Empty).ToLower().Contains("hospital del d"))) ||
+                (matchesUndefined && x.FinalResponseResults.Any() && !x.FinalResponseResults.Any(r =>
+                    (r.ResponseText ?? string.Empty).ToLower().Contains("ambulatorio") ||
+                    (r.ResponseText ?? string.Empty).ToLower().Contains("hospitalario") ||
+                    (r.ResponseText ?? string.Empty).ToLower().Contains("hospital del dia") ||
+                    (r.ResponseText ?? string.Empty).ToLower().Contains("hospital del d"))));
+        }
+
+        var totalCount = await baseQuery.CountAsync();
+        var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling(totalCount / (double)pageSize);
+        pageNumber = Math.Clamp(pageNumber, 1, totalPages);
+
+        var evaluatedCount = await baseQuery.CountAsync(x => x.FinalResponseResults.Any());
+        var processCount = procesosUsuario.Processes.Count;
+
+        var items = await baseQuery
             .Include(x => x.FinalResponseResults)
             .Include(x => x.DefinitionCodeNavigation)
-            .Where(x => x.StartDate > today && codigos.Contains(x.DefinitionCode))
             .OrderByDescending(pc => pc.StartDate)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
 
+        return new ViewPagedProcessCases
+        {
+            Items = items,
+            AvailableProcesses = availableProcesses,
+            TotalCount = totalCount,
+            EvaluatedCount = evaluatedCount,
+            PendingCount = Math.Max(0, totalCount - evaluatedCount),
+            ProcessCount = processCount,
+            PageNumber = pageNumber,
+            PageSize = pageSize,
+            TotalPages = totalPages,
+            WindowDays = windowDays,
+            SearchTerm = searchTerm,
+            StatusFilter = statusFilter,
+            TypeFilter = typeFilter,
+            ProcessFilter = processFilter,
+            PeriodFilter = periodFilter
+        };
     }
 
     private async Task<List<AgentTypeDto>> GetAgentTypesForUserAndProcessAsync(IdentityUser? user, string processCode)
@@ -442,10 +623,9 @@ public class NexusService : INexusService
             .Concat(processesFromRoles)
             .Where(p => p.Process != null && !string.IsNullOrWhiteSpace(p.Process.Code))
             .GroupBy(p => (p.Process?.Code ?? "").Trim(), StringComparer.OrdinalIgnoreCase)
-            .Where(g => g.Any(x => x.ProcessAgentId.HasValue))
             .Select(g =>
             {
-                // Priorizar entradas con ProcessAgentId (vienen de policies), si hay varias elegir la primera
+                // Priorizar entradas con ProcessAgentId (vienen de policies), pero permitir procesos visibles solo por rol.
                 var chosen = g
                     .OrderByDescending(x => x.ProcessAgentId.HasValue)
                     .ThenBy(x => x.Process!.Name ?? "")
@@ -629,6 +809,10 @@ public class NexusService : INexusService
             if (ShouldSkipOcr(file))
             {
                 var directText = await ReadDirectTextAsync(file, cts.Token);
+                await SaveArtifactBestEffortAsync(
+                    blobUrl,
+                    BuildDirectArtifact(originalName, blobUrl, directText, GetNormalizedExtension(file)),
+                    cts.Token);
                 return (Url: blobUrl, Text: directText, OriginalName: originalName);
             }
 
@@ -637,6 +821,11 @@ public class NexusService : INexusService
                 ocrSetting.ModelId,
                 new Uri(blobUrl),
                 cancellationToken: cts.Token);
+
+            await SaveArtifactBestEffortAsync(
+                blobUrl,
+                BuildAnalyzeArtifact(originalName, blobUrl, ocrSetting.ModelId ?? string.Empty, operation.Value),
+                cts.Token);
 
             return (Url: blobUrl, Text: operation.Value.Content ?? "", OriginalName: originalName);
         }
@@ -657,6 +846,29 @@ public class NexusService : INexusService
             new AzureKeyCredential(ocrSetting.ApiKey!));
 
         return await ProcessFileAsync(file, ocrSetting, blobCfg, clientOcr, timeoutMilliseconds);
+    }
+
+    public async Task<OcrDocumentArtifactDto?> ObtenerArtefactoDocumentoAsync(string fileUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fileUrl))
+            return null;
+
+        await EnsureInitializedAsync();
+
+        if (_containerClient == null)
+            return null;
+
+        var artifactBlobName = BuildArtifactBlobName(fileUrl);
+        if (string.IsNullOrWhiteSpace(artifactBlobName))
+            return null;
+
+        var blobClient = _containerClient.GetBlobClient(artifactBlobName);
+        var exists = await blobClient.ExistsAsync();
+        if (!exists.Value)
+            return null;
+
+        var download = await blobClient.DownloadContentAsync();
+        return JsonSerializer.Deserialize<OcrDocumentArtifactDto>(download.Value.Content.ToString(), BuildArtifactJsonOptions());
     }
 
    
@@ -974,6 +1186,427 @@ public class NexusService : INexusService
             ".txt" => "text/plain; charset=utf-8",
             _ => "application/octet-stream"
         };
+    }
+
+    private async Task SaveArtifactBestEffortAsync(string fileUrl, OcrDocumentArtifactDto artifact, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await PersistArtifactAsync(fileUrl, artifact, cancellationToken);
+        }
+        catch
+        {
+            // Si el sidecar estructurado falla, no interrumpimos la creación del caso.
+        }
+    }
+
+    private async Task PersistArtifactAsync(string fileUrl, OcrDocumentArtifactDto artifact, CancellationToken cancellationToken)
+    {
+        if (_containerClient == null)
+            return;
+
+        var artifactBlobName = BuildArtifactBlobName(fileUrl);
+        if (string.IsNullOrWhiteSpace(artifactBlobName))
+            return;
+
+        var blobClient = _containerClient.GetBlobClient(artifactBlobName);
+        var json = JsonSerializer.Serialize(artifact, BuildArtifactJsonOptions());
+        var payload = Encoding.UTF8.GetBytes(json);
+
+        await blobClient.DeleteIfExistsAsync(cancellationToken: cancellationToken);
+        await using var stream = new MemoryStream(payload, writable: false);
+        await blobClient.UploadAsync(stream, BuildBlobUploadOptions(".json"), cancellationToken: cancellationToken);
+    }
+
+    private static JsonSerializerOptions BuildArtifactJsonOptions()
+    {
+        return new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true
+        };
+    }
+
+    private static string BuildArtifactBlobName(string fileUrl)
+    {
+        try
+        {
+            var uri = new Uri(fileUrl);
+            var path = uri.AbsolutePath.Trim('/');
+            var parts = path.Split('/', 2, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2)
+                return string.Empty;
+
+            return Uri.UnescapeDataString(parts[1]) + ".ocr.json";
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static OcrDocumentArtifactDto BuildDirectArtifact(string originalName, string blobUrl, string directText, string extension)
+    {
+        var summary = BuildSummaryFromContent(directText, [], []);
+
+        return new OcrDocumentArtifactDto
+        {
+            SourceFileName = originalName,
+            SourceUrl = blobUrl,
+            ModelId = "direct-text",
+            SourceKind = extension is ".xml" or ".html" or ".htm" ? "markup-direct" : "direct-text",
+            ProcessedAtUtc = DateTime.UtcNow,
+            Content = directText,
+            Summary = summary
+        };
+    }
+
+    private static OcrDocumentArtifactDto BuildAnalyzeArtifact(string originalName, string blobUrl, string modelId, AnalyzeResult result)
+    {
+        var keyValuePairs = (result.KeyValuePairs ?? [])
+            .Select(pair => new OcrArtifactKeyValueDto
+            {
+                Key = pair.Key?.Content ?? string.Empty,
+                Value = pair.Value?.Content ?? string.Empty,
+                Confidence = pair.Confidence,
+                KeyRegions = MapRegions(pair.Key?.BoundingRegions),
+                ValueRegions = MapRegions(pair.Value?.BoundingRegions)
+            })
+            .Where(item => !string.IsNullOrWhiteSpace(item.Key) || !string.IsNullOrWhiteSpace(item.Value))
+            .ToList();
+
+        var documents = (result.Documents ?? [])
+            .Select(document => new OcrArtifactDocumentDto
+            {
+                DocumentType = document.DocumentType ?? string.Empty,
+                Confidence = document.Confidence,
+                Regions = MapRegions(document.BoundingRegions),
+                Fields = MapDocumentFields(document.Fields)
+            })
+            .ToList();
+
+        var paragraphs = (result.Paragraphs ?? [])
+            .Select(paragraph => new OcrArtifactParagraphDto
+            {
+                Role = paragraph.Role.ToString(),
+                Content = paragraph.Content ?? string.Empty,
+                Regions = MapRegions(paragraph.BoundingRegions)
+            })
+            .ToList();
+
+        var pages = (result.Pages ?? [])
+            .Select(page => new OcrArtifactPageDto
+            {
+                PageNumber = page.PageNumber,
+                Width = page.Width,
+                Height = page.Height,
+                Unit = page.Unit.ToString(),
+                Lines = (page.Lines ?? [])
+                    .Select(line => new OcrArtifactLineDto
+                    {
+                        Content = line.Content ?? string.Empty,
+                        Offset = line.Spans?.FirstOrDefault().Offset ?? 0,
+                        Length = line.Spans?.FirstOrDefault().Length ?? 0,
+                        Polygon = MapPolygon(line.Polygon)
+                    })
+                    .ToList(),
+                Words = (page.Words ?? [])
+                    .Select(word => new OcrArtifactWordDto
+                    {
+                        Content = word.Content ?? string.Empty,
+                        Confidence = word.Confidence,
+                        Offset = word.Span.Offset,
+                        Length = word.Span.Length,
+                        Polygon = MapPolygon(word.Polygon)
+                    })
+                    .ToList()
+            })
+            .ToList();
+
+        var tables = (result.Tables ?? [])
+            .Select(table => new OcrArtifactTableDto
+            {
+                RowCount = table.RowCount,
+                ColumnCount = table.ColumnCount,
+                Regions = MapRegions(table.BoundingRegions),
+                Cells = (table.Cells ?? [])
+                    .Select(cell => new OcrArtifactTableCellDto
+                    {
+                        RowIndex = cell.RowIndex,
+                        ColumnIndex = cell.ColumnIndex,
+                        RowSpan = cell.RowSpan ?? 1,
+                        ColumnSpan = cell.ColumnSpan ?? 1,
+                        Kind = cell.Kind.ToString(),
+                        Content = cell.Content ?? string.Empty,
+                        Regions = MapRegions(cell.BoundingRegions)
+                    })
+                    .ToList()
+            })
+            .ToList();
+
+        return new OcrDocumentArtifactDto
+        {
+            SourceFileName = originalName,
+            SourceUrl = blobUrl,
+            ModelId = modelId,
+            SourceKind = "ocr-analyze",
+            ProcessedAtUtc = DateTime.UtcNow,
+            Content = result.Content ?? string.Empty,
+            Summary = BuildSummaryFromContent(result.Content ?? string.Empty, keyValuePairs, documents),
+            Pages = pages,
+            Paragraphs = paragraphs,
+            KeyValuePairs = keyValuePairs,
+            Tables = tables,
+            Documents = documents
+        };
+    }
+
+    private static OcrArtifactSummaryDto BuildSummaryFromContent(
+        string content,
+        IReadOnlyCollection<OcrArtifactKeyValueDto> keyValuePairs,
+        IReadOnlyCollection<OcrArtifactDocumentDto> documents)
+    {
+        var documentKind = DetectDocumentKind(content, documents);
+        var providerName = ExtractProviderName(keyValuePairs, documents, content);
+        var highlights = BuildHighlights(keyValuePairs, documents);
+        var tags = BuildSummaryTags(documentKind, providerName, content, documents);
+
+        return new OcrArtifactSummaryDto
+        {
+            DocumentKind = documentKind,
+            ProviderName = providerName,
+            SuggestedLabel = BuildSuggestedLabel(documentKind, providerName),
+            Tags = tags,
+            Highlights = highlights
+        };
+    }
+
+    private static string BuildSuggestedLabel(string documentKind, string providerName)
+    {
+        if (!string.IsNullOrWhiteSpace(documentKind) && !string.IsNullOrWhiteSpace(providerName))
+            return $"{documentKind} · {providerName}";
+
+        if (!string.IsNullOrWhiteSpace(documentKind))
+            return documentKind;
+
+        return !string.IsNullOrWhiteSpace(providerName)
+            ? $"Documento · {providerName}"
+            : "Documento OCR";
+    }
+
+    private static string DetectDocumentKind(string content, IReadOnlyCollection<OcrArtifactDocumentDto> documents)
+    {
+        var docType = documents
+            .Select(x => x.DocumentType)
+            .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+
+        if (!string.IsNullOrWhiteSpace(docType))
+            return docType;
+
+        var normalized = NormalizeForSearch(content);
+        if (normalized.Contains("factura") || normalized.Contains("invoice"))
+            return "Factura";
+        if (normalized.Contains("epicrisis"))
+            return "Epicrisis";
+        if (normalized.Contains("autorizacion"))
+            return "Autorizacion";
+        if (normalized.Contains("resultado") && normalized.Contains("laboratorio"))
+            return "Resultado de laboratorio";
+        if (normalized.Contains("orden medica") || normalized.Contains("formula medica"))
+            return "Orden medica";
+        if (normalized.Contains("historia clinica"))
+            return "Historia clinica";
+        if (normalized.Contains("recibo"))
+            return "Recibo";
+
+        return "Documento OCR";
+    }
+
+    private static string ExtractProviderName(
+        IReadOnlyCollection<OcrArtifactKeyValueDto> keyValuePairs,
+        IReadOnlyCollection<OcrArtifactDocumentDto> documents,
+        string content)
+    {
+        var providerTerms = new[] { "prestador", "proveedor", "hospital", "clinica", "ips", "centro medico", "doctor", "medico tratante" };
+
+        var kvValue = keyValuePairs
+            .FirstOrDefault(item => providerTerms.Any(term => NormalizeForSearch(item.Key).Contains(term)) && !string.IsNullOrWhiteSpace(item.Value))
+            ?.Value;
+
+        if (!string.IsNullOrWhiteSpace(kvValue))
+            return kvValue.Trim();
+
+        var fieldValue = documents
+            .SelectMany(doc => doc.Fields)
+            .FirstOrDefault(field => providerTerms.Any(term => NormalizeForSearch(field.Name).Contains(term)) && !string.IsNullOrWhiteSpace(field.Value))
+            ?.Value;
+
+        if (!string.IsNullOrWhiteSpace(fieldValue))
+            return fieldValue.Trim();
+
+        var regex = new Regex(@"(?:prestador|proveedor|hospital|clinica|ips)\s*[:\-]\s*(.+)", RegexOptions.IgnoreCase);
+        var match = regex.Match(content ?? string.Empty);
+        return match.Success ? match.Groups[1].Value.Trim() : string.Empty;
+    }
+
+    private static List<string> BuildSummaryTags(
+        string documentKind,
+        string providerName,
+        string content,
+        IReadOnlyCollection<OcrArtifactDocumentDto> documents)
+    {
+        var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(documentKind))
+            tags.Add(documentKind);
+
+        if (!string.IsNullOrWhiteSpace(providerName))
+            tags.Add($"Prestador: {providerName}");
+
+        var normalized = NormalizeForSearch(content);
+        if (normalized.Contains("paciente"))
+            tags.Add("Tiene datos de paciente");
+        if (normalized.Contains("cie") || normalized.Contains("diagnostico"))
+            tags.Add("Tiene diagnosticos");
+        if (normalized.Contains("valor total") || normalized.Contains("subtotal") || normalized.Contains("iva"))
+            tags.Add("Tiene valores facturados");
+        if (normalized.Contains("fecha"))
+            tags.Add("Tiene fechas");
+
+        foreach (var docType in documents.Select(x => x.DocumentType).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            tags.Add(docType);
+        }
+
+        return tags.Take(10).ToList();
+    }
+
+    private static List<OcrArtifactHighlightDto> BuildHighlights(
+        IReadOnlyCollection<OcrArtifactKeyValueDto> keyValuePairs,
+        IReadOnlyCollection<OcrArtifactDocumentDto> documents)
+    {
+        var highlights = keyValuePairs
+            .Where(item => !string.IsNullOrWhiteSpace(item.Key) && !string.IsNullOrWhiteSpace(item.Value))
+            .Select(item => new OcrArtifactHighlightDto
+            {
+                Label = item.Key,
+                Value = item.Value,
+                PageNumber = item.ValueRegions.FirstOrDefault()?.PageNumber ?? item.KeyRegions.FirstOrDefault()?.PageNumber,
+                Confidence = item.Confidence,
+                Polygon = item.ValueRegions.FirstOrDefault()?.Polygon ?? item.KeyRegions.FirstOrDefault()?.Polygon ?? []
+            })
+            .Take(10)
+            .ToList();
+
+        if (highlights.Count >= 10)
+            return highlights;
+
+        foreach (var field in documents.SelectMany(doc => doc.Fields))
+        {
+            if (string.IsNullOrWhiteSpace(field.Name) || string.IsNullOrWhiteSpace(field.Value))
+                continue;
+
+            if (highlights.Any(h => h.Label.Equals(field.Name, StringComparison.OrdinalIgnoreCase) && h.Value.Equals(field.Value, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            highlights.Add(new OcrArtifactHighlightDto
+            {
+                Label = field.Name,
+                Value = field.Value,
+                PageNumber = field.Regions.FirstOrDefault()?.PageNumber,
+                Confidence = field.Confidence,
+                Polygon = field.Regions.FirstOrDefault()?.Polygon ?? []
+            });
+
+            if (highlights.Count >= 10)
+                break;
+        }
+
+        return highlights;
+    }
+
+    private static string ResolveFieldValue(DocumentField field)
+    {
+        if (!string.IsNullOrWhiteSpace(field.Content))
+            return field.Content;
+
+        if (field.ValueString != null)
+            return field.ValueString;
+        if (field.ValueDate != null)
+            return field.ValueDate.Value.ToString("yyyy-MM-dd");
+        if (field.ValueTime != null)
+            return field.ValueTime.Value.ToString("HH:mm:ss");
+        if (field.ValuePhoneNumber != null)
+            return field.ValuePhoneNumber;
+        if (field.ValueDouble != null)
+            return field.ValueDouble.Value.ToString(CultureInfo.InvariantCulture);
+        if (field.ValueInt64 != null)
+            return field.ValueInt64.Value.ToString(CultureInfo.InvariantCulture);
+        if (field.ValueCurrency != null)
+            return field.ValueCurrency.Amount.ToString(CultureInfo.InvariantCulture);
+        if (field.ValueBoolean != null)
+            return field.ValueBoolean.Value.ToString();
+        if (field.ValueSelectionMark != null)
+            return field.ValueSelectionMark.ToString();
+        if (field.ValueSignature != null)
+            return field.ValueSignature.ToString();
+        if (field.ValueCountryRegion != null)
+            return field.ValueCountryRegion;
+
+        return string.Empty;
+    }
+
+    private static string NormalizeForSearch(string value)
+    {
+        return (value ?? string.Empty)
+            .Normalize(NormalizationForm.FormD)
+            .Where(ch => CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark)
+            .Aggregate(new StringBuilder(), (sb, ch) => sb.Append(char.ToLowerInvariant(ch)))
+            .ToString();
+    }
+
+    private static List<OcrArtifactDocumentFieldDto> MapDocumentFields(DocumentFieldDictionary? fields)
+    {
+        if (fields == null || fields.Count == 0)
+            return [];
+
+        return fields
+            .Select(field => new OcrArtifactDocumentFieldDto
+            {
+                Name = field.Key,
+                FieldType = field.Value.FieldType.ToString(),
+                Content = field.Value.Content ?? string.Empty,
+                Value = ResolveFieldValue(field.Value),
+                Confidence = field.Value.Confidence,
+                Regions = MapRegions(field.Value.BoundingRegions)
+            })
+            .ToList();
+    }
+
+    private static List<OcrArtifactRegionDto> MapRegions(IReadOnlyList<BoundingRegion>? regions)
+    {
+        return regions?.Select(region => new OcrArtifactRegionDto
+        {
+            PageNumber = region.PageNumber,
+            Polygon = MapPolygon(region.Polygon)
+        }).ToList() ?? [];
+    }
+
+    private static List<OcrArtifactPointDto> MapPolygon(IReadOnlyList<float>? polygon)
+    {
+        if (polygon == null || polygon.Count == 0)
+            return [];
+
+        var points = new List<OcrArtifactPointDto>(polygon.Count / 2);
+        for (var index = 0; index + 1 < polygon.Count; index += 2)
+        {
+            points.Add(new OcrArtifactPointDto
+            {
+                X = polygon[index],
+                Y = polygon[index + 1]
+            });
+        }
+
+        return points;
     }
 
 }

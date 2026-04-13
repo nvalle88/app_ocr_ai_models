@@ -255,6 +255,7 @@ namespace SmartAdmin.Web.Controllers
                 ? file.OriginalName
                 : file.FileUri;
             var extension = Path.GetExtension(originalName)?.ToLowerInvariant() ?? string.Empty;
+            var artifact = await nexusService.ObtenerArtefactoDocumentoAsync(file.FileUri);
 
             return Json(new
             {
@@ -262,8 +263,32 @@ namespace SmartAdmin.Web.Controllers
                 text = file.Text ?? string.Empty,
                 originalName,
                 extension,
-                type = GetDocumentType(extension)
+                type = GetDocumentType(extension),
+                artifactAvailable = artifact != null,
+                artifactUrl = Url.Action(nameof(GetCaseDocumentArtifact), "Nexus", new { caseCode, fileId }),
+                insightSummary = artifact?.Summary
             });
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetCaseDocumentArtifact(Guid caseCode, int fileId)
+        {
+            if (caseCode == Guid.Empty || fileId <= 0)
+                return BadRequest(new { success = false, message = "caseCode y fileId son requeridos." });
+
+            var processCase = await nexusService.ObtenerProcessCase(caseCode);
+            if (processCase == null)
+                return NotFound(new { success = false, message = "Caso no encontrado." });
+
+            var file = processCase.DataFile.FirstOrDefault(x => x.Id == fileId);
+            if (file == null)
+                return NotFound(new { success = false, message = "Documento no encontrado." });
+
+            var artifact = await nexusService.ObtenerArtefactoDocumentoAsync(file.FileUri);
+            if (artifact == null)
+                return NotFound(new { success = false, message = "No existe artefacto OCR para este documento." });
+
+            return Json(artifact);
         }
 
         [HttpGet]
@@ -301,7 +326,15 @@ namespace SmartAdmin.Web.Controllers
             return File(bytes, contentType, originalName);
         }
 
-        public async Task<IActionResult> Index()
+        public async Task<IActionResult> Index(
+            int page = 1,
+            int pageSize = 10,
+            int windowDays = 0,
+            string? search = null,
+            string? status = null,
+            string? type = null,
+            string? process = null,
+            string? period = null)
         {
             var vm = new QueryInput { ProcessCode = "" };
             // Validar que el usuario esté autenticado
@@ -318,8 +351,18 @@ namespace SmartAdmin.Web.Controllers
             {
                 return Unauthorized(new { success = false, message = "Usuario sin accesos." });
             }
-            var casos = await nexusService.ObtenerProcesos(user, roles);
-            ViewBag.ProcessCases = casos;
+            var casePage = await nexusService.ObtenerProcesos(
+                user,
+                roles,
+                page,
+                pageSize,
+                windowDays,
+                search,
+                status,
+                type,
+                process,
+                period);
+            ViewBag.ProcessCasePage = casePage;
             return View(vm);
         }
 

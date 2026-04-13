@@ -1,10 +1,12 @@
 @model app_tramites.Models.ViewModel.QueryInput
 @using app_tramites.Models.ModelAi
+@using app_tramites.Models.ViewModel
 
 @{
     ViewData["Title"] = "Nexus";
 
-    var processCases = ViewBag.ProcessCases as List<ProcessCase> ?? [];
+    var casePage = ViewBag.ProcessCasePage as ViewPagedProcessCases ?? new ViewPagedProcessCases();
+    var processCases = casePage.Items ?? [];
 
     bool IsEvaluated(ProcessCase currentCase) => currentCase.FinalResponseResults?.Any() ?? false;
 
@@ -42,67 +44,40 @@
         _ => ("fa-wave-square", "muted")
     };
 
-    var totalCases = processCases.Count;
-    var evaluatedCases = processCases.Count(IsEvaluated);
-    var pendingCases = totalCases - evaluatedCases;
-    var totalProcesses = processCases
-        .Select(x => x.DefinitionCodeNavigation?.Name?.Trim())
-        .Where(x => !string.IsNullOrWhiteSpace(x))
-        .Distinct()
-        .Count();
-    var processOptions = processCases
-        .Select(x => x.DefinitionCodeNavigation?.Name?.Trim())
-        .Where(x => !string.IsNullOrWhiteSpace(x))
-        .Distinct()
-        .OrderBy(x => x)
-        .ToList();
+    var totalCases = casePage.TotalCount;
+    var evaluatedCases = casePage.EvaluatedCount;
+    var pendingCases = casePage.PendingCount;
+    var totalProcesses = casePage.ProcessCount;
+    var pageNumber = casePage.PageNumber;
+    var pageSize = casePage.PageSize;
+    var totalPages = casePage.TotalPages;
+    var pageItemStart = casePage.PageItemStart;
+    var pageItemEnd = casePage.PageItemEnd;
+    var pageSizeOptions = new[] { 8, 10, 15, 20, 30 };
+    var pagerStart = Math.Max(1, pageNumber - 2);
+    var pagerEnd = Math.Min(totalPages, pagerStart + 4);
+    if (pagerEnd - pagerStart < 4)
+    {
+        pagerStart = Math.Max(1, pagerEnd - 4);
+    }
+
+    var processOptions = casePage.AvailableProcesses?.Count > 0
+        ? casePage.AvailableProcesses
+        : processCases
+            .Select(x => x.DefinitionCodeNavigation?.Name?.Trim())
+            .OfType<string>()
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct()
+            .OrderBy(x => x)
+            .ToList();
+    var currentSearch = casePage.SearchTerm ?? string.Empty;
+    var currentStatus = casePage.StatusFilter ?? string.Empty;
+    var currentType = casePage.TypeFilter ?? string.Empty;
+    var currentProcess = casePage.ProcessFilter ?? string.Empty;
+    var currentPeriod = casePage.PeriodFilter ?? string.Empty;
 }
 
 <section id="widget-grid" class="nexus-index-page">
-    <section class="nexus-hero-panel">
-        <div class="nexus-hero-copy">
-            <span class="nexus-hero-kicker">
-                <i class="fa-solid fa-sparkles"></i>
-                Nexus AI Auditor
-            </span>
-            <h1>Centro de auditoria OCR y seguimiento de casos</h1>
-            <p>
-                Crea expedientes, controla el avance del OCR y revisa el estado de cada caso desde una sola consola de trabajo.
-            </p>
-        </div>
-
-        <div class="nexus-hero-metrics" aria-label="Resumen general">
-            <article class="hero-metric-card">
-                <span class="hero-metric-icon tone-blue"><i class="fa-solid fa-folders"></i></span>
-                <div>
-                    <small>Total de casos</small>
-                    <strong id="metricTotalCases">@totalCases</strong>
-                </div>
-            </article>
-            <article class="hero-metric-card">
-                <span class="hero-metric-icon tone-green"><i class="fa-solid fa-circle-check"></i></span>
-                <div>
-                    <small>Evaluados</small>
-                    <strong id="metricEvaluatedCases">@evaluatedCases</strong>
-                </div>
-            </article>
-            <article class="hero-metric-card">
-                <span class="hero-metric-icon tone-amber"><i class="fa-solid fa-hourglass-half"></i></span>
-                <div>
-                    <small>Pendientes</small>
-                    <strong id="metricPendingCases">@pendingCases</strong>
-                </div>
-            </article>
-            <article class="hero-metric-card">
-                <span class="hero-metric-icon tone-cyan"><i class="fa-solid fa-diagram-project"></i></span>
-                <div>
-                    <small>Procesos</small>
-                    <strong id="metricProcessCount">@totalProcesses</strong>
-                </div>
-            </article>
-        </div>
-    </section>
-
     <div class="nexus-index-grid">
         <article class="nexus-card nexus-create-card">
             <div class="nexus-card-head">
@@ -200,67 +175,12 @@
 
                         <input type="file"
                                id="files"
+                               class="nexus-hidden-file-input"
                                multiple
                                accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff,.xml,.html,.htm"
+                               tabindex="-1"
+                               aria-hidden="true"
                                hidden />
-
-                        <div id="caseCreationWorkflow" class="creation-workflow d-none" aria-live="polite">
-                            <div class="creation-workflow-head">
-                                <div>
-                                    <span class="workflow-kicker">Seguimiento en vivo</span>
-                                    <h3 id="creationStageTitle">Preparando caso</h3>
-                                    <p id="creationStageDetail">Validando el proceso y los documentos seleccionados.</p>
-                                </div>
-                                <span id="creationStageBadge" class="workflow-badge">En progreso</span>
-                            </div>
-
-                            <div class="creation-workflow-steps" role="list" aria-label="Progreso de creacion del caso">
-                                <div class="workflow-step" data-step="validate" role="listitem">
-                                    <span class="step-dot"></span>
-                                    <div>
-                                        <strong>Validar</strong>
-                                        <small>Entradas y formato</small>
-                                    </div>
-                                </div>
-                                <div class="workflow-step" data-step="upload" role="listitem">
-                                    <span class="step-dot"></span>
-                                    <div>
-                                        <strong>Preparar</strong>
-                                        <small>Empaquetando archivos</small>
-                                    </div>
-                                </div>
-                                <div class="workflow-step" data-step="ocr" role="listitem">
-                                    <span class="step-dot"></span>
-                                    <div>
-                                        <strong>OCR</strong>
-                                        <small>Enviando al motor</small>
-                                    </div>
-                                </div>
-                                <div class="workflow-step" data-step="extract" role="listitem">
-                                    <span class="step-dot"></span>
-                                    <div>
-                                        <strong>Extraer</strong>
-                                        <small>Texto y metadatos</small>
-                                    </div>
-                                </div>
-                                <div class="workflow-step" data-step="register" role="listitem">
-                                    <span class="step-dot"></span>
-                                    <div>
-                                        <strong>Registrar</strong>
-                                        <small>Guardando expediente</small>
-                                    </div>
-                                </div>
-                                <div class="workflow-step" data-step="ready" role="listitem">
-                                    <span class="step-dot"></span>
-                                    <div>
-                                        <strong>Listo</strong>
-                                        <small>Caso disponible</small>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div id="creationWorkflowLog" class="creation-workflow-log"></div>
-                        </div>
 
                         <div class="create-case-actions">
                             <div class="create-case-hint">
@@ -278,7 +198,7 @@
             </div>
         </article>
 
-        <article class="nexus-card nexus-table-card">
+        <article id="casesSection" class="nexus-card nexus-table-card">
             <div class="nexus-card-head">
                 <div>
                     <span class="section-kicker">Casos existentes</span>
@@ -287,47 +207,56 @@
                 </div>
                 <div class="table-head-meta">
                     <span class="results-meta-pill" id="casesResultsMeta">
-                        @(totalCases > 0 ? $"{totalCases} casos visibles" : "Aun no hay casos cargados")
+                        @(totalCases > 0 ? $"{processCases.Count} casos en esta página" : "Aun no hay casos cargados")
                     </span>
+                    <label class="page-size-field" for="pageSizeSelect">
+                        <span>Por página</span>
+                        <select id="pageSizeSelect">
+                            @foreach (var sizeOption in pageSizeOptions)
+                            {
+                                <option value="@sizeOption" selected="@(sizeOption == pageSize ? "selected" : null)">@sizeOption</option>
+                            }
+                        </select>
+                    </label>
                 </div>
             </div>
 
             <div class="table-toolbar">
                 <label class="filter-field filter-search-field">
                     <span class="filter-field-icon"><i class="fa-solid fa-magnifying-glass"></i></span>
-                    <input id="filterSearch" type="search" placeholder="Buscar por codigo, proceso, estado o tipo" />
+                    <input id="filterSearch" type="search" placeholder="Buscar por codigo, proceso, estado o tipo" value="@currentSearch" />
                 </label>
 
                 <div class="filter-group">
                     <label class="filter-field">
                         <span>Estado</span>
                         <select id="filterStatus">
-                            <option value="">Todos</option>
-                            <option value="evaluado">Evaluado</option>
-                            <option value="pendiente">Pendiente</option>
-                            <option value="error">Error</option>
+                            <option value="" selected="@(string.IsNullOrWhiteSpace(currentStatus) ? "selected" : null)">Todos</option>
+                            <option value="evaluado" selected="@(currentStatus == "evaluado" ? "selected" : null)">Evaluado</option>
+                            <option value="pendiente" selected="@(currentStatus == "pendiente" ? "selected" : null)">Pendiente</option>
+                            <option value="error" selected="@(currentStatus == "error" ? "selected" : null)">Error</option>
                         </select>
                     </label>
 
                     <label class="filter-field">
                         <span>Tipo</span>
                         <select id="filterType">
-                            <option value="">Todos</option>
-                            <option value="ambulatorio">Ambulatorio</option>
-                            <option value="hospitalario">Hospitalario</option>
-                            <option value="hospital del dia">Hospital del dia</option>
-                            <option value="no definido">No Definido</option>
-                            <option value="no evaluado">No Evaluado</option>
+                            <option value="" selected="@(string.IsNullOrWhiteSpace(currentType) ? "selected" : null)">Todos</option>
+                            <option value="ambulatorio" selected="@(currentType == "ambulatorio" ? "selected" : null)">Ambulatorio</option>
+                            <option value="hospitalario" selected="@(currentType == "hospitalario" ? "selected" : null)">Hospitalario</option>
+                            <option value="hospital del dia" selected="@(currentType == "hospital del dia" ? "selected" : null)">Hospital del dia</option>
+                            <option value="no definido" selected="@(currentType == "no definido" ? "selected" : null)">No Definido</option>
+                            <option value="no evaluado" selected="@(currentType == "no evaluado" ? "selected" : null)">No Evaluado</option>
                         </select>
                     </label>
 
                     <label class="filter-field">
                         <span>Proceso</span>
                         <select id="filterProcess">
-                            <option value="">Todos los procesos</option>
+                            <option value="" selected="@(string.IsNullOrWhiteSpace(currentProcess) ? "selected" : null)">Todos los procesos</option>
                             @foreach (var processName in processOptions)
                             {
-                                <option value="@processName">@processName</option>
+                                <option value="@processName" selected="@(currentProcess == processName ? "selected" : null)">@processName</option>
                             }
                         </select>
                     </label>
@@ -335,10 +264,10 @@
                     <label class="filter-field">
                         <span>Periodo</span>
                         <select id="filterPeriod">
-                            <option value="">Todo el historial visible</option>
-                            <option value="today">Hoy</option>
-                            <option value="48h">Ultimas 48 horas</option>
-                            <option value="7d">Ultimos 7 dias</option>
+                            <option value="" selected="@(string.IsNullOrWhiteSpace(currentPeriod) ? "selected" : null)">Todo el historial visible</option>
+                            <option value="today" selected="@(currentPeriod == "today" ? "selected" : null)">Hoy</option>
+                            <option value="48h" selected="@(currentPeriod == "48h" ? "selected" : null)">Ultimas 48 horas</option>
+                            <option value="7d" selected="@(currentPeriod == "7d" ? "selected" : null)">Ultimos 7 dias</option>
                         </select>
                     </label>
 
@@ -494,9 +423,134 @@
                     </table>
                 </div>
             </div>
+
+            @if (totalCases > 0)
+            {
+                <div class="table-pagination-shell">
+                    <div class="table-pagination-meta">
+                        <strong>Página @pageNumber de @totalPages</strong>
+                        <span>@totalCases casos en los últimos @casePage.WindowDays días</span>
+                    </div>
+
+                    <nav class="table-pagination-nav" aria-label="Paginación de casos">
+                        <a class="pagination-link @(casePage.HasPreviousPage ? string.Empty : "is-disabled")"
+                           href="@(casePage.HasPreviousPage ? Url.Action("Index", "Nexus", new { page = pageNumber - 1, pageSize, windowDays = casePage.IsWindowed ? (int?)casePage.WindowDays : null, search = currentSearch, status = currentStatus, type = currentType, process = currentProcess, period = currentPeriod }) : "#")"
+                           aria-disabled="@(!casePage.HasPreviousPage)">
+                            <i class="fa-solid fa-chevron-left"></i>
+                            Anterior
+                        </a>
+
+                        <div class="pagination-number-group">
+                            @for (var pager = pagerStart; pager <= pagerEnd; pager++)
+                            {
+                                <a class="pagination-link pagination-number @(pager == pageNumber ? "is-current" : string.Empty)"
+                                   href="@Url.Action("Index", "Nexus", new { page = pager, pageSize, windowDays = casePage.IsWindowed ? (int?)casePage.WindowDays : null, search = currentSearch, status = currentStatus, type = currentType, process = currentProcess, period = currentPeriod })">
+                                    @pager
+                                </a>
+                            }
+                        </div>
+
+                        <a class="pagination-link @(casePage.HasNextPage ? string.Empty : "is-disabled")"
+                           href="@(casePage.HasNextPage ? Url.Action("Index", "Nexus", new { page = pageNumber + 1, pageSize, windowDays = casePage.IsWindowed ? (int?)casePage.WindowDays : null, search = currentSearch, status = currentStatus, type = currentType, process = currentProcess, period = currentPeriod }) : "#")"
+                           aria-disabled="@(!casePage.HasNextPage)">
+                            Siguiente
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </a>
+                    </nav>
+                </div>
+            }
         </article>
     </div>
 </section>
+
+<div id="creationWorkflowModal" class="creation-workflow-modal d-none" aria-hidden="true">
+    <div class="creation-workflow-modal-backdrop"></div>
+    <div class="creation-workflow-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="creationStageTitle">
+        <div id="caseCreationWorkflow" class="creation-workflow d-none" aria-live="polite">
+            <div class="creation-workflow-head">
+                <div>
+                    <span class="workflow-kicker">Seguimiento en vivo</span>
+                    <h3 id="creationStageTitle">Preparando caso</h3>
+                    <p id="creationStageDetail">Validando el proceso y los documentos seleccionados.</p>
+                </div>
+                <div class="creation-workflow-head-actions">
+                    <span id="creationStageBadge" class="workflow-badge">En progreso</span>
+                    <button id="btnCloseWorkflowModal" type="button" class="btn btn-outline-secondary btn-sm d-none">
+                        <i class="fa-solid fa-xmark me-1"></i>
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+
+            <div class="creation-workflow-body">
+                <div class="creation-workflow-steps" role="list" aria-label="Progreso de creacion del caso">
+                    <div class="workflow-step" data-step="validate" role="listitem">
+                        <span class="step-dot"></span>
+                        <div>
+                            <strong>Validar</strong>
+                            <small>Entradas y formato</small>
+                        </div>
+                    </div>
+                    <div class="workflow-step" data-step="upload" role="listitem">
+                        <span class="step-dot"></span>
+                        <div>
+                            <strong>Preparar</strong>
+                            <small>Empaquetando archivos</small>
+                        </div>
+                    </div>
+                    <div class="workflow-step" data-step="ocr" role="listitem">
+                        <span class="step-dot"></span>
+                        <div>
+                            <strong>OCR</strong>
+                            <small>Enviando al motor</small>
+                        </div>
+                    </div>
+                    <div class="workflow-step" data-step="extract" role="listitem">
+                        <span class="step-dot"></span>
+                        <div>
+                            <strong>Extraer</strong>
+                            <small>Texto y metadatos</small>
+                        </div>
+                    </div>
+                    <div class="workflow-step" data-step="register" role="listitem">
+                        <span class="step-dot"></span>
+                        <div>
+                            <strong>Registrar</strong>
+                            <small>Guardando expediente</small>
+                        </div>
+                    </div>
+                    <div class="workflow-step" data-step="ready" role="listitem">
+                        <span class="step-dot"></span>
+                        <div>
+                            <strong>Listo</strong>
+                            <small>Caso disponible</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="creationWorkflowLog" class="creation-workflow-log"></div>
+            </div>
+
+            <div id="creationSuccessActions" class="creation-success-actions d-none" aria-live="polite">
+                <div class="creation-success-copy">
+                    <span class="workflow-kicker">Caso creado</span>
+                    <h3 id="creationSuccessTitle">Expediente listo para auditoria</h3>
+                    <p id="creationSuccessDetail">Puedes entrar al caso recien creado o seguir trabajando desde el listado.</p>
+                </div>
+                <div class="creation-success-buttons">
+                    <a id="btnGoCreatedCase" href="#" class="btn btn-primary btn-lg">
+                        <i class="fa-solid fa-arrow-up-right-from-square me-2"></i>
+                        Ir al caso
+                    </a>
+                    <button id="btnStayOnIndex" type="button" class="btn btn-outline-secondary btn-lg">
+                        <i class="fa-solid fa-table-list me-2"></i>
+                        Seguir en Nexus
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 @section Styles {
     <link rel="stylesheet" href="~/css/app/nexus.index.css" />
@@ -508,7 +562,20 @@
             createCaseUrl: '@Url.Action("CreateCaseProcess", "Nexus")',
             processCaseUrl: '@Url.Action("ProcessCaseAjax", "Nexus")',
             processesUrl: '@Url.Action("GetProcessesByUser", "Nexus")',
-            detailsUrlTemplate: '@Url.Action("Details1", "Nexus")?caseCode=__CASE__'
+            detailsUrlTemplate: '@Url.Action("Details1", "Nexus")?caseCode=__CASE__',
+            indexUrl: '@Url.Action("Index", "Nexus")',
+            currentPage: @pageNumber,
+            pageSize: @pageSize,
+            windowDays: @casePage.WindowDays,
+            currentSearch: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(currentSearch)),
+            currentStatus: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(currentStatus)),
+            currentType: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(currentType)),
+            currentProcess: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(currentProcess)),
+            currentPeriod: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(currentPeriod)),
+            totalCases: @totalCases,
+            evaluatedCases: @evaluatedCases,
+            pendingCases: @pendingCases,
+            processCount: @totalProcesses
         };
     </script>
     <script src="~/js/app/nexus.index.js"></script>

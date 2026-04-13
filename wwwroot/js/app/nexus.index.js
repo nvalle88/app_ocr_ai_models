@@ -284,12 +284,19 @@
         const btnClearUpload = q('#btnClearUpload');
         const btnCrearCaso = q('#btnCrearCaso');
         const ocrForm = q('#ocrForm');
+        const workflowModal = q('#creationWorkflowModal');
         const workflowEl = q('#caseCreationWorkflow');
         const workflowTitle = q('#creationStageTitle');
         const workflowDetail = q('#creationStageDetail');
         const workflowBadge = q('#creationStageBadge');
         const workflowLog = q('#creationWorkflowLog');
         const workflowSteps = qa('.workflow-step', workflowEl);
+        const btnCloseWorkflowModal = q('#btnCloseWorkflowModal');
+        const creationSuccessActions = q('#creationSuccessActions');
+        const creationSuccessTitle = q('#creationSuccessTitle');
+        const creationSuccessDetail = q('#creationSuccessDetail');
+        const btnGoCreatedCase = q('#btnGoCreatedCase');
+        const btnStayOnIndex = q('#btnStayOnIndex');
         const casesTableBody = q('#casesTableBody');
         const emptyCasesRow = q('#emptyCasesRow');
         const filterEmptyRow = q('#filterEmptyRow');
@@ -307,13 +314,28 @@
         const metricEvaluatedCases = q('#metricEvaluatedCases');
         const metricPendingCases = q('#metricPendingCases');
         const metricProcessCount = q('#metricProcessCount');
+        const pageSizeSelect = q('#pageSizeSelect');
+        const paginationMetaTitle = q('.table-pagination-meta strong');
+        const paginationMetaDetail = q('.table-pagination-meta span');
+        const tableShell = q('.table-shell');
+        const casesSection = q('#casesSection');
 
         const state = {
             hasProcess: false,
             selectedProcessName: '',
             creationInterval: null,
             rowProgressTimers: new Map(),
-            draftRow: null
+            draftRow: null,
+            selectedFiles: [],
+            lastCreatedCase: null,
+            isOpeningCreatedCase: false,
+            filterTimer: null,
+            metrics: {
+                total: Number((config.totalCases ?? metricTotalCases?.textContent) || 0),
+                evaluated: Number((config.evaluatedCases ?? metricEvaluatedCases?.textContent) || 0),
+                pending: Number((config.pendingCases ?? metricPendingCases?.textContent) || 0),
+                processCount: Number((config.processCount ?? metricProcessCount?.textContent) || 0)
+            }
         };
 
         const creationPhases = [
@@ -333,7 +355,335 @@
         ];
 
         function getSelectedFiles() {
-            return Array.from(filesInput?.files || []);
+            return state.selectedFiles.slice();
+        }
+
+        function getFileIdentity(file) {
+            return `${file.name}__${file.size}__${file.lastModified}`;
+        }
+
+        function syncInputFromSelectedFiles() {
+            if (!filesInput) return;
+
+            const dt = new DataTransfer();
+            state.selectedFiles.forEach(file => dt.items.add(file));
+            filesInput.files = dt.files;
+        }
+
+        function mergeSelectedFiles(newFiles) {
+            const incoming = Array.from(newFiles || []);
+            if (!incoming.length) return;
+
+            resetCreatedCaseState();
+            resetWorkflowUi();
+            const existingKeys = new Set(state.selectedFiles.map(getFileIdentity));
+            incoming.forEach(file => {
+                const key = getFileIdentity(file);
+                if (!existingKeys.has(key)) {
+                    state.selectedFiles.push(file);
+                    existingKeys.add(key);
+                }
+            });
+
+            syncInputFromSelectedFiles();
+        }
+
+        function removeSelectedFile(index) {
+            resetCreatedCaseState();
+            state.selectedFiles = state.selectedFiles.filter((_, currentIndex) => currentIndex !== index);
+            syncInputFromSelectedFiles();
+        }
+
+        function resetCreatedCaseState() {
+            state.lastCreatedCase = null;
+            state.isOpeningCreatedCase = false;
+            hideCreationSuccessActions();
+        }
+
+        function showWorkflowModal() {
+            workflowModal?.classList.remove('d-none');
+            workflowModal?.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('workflow-modal-open');
+        }
+
+        function hideWorkflowModal() {
+            workflowModal?.classList.add('d-none');
+            workflowModal?.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('workflow-modal-open');
+        }
+
+        function resetWorkflowUi() {
+            clearDraftRow();
+            hideWorkflowModal();
+            workflowEl?.classList.add('d-none');
+            workflowLog.innerHTML = '';
+            workflowBadge.textContent = 'En progreso';
+            workflowBadge.className = 'workflow-badge';
+            workflowTitle.textContent = 'Preparando caso';
+            workflowDetail.textContent = 'Validando el proceso y los documentos seleccionados.';
+            workflowSteps.forEach(step => step.classList.remove('is-active', 'is-done', 'is-error'));
+            btnCloseWorkflowModal?.classList.add('d-none');
+        }
+
+        function setFilterBusy(on, text = 'Consultando expedientes...') {
+            tableShell?.classList.toggle('is-filtering', Boolean(on));
+
+            if (window.jQuery && casesSection) {
+                try {
+                    const $section = window.jQuery(casesSection);
+                    if (on) {
+                        $section.waitMe({
+                            effect: 'bounce',
+                            text,
+                            bg: 'rgba(255,255,255,0.72)',
+                            color: '#1d4ed8',
+                            fontSize: '14px'
+                        });
+                    } else {
+                        $section.waitMe('hide');
+                    }
+                } catch {
+                    // noop
+                }
+            }
+        }
+
+        function startPageLoading(text = 'Consultando expedientes...') {
+            if (typeof window.cargando === 'function') {
+                window.cargando();
+                return;
+            }
+
+            if (window.jQuery && casesSection) {
+                try {
+                    window.jQuery(casesSection).waitMe({
+                        effect: 'bounce',
+                        text,
+                        bg: 'rgba(255,255,255,0.72)',
+                        color: '#1d4ed8',
+                        fontSize: '15px'
+                    });
+                } catch {
+                    // noop
+                }
+            }
+        }
+
+        function preserveTableViewport() {
+            const currentY = window.scrollY;
+            window.requestAnimationFrame(() => window.scrollTo({ top: currentY, behavior: 'auto' }));
+        }
+
+        function rememberCasesAnchor() {
+            try {
+                window.sessionStorage.setItem('nexus.index.anchor', 'casesSection');
+            } catch {
+                // noop
+            }
+        }
+
+        function shouldRestoreCasesAnchor() {
+            if (window.location.hash === '#casesSection') {
+                return true;
+            }
+
+            try {
+                return window.sessionStorage.getItem('nexus.index.anchor') === 'casesSection';
+            } catch {
+                return false;
+            }
+        }
+
+        function clearCasesAnchor() {
+            try {
+                window.sessionStorage.removeItem('nexus.index.anchor');
+            } catch {
+                // noop
+            }
+        }
+
+        function scrollToCasesSection(behavior = 'auto') {
+            if (!casesSection) return;
+
+            window.requestAnimationFrame(() => {
+                casesSection.scrollIntoView({ behavior, block: 'start' });
+            });
+        }
+
+        function setQueryParam(url, key, value) {
+            const normalizedValue = (value ?? '').toString().trim();
+            if (normalizedValue) {
+                url.searchParams.set(key, normalizedValue);
+            } else {
+                url.searchParams.delete(key);
+            }
+        }
+
+        function buildIndexUrl(overrides = {}) {
+            const url = new URL(config.indexUrl || window.location.pathname, window.location.origin);
+            const nextPage = overrides.page ?? 1;
+            const nextPageSize = overrides.pageSize ?? pageSizeSelect?.value ?? config.pageSize ?? 10;
+
+            url.searchParams.set('page', String(nextPage));
+            url.searchParams.set('pageSize', String(nextPageSize));
+
+            if (Number(config.windowDays || 0) > 0) {
+                url.searchParams.set('windowDays', String(config.windowDays));
+            }
+
+            setQueryParam(url, 'search', overrides.search ?? filterSearch?.value);
+            setQueryParam(url, 'status', overrides.status ?? filterStatus?.value);
+            setQueryParam(url, 'type', overrides.type ?? filterType?.value);
+            setQueryParam(url, 'process', overrides.process ?? filterProcess?.value);
+            setQueryParam(url, 'period', overrides.period ?? filterPeriod?.value);
+
+            url.hash = 'casesSection';
+            return url;
+        }
+
+        function navigateToFilteredPage(overrides = {}, loadingText = 'Consultando expedientes...') {
+            if (state.filterTimer) {
+                window.clearTimeout(state.filterTimer);
+                state.filterTimer = null;
+            }
+
+            rememberCasesAnchor();
+            startPageLoading(loadingText);
+            window.location.href = buildIndexUrl(overrides).toString();
+        }
+
+        function scheduleFilterNavigation(reason = 'Buscando expedientes...', overrides = {}) {
+            if (state.filterTimer) {
+                window.clearTimeout(state.filterTimer);
+            }
+
+            state.filterTimer = window.setTimeout(() => {
+                state.filterTimer = null;
+                navigateToFilteredPage({ page: 1, ...overrides }, reason);
+            }, 260);
+        }
+
+        function updateCreatedCaseRow(payload, caseCode) {
+            const row = q(`.case-row[data-case-code="${caseCode}"]`, casesTableBody);
+            if (!row) return;
+
+            const caseLabel = row.dataset.caseLabel || buildShortCaseCode(caseCode);
+            row.classList.remove('is-processing');
+            row.dataset.status = 'evaluado';
+            row.dataset.typeLabel = payload.typeCase || 'No Definido';
+            row.dataset.search = buildRowSearch(caseLabel, row.dataset.processName, row.dataset.typeLabel, q('.case-date', row)?.textContent || '');
+            q('[data-cell="status"]', row).innerHTML = getStatusHtml('evaluado');
+            q('[data-cell="type"]', row).innerHTML = getTypeHtml(payload.typeCase || 'No Definido');
+            q('[data-cell="actions"]', row).innerHTML = getActionsHtml(caseCode, caseLabel, true);
+        }
+
+        function finalizeProcessedRow(row, payload, previousStatus) {
+            if (!row) return;
+
+            const caseCode = row.dataset.caseCode;
+            const caseLabel = row.dataset.caseLabel || buildShortCaseCode(caseCode);
+
+            stopRowProcessing(row);
+            row.classList.remove('is-processing');
+            row.classList.add('case-row-highlight');
+            row.dataset.status = 'evaluado';
+            row.dataset.typeLabel = payload.typeCase || 'No Definido';
+            row.dataset.search = buildRowSearch(caseLabel, row.dataset.processName, row.dataset.typeLabel, q('.case-date', row)?.textContent || '');
+
+            if (previousStatus !== 'evaluado') {
+                state.metrics.evaluated += 1;
+                state.metrics.pending = Math.max(0, state.metrics.pending - 1);
+            }
+
+            q('[data-cell="status"]', row).innerHTML = getStatusHtml('evaluado');
+            q('[data-cell="type"]', row).innerHTML = getTypeHtml(payload.typeCase || 'No Definido');
+            q('[data-cell="actions"]', row).innerHTML = getActionsHtml(caseCode, caseLabel, true);
+
+            window.setTimeout(() => row.classList.remove('case-row-highlight'), 2200);
+        }
+
+        function failProcessedRow(row, error) {
+            if (!row) return;
+
+            const caseCode = row.dataset.caseCode;
+            const caseLabel = row.dataset.caseLabel || buildShortCaseCode(caseCode);
+            stopRowProcessing(row);
+            row.classList.remove('is-processing');
+            row.dataset.status = 'error';
+            row.dataset.typeLabel = 'Error';
+            row.dataset.search = buildRowSearch(caseLabel, row.dataset.processName, 'Error', q('.case-date', row)?.textContent || '');
+
+            q('[data-cell="status"]', row).innerHTML = getStatusHtml('error');
+            q('[data-cell="type"]', row).innerHTML = createProgressCardHtml('Error operativo', 'No fue posible completar el procesamiento.', 100, 'error');
+            q('[data-cell="actions"]', row).innerHTML = getActionsHtml(caseCode, caseLabel, false);
+        }
+
+        async function processCaseRequest(caseCode) {
+            const form = new FormData();
+            form.append('caseCode', caseCode);
+
+            const response = await fetch(config.processCaseUrl || '/Nexus/ProcessCaseAjax', {
+                method: 'POST',
+                body: form
+            });
+
+            const payload = await readResponsePayload(response);
+            if (!response.ok) {
+                throw new Error(payload.message || 'No se pudo procesar el caso.');
+            }
+
+            return payload;
+        }
+
+        async function runCaseProcessing(caseCode, options = {}) {
+            const row = options.row || q(`.case-row[data-case-code="${caseCode}"]`, casesTableBody);
+            const previousStatus = row?.dataset.status || 'pendiente';
+
+            if (row) {
+                stopRowProcessing(row);
+                let phaseIndex = 0;
+                paintRowProcessing(row, phaseIndex);
+                const timer = setInterval(() => {
+                    phaseIndex = (phaseIndex + 1) % rowProcessingPhases.length;
+                    paintRowProcessing(row, phaseIndex);
+                }, 1500);
+                state.rowProgressTimers.set(caseCode, timer);
+            }
+
+            if (typeof options.onStart === 'function') {
+                options.onStart(row);
+            }
+
+            try {
+                const payload = await processCaseRequest(caseCode);
+
+                if (row) {
+                    finalizeProcessedRow(row, payload, previousStatus);
+                } else if (options.treatAsEvaluated) {
+                    state.metrics.evaluated += 1;
+                    state.metrics.pending = Math.max(0, state.metrics.pending - 1);
+                }
+
+                if (typeof options.onSuccess === 'function') {
+                    await options.onSuccess(payload, row, previousStatus);
+                }
+
+                syncCasesTable();
+                return payload;
+            } catch (error) {
+                if (row) {
+                    failProcessedRow(row, error);
+                }
+
+                syncCasesTable();
+
+                if (typeof options.onError === 'function') {
+                    await options.onError(error, row);
+                    return null;
+                }
+
+                throw error;
+            }
         }
 
         function updateCreateButtonState() {
@@ -353,6 +703,30 @@
             } else {
                 uploadMeta.textContent = `${fileCount} documento(s) preparados para ${state.selectedProcessName}.`;
             }
+        }
+
+        function hideCreationSuccessActions() {
+            creationSuccessActions?.classList.add('d-none');
+            if (btnGoCreatedCase) {
+                btnGoCreatedCase.setAttribute('href', '#');
+                btnGoCreatedCase.classList.remove('disabled');
+                btnGoCreatedCase.removeAttribute('aria-disabled');
+                btnGoCreatedCase.innerHTML = '<i class="fa-solid fa-arrow-up-right-from-square me-2"></i>Ir al caso';
+            }
+            if (btnStayOnIndex) {
+                btnStayOnIndex.disabled = false;
+            }
+        }
+
+        function showCreationSuccessActions(caseData) {
+            if (!creationSuccessActions || !btnGoCreatedCase) return;
+
+            const caseLabel = buildShortCaseCode(caseData.caseCode);
+            state.lastCreatedCase = caseData;
+            creationSuccessTitle.textContent = `${caseLabel} listo para auditoria`;
+            creationSuccessDetail.textContent = `El expediente ${caseLabel} ya quedó registrado en ${caseData.nameProccess || state.selectedProcessName || 'Nexus'}.`;
+            btnGoCreatedCase.setAttribute('href', (config.detailsUrlTemplate || '/Nexus/Details1?caseCode=__CASE__').replace('__CASE__', encodeURIComponent(caseData.caseCode)));
+            creationSuccessActions.classList.remove('d-none');
         }
 
         function paintPreviewCardState(card, options = {}) {
@@ -431,12 +805,8 @@
                     </button>`;
 
                 q('.preview-card-remove', item)?.addEventListener('click', () => {
-                    const dt = new DataTransfer();
-                    getSelectedFiles().forEach((currentFile, currentIndex) => {
-                        if (currentIndex !== index) dt.items.add(currentFile);
-                    });
-                    filesInput.files = dt.files;
-                    filesInput.dispatchEvent(new Event('change'));
+                    removeSelectedFile(index);
+                    renderPreviewGallery();
                 });
 
                 const image = q('img', item);
@@ -500,12 +870,8 @@
                 state.creationInterval = null;
             }
 
-            workflowLog.innerHTML = '';
-            workflowBadge.textContent = 'En progreso';
-            workflowBadge.className = 'workflow-badge';
-            workflowTitle.textContent = 'Preparando caso';
-            workflowDetail.textContent = 'Validando el proceso y los documentos seleccionados.';
-            workflowSteps.forEach(step => step.classList.remove('is-active', 'is-done', 'is-error'));
+            resetCreatedCaseState();
+            resetWorkflowUi();
         }
 
         function appendWorkflowLog(message, tone = 'neutral') {
@@ -518,6 +884,7 @@
                     <span>${escapeHtml(message)}</span>
                 </div>`;
             workflowLog.prepend(item);
+            qa('.workflow-log-item', workflowLog).slice(4).forEach(entry => entry.remove());
         }
 
         function paintCreationPhase(index, mode = 'progress') {
@@ -545,7 +912,9 @@
         function startCreationWorkflow(context) {
             resetCreationWorkflow();
             ensureDraftRow(context);
+            showWorkflowModal();
             workflowEl.classList.remove('d-none');
+            btnCloseWorkflowModal?.classList.add('d-none');
             appendWorkflowLog(`Iniciando expediente para ${context.processName} con ${context.fileCount} documento(s).`, 'info');
             paintCreationPhase(0);
             paintAllPreviewCards({
@@ -582,6 +951,8 @@
                         progress: 100,
                         icon: 'fa-circle-check'
                     });
+                    showCreationSuccessActions(caseData);
+                    btnCloseWorkflowModal?.classList.remove('d-none');
                     await new Promise(resolve => window.setTimeout(resolve, 240));
                 },
                 fail(message) {
@@ -605,21 +976,35 @@
                         icon: 'fa-triangle-exclamation'
                     });
                     paintDraftRow('Creacion interrumpida', message || 'No fue posible crear el expediente.', 100, 'error');
+                    btnCloseWorkflowModal?.classList.remove('d-none');
                 }
             };
         }
 
         function updateMetrics() {
-            const rows = qa('.case-row', casesTableBody).filter(row => row.dataset.transient !== 'true');
-            const total = rows.length;
-            const evaluated = rows.filter(row => row.dataset.status === 'evaluado').length;
-            const pending = rows.filter(row => row.dataset.status !== 'evaluado').length;
-            const processCount = new Set(rows.map(row => row.dataset.processName).filter(Boolean)).size;
+            if (metricTotalCases) metricTotalCases.textContent = state.metrics.total;
+            if (metricEvaluatedCases) metricEvaluatedCases.textContent = state.metrics.evaluated;
+            if (metricPendingCases) metricPendingCases.textContent = state.metrics.pending;
+            if (metricProcessCount) metricProcessCount.textContent = state.metrics.processCount;
+            refreshPaginationMeta();
+        }
 
-            metricTotalCases.textContent = total;
-            metricEvaluatedCases.textContent = evaluated;
-            metricPendingCases.textContent = pending;
-            metricProcessCount.textContent = processCount;
+        function refreshPaginationMeta() {
+            if (!paginationMetaTitle || !paginationMetaDetail) return;
+
+            const total = Number(state.metrics.total || 0);
+            const pageSize = Number(pageSizeSelect?.value || config.pageSize || 10);
+            const totalPages = Math.max(1, Math.ceil(total / pageSize));
+            const currentPage = Math.min(Number(config.currentPage || 1), totalPages);
+            const pageStart = total === 0 ? 0 : ((currentPage - 1) * pageSize) + 1;
+            const pageEnd = total === 0 ? 0 : Math.min(total, currentPage * pageSize);
+
+            paginationMetaTitle.textContent = total === 0
+                ? 'Sin casos registrados'
+                : `Mostrando ${pageStart}-${pageEnd} de ${total} casos`;
+            paginationMetaDetail.textContent = Number(config.windowDays || 0) > 0
+                ? `Página ${currentPage} de ${totalPages} · últimos ${config.windowDays} días`
+                : `Página ${currentPage} de ${totalPages} · historial disponible`;
         }
 
         function rebuildProcessFilterOptions() {
@@ -647,7 +1032,6 @@
             if (filterPeriod) {
                 filterPeriod.value = '';
             }
-            syncCasesTable();
         }
 
         function renderActiveFilters() {
@@ -681,10 +1065,14 @@
             let visible = 0;
             rows.forEach(row => {
                 const isTransient = row.dataset.transient === 'true';
-                const matchesSearch = !term || normalize(row.dataset.search).includes(term);
-                const matchesStatus = !statusValue || normalize(row.dataset.status) === statusValue;
-                const matchesType = !typeValue || normalize(row.dataset.typeLabel) === typeValue;
-                const matchesProcess = !processValue || normalize(row.dataset.processName) === processValue;
+                const searchHaystack = normalize(row.dataset.search || row.textContent || '');
+                const rowStatus = normalize(row.dataset.status || '');
+                const rowType = normalize(row.dataset.typeLabel || '');
+                const rowProcess = normalize(row.dataset.processName || '');
+                const matchesSearch = !term || searchHaystack.includes(term);
+                const matchesStatus = !statusValue || rowStatus === statusValue;
+                const matchesType = !typeValue || rowType.includes(typeValue);
+                const matchesProcess = !processValue || rowProcess.includes(processValue);
                 let matchesPeriod = true;
 
                 if (periodValue && !isTransient) {
@@ -721,9 +1109,22 @@
 
             renderActiveFilters();
             updateMetrics();
+            preserveTableViewport();
+            setFilterBusy(false);
         }
 
-        function clearUploadSelection() {
+        function navigateWithPageSize(pageSize) {
+            const nextSize = Number(pageSize || config.pageSize || 10);
+            navigateToFilteredPage({ page: 1, pageSize: nextSize }, 'Actualizando cantidad de casos...');
+        }
+
+        function clearUploadSelection(options = {}) {
+            if (!options.keepWorkflow) {
+                resetCreatedCaseState();
+                resetWorkflowUi();
+            }
+            state.selectedFiles = [];
+            syncInputFromSelectedFiles();
             filesInput.value = '';
             renderPreviewGallery();
         }
@@ -867,67 +1268,85 @@
             }
         }
 
-        async function processCase(button) {
+        async function processCase(button, options = {}) {
             if (!button || button.disabled) return;
 
             const row = button.closest('tr');
-            if (!row) return;
-
             const caseCode = button.dataset.casecode;
-            const caseLabel = row.dataset.caseLabel || button.dataset.nameproccess || buildShortCaseCode(caseCode);
-            stopRowProcessing(row);
-
-            let phaseIndex = 0;
-            paintRowProcessing(row, phaseIndex);
-            const timer = setInterval(() => {
-                phaseIndex = (phaseIndex + 1) % rowProcessingPhases.length;
-                paintRowProcessing(row, phaseIndex);
-            }, 1500);
-            state.rowProgressTimers.set(caseCode, timer);
+            if (!caseCode) return;
 
             try {
-                const form = new FormData();
-                form.append('caseCode', caseCode);
-
-                const response = await fetch(config.processCaseUrl || '/Nexus/ProcessCaseAjax', {
-                    method: 'POST',
-                    body: form
+                await runCaseProcessing(caseCode, {
+                    row,
+                    onSuccess: options.onSuccess,
+                    onStart: options.onStart,
+                    onError: options.onError
                 });
-
-                const payload = await readResponsePayload(response);
-                if (!response.ok) throw new Error(payload.message || 'No se pudo procesar el caso.');
-
-                stopRowProcessing(row);
-                row.classList.remove('is-processing');
-                row.classList.add('case-row-highlight');
-                row.dataset.status = 'evaluado';
-                row.dataset.typeLabel = payload.typeCase || 'No Definido';
-                row.dataset.search = buildRowSearch(caseLabel, row.dataset.processName, row.dataset.typeLabel, q('.case-date', row)?.textContent || '');
-
-                q('[data-cell="status"]', row).innerHTML = getStatusHtml('evaluado');
-                q('[data-cell="type"]', row).innerHTML = getTypeHtml(payload.typeCase || 'No Definido');
-                q('[data-cell="actions"]', row).innerHTML = getActionsHtml(caseCode, caseLabel, true);
-
-                window.setTimeout(() => row.classList.remove('case-row-highlight'), 2200);
-                syncCasesTable();
             } catch (error) {
                 console.error(error);
-                stopRowProcessing(row);
-                row.classList.remove('is-processing');
-                row.dataset.status = 'error';
-                row.dataset.typeLabel = 'Error';
-                row.dataset.search = buildRowSearch(caseLabel, row.dataset.processName, 'Error', q('.case-date', row)?.textContent || '');
+                if (!options.suppressAlert) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Advertencia',
+                        text: error.message || 'No se pudo procesar el caso.'
+                    });
+                }
+            }
+        }
 
-                q('[data-cell="status"]', row).innerHTML = getStatusHtml('error');
-                q('[data-cell="type"]', row).innerHTML = createProgressCardHtml('Error operativo', 'No fue posible completar el procesamiento.', 100, 'error');
-                q('[data-cell="actions"]', row).innerHTML = getActionsHtml(caseCode, caseLabel, false);
-                syncCasesTable();
+        async function openCreatedCase() {
+            if (!state.lastCreatedCase || state.isOpeningCreatedCase) return;
 
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Advertencia',
-                    text: error.message || 'No se pudo procesar el caso.'
+            state.isOpeningCreatedCase = true;
+            btnCloseWorkflowModal?.classList.add('d-none');
+            workflowBadge.textContent = 'Procesando';
+            workflowBadge.className = 'workflow-badge';
+            appendWorkflowLog('Generando la respuesta inicial del caso antes de abrir el detalle.', 'info');
+            btnGoCreatedCase?.classList.add('disabled');
+            btnGoCreatedCase?.setAttribute('aria-disabled', 'true');
+            if (btnGoCreatedCase) {
+                btnGoCreatedCase.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Preparando caso';
+            }
+            if (btnStayOnIndex) {
+                btnStayOnIndex.disabled = true;
+            }
+
+            try {
+                creationSuccessDetail.textContent = 'Generando la respuesta inicial del caso para abrir el detalle completo.';
+                await runCaseProcessing(state.lastCreatedCase.caseCode, {
+                    treatAsEvaluated: true,
+                    suppressAlert: true,
+                    onStart: () => {
+                        appendWorkflowLog('Lanzando el mismo procesamiento operativo del listado antes de abrir el caso.', 'info');
+                    },
+                    onSuccess: async () => {
+                        updateMetrics();
+                        const targetUrl = (config.detailsUrlTemplate || '/Nexus/Details1?caseCode=__CASE__')
+                            .replace('__CASE__', encodeURIComponent(state.lastCreatedCase.caseCode));
+                        startPageLoading('Abriendo expediente...');
+                        resetCreationWorkflow();
+                        window.location.href = targetUrl;
+                    },
+                    onError: async error => {
+                        console.error(error);
+                        state.isOpeningCreatedCase = false;
+                        btnCloseWorkflowModal?.classList.remove('d-none');
+                        workflowBadge.textContent = 'Error';
+                        workflowBadge.className = 'workflow-badge is-error';
+                        creationSuccessDetail.textContent = error.message || 'No se pudo preparar el caso.';
+                        hideCreationSuccessActions();
+                        if (state.lastCreatedCase) {
+                            showCreationSuccessActions(state.lastCreatedCase);
+                        }
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Advertencia',
+                            text: error.message || 'No se pudo preparar el caso antes de abrirlo.'
+                        });
+                    }
                 });
+            } catch (error) {
+                console.error(error);
             }
         }
 
@@ -947,13 +1366,15 @@
         uploadArea?.addEventListener('drop', event => {
             event.preventDefault();
             uploadArea.classList.remove('is-dragover');
-            const dt = new DataTransfer();
-            Array.from(event.dataTransfer.files || []).forEach(file => dt.items.add(file));
-            filesInput.files = dt.files;
-            filesInput.dispatchEvent(new Event('change'));
+            mergeSelectedFiles(event.dataTransfer.files || []);
+            renderPreviewGallery();
         });
 
-        filesInput?.addEventListener('change', renderPreviewGallery);
+        filesInput?.addEventListener('change', event => {
+            mergeSelectedFiles(event.target.files || []);
+            filesInput.value = '';
+            renderPreviewGallery();
+        });
 
         ocrForm?.addEventListener('submit', async event => {
             event.preventDefault();
@@ -999,27 +1420,40 @@
                 if (!response.ok) throw new Error(payload.message || response.statusText || 'No se pudo crear el caso.');
 
                 await workflow.complete(payload);
+                state.metrics.total += 1;
+                state.metrics.pending += 1;
 
-                const liveMarkup = buildCaseRowMarkup(payload, {
-                    status: 'pendiente',
-                    typeLabel: 'No Evaluado'
-                });
+                if (Number(config.currentPage || 1) === 1) {
+                    const liveMarkup = buildCaseRowMarkup(payload, {
+                        status: 'pendiente',
+                        typeLabel: 'No Evaluado'
+                    });
 
-                let insertedRow = null;
-                if (state.draftRow && state.draftRow.isConnected) {
-                    state.draftRow.insertAdjacentHTML('beforebegin', liveMarkup);
-                    insertedRow = state.draftRow.previousElementSibling;
-                    clearDraftRow();
+                    let insertedRow = null;
+                    if (state.draftRow && state.draftRow.isConnected) {
+                        state.draftRow.insertAdjacentHTML('beforebegin', liveMarkup);
+                        insertedRow = state.draftRow.previousElementSibling;
+                        clearDraftRow();
+                    } else {
+                        emptyCasesRow?.classList.add('d-none');
+                        casesTableBody.insertAdjacentHTML('afterbegin', liveMarkup);
+                        insertedRow = q('.case-row', casesTableBody);
+                    }
+
+                    insertedRow?.classList.add('case-row-highlight');
+                    window.setTimeout(() => insertedRow?.classList.remove('case-row-highlight'), 2200);
+
+                    const liveRows = qa('.case-row', casesTableBody)
+                        .filter(row => row.dataset.transient !== 'true');
+                    const maxRows = Number(pageSizeSelect?.value || config.pageSize || 10);
+                    if (liveRows.length > maxRows) {
+                        liveRows[liveRows.length - 1]?.remove();
+                    }
                 } else {
-                    emptyCasesRow?.classList.add('d-none');
-                    casesTableBody.insertAdjacentHTML('afterbegin', liveMarkup);
-                    insertedRow = q('.case-row', casesTableBody);
+                    clearDraftRow();
                 }
 
-                insertedRow?.classList.add('case-row-highlight');
-                window.setTimeout(() => insertedRow?.classList.remove('case-row-highlight'), 2200);
-
-                clearUploadSelection();
+                clearUploadSelection({ keepWorkflow: true });
                 syncCasesTable();
                 rebuildProcessFilterOptions();
             } catch (error) {
@@ -1041,16 +1475,23 @@
             }
         });
 
-        [filterSearch, filterStatus, filterType, filterProcess].forEach(control => {
-            control?.addEventListener('input', syncCasesTable);
-            control?.addEventListener('change', syncCasesTable);
+        filterSearch?.addEventListener('input', () => scheduleFilterNavigation('Buscando expedientes...'));
+        [filterStatus, filterType, filterProcess].forEach(control => {
+            control?.addEventListener('change', () => navigateToFilteredPage({ page: 1 }, 'Aplicando filtros...'));
         });
+        filterPeriod?.addEventListener('change', () => navigateToFilteredPage({ page: 1 }, 'Buscando por periodo...'));
 
-        filterPeriod?.addEventListener('input', syncCasesTable);
-        filterPeriod?.addEventListener('change', syncCasesTable);
-
-        btnResetFilters?.addEventListener('click', clearAllFilters);
-        btnResetFiltersInline?.addEventListener('click', clearAllFilters);
+        btnResetFilters?.addEventListener('click', () => {
+            clearAllFilters();
+            navigateToFilteredPage({ page: 1 }, 'Limpiando filtros...');
+        });
+        btnResetFiltersInline?.addEventListener('click', () => {
+            clearAllFilters();
+            navigateToFilteredPage({ page: 1 }, 'Limpiando filtros...');
+        });
+        pageSizeSelect?.addEventListener('change', event => {
+            navigateWithPageSize(event.target.value);
+        });
 
         activeFilterChips?.addEventListener('click', event => {
             const chip = event.target.closest('.active-filter-chip');
@@ -1062,7 +1503,50 @@
             if (key === 'type') filterType.value = '';
             if (key === 'process') filterProcess.value = '';
             if (key === 'period' && filterPeriod) filterPeriod.value = '';
-            syncCasesTable();
+            navigateToFilteredPage({ page: 1 }, 'Actualizando resultados...');
+        });
+
+        btnStayOnIndex?.addEventListener('click', () => {
+            resetCreationWorkflow();
+            uploadArea?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+
+        btnCloseWorkflowModal?.addEventListener('click', () => {
+            resetCreationWorkflow();
+        });
+
+        btnGoCreatedCase?.addEventListener('click', event => {
+            event.preventDefault();
+            openCreatedCase();
+        });
+
+        qa('.table-pagination-nav a[href]', document).forEach(link => {
+            const href = link.getAttribute('href');
+            if (!href || href === '#') return;
+            try {
+                const url = new URL(href, window.location.origin);
+                url.hash = 'casesSection';
+                link.setAttribute('href', url.toString());
+                link.addEventListener('click', () => {
+                    rememberCasesAnchor();
+                    startPageLoading('Cargando casos...');
+                });
+            } catch {
+                // noop
+            }
+        });
+
+        workflowModal?.addEventListener('click', event => {
+            if (!event.target.classList.contains('creation-workflow-modal-backdrop')) return;
+            if (btnCloseWorkflowModal?.classList.contains('d-none')) return;
+            resetCreationWorkflow();
+        });
+
+        window.addEventListener('keydown', event => {
+            if (event.key !== 'Escape') return;
+            if (!workflowModal || workflowModal.classList.contains('d-none')) return;
+            if (btnCloseWorkflowModal?.classList.contains('d-none')) return;
+            resetCreationWorkflow();
         });
 
         document.addEventListener('click', event => {
@@ -1077,8 +1561,27 @@
             }
         });
 
+        window.addEventListener('pageshow', event => {
+            if (event.persisted) {
+                window.location.reload();
+                return;
+            }
+            resetCreationWorkflow();
+            if (shouldRestoreCasesAnchor()) {
+                scrollToCasesSection('auto');
+                clearCasesAnchor();
+                return;
+            }
+            preserveTableViewport();
+        });
+
         loadProcessButtons();
+        syncInputFromSelectedFiles();
         renderPreviewGallery();
         syncCasesTable();
+        if (shouldRestoreCasesAnchor()) {
+            scrollToCasesSection('auto');
+            clearCasesAnchor();
+        }
     });
 })();

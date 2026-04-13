@@ -20,10 +20,21 @@ namespace app_tramites.Services.NexusProcess
             double temperature = 0.2,
             double topP = 1.0);
         Task<ProcessCase?> ObtenerProcessCase(Guid caseCode);
-        Task<List<ProcessCase>?> ObtenerProcesos(IdentityUser? user, IList<string>? roles);
+        Task<ViewPagedProcessCases> ObtenerProcesos(
+            IdentityUser? user,
+            IList<string>? roles,
+            int pageNumber = 1,
+            int pageSize = 10,
+            int windowDays = 0,
+            string? search = null,
+            string? status = null,
+            string? type = null,
+            string? process = null,
+            string? period = null);
         Task<ViewProcessUser> GetProcessesByUser(IdentityUser? user, IList<string>? roles);
         Task<ViewCreateCase> CreateCaseProcess(QueryInput input);
         Task<ViewCaseDetails?> ObtenerDetailsProcessCase(Guid caseCode, IdentityUser? user);
         Task<List<DataFile>> AddDocumentsToCase(Guid caseCode, IReadOnlyCollection<OcrFile> files);
+        Task<OcrDocumentArtifactDto?> ObtenerArtefactoDocumentoAsync(string fileUrl);
     }
 }
