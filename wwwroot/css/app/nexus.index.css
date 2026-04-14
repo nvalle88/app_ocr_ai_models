@@ -599,6 +599,11 @@ body.workflow-modal-open {
     color: #b91c1c;
 }
 
+.workflow-badge.is-ai {
+    background: rgba(219,234,254,0.94);
+    color: var(--nexus-blue-700);
+}
+
 .creation-workflow-head {
     margin-bottom: 8px;
 }
@@ -635,75 +640,15 @@ body.workflow-modal-open {
     align-content: start;
 }
 
-.workflow-step {
-    min-width: 0;
-    min-height: 0;
-    padding: 8px 9px;
-    border-radius: 12px;
-    background: rgba(255,255,255,0.78);
-    border: 1px solid rgba(148,163,184,0.16);
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease;
+/* row-processing-card variantes para el modal */
+.row-processing-card.is-success {
+    background: rgba(236,253,245,0.92);
+    border-color: rgba(16,185,129,0.16);
 }
 
-.step-dot {
-    width: 10px;
-    height: 10px;
-    flex: 0 0 10px;
-    margin-top: 3px;
-    border-radius: 999px;
-    background: rgba(148,163,184,0.42);
-    box-shadow: 0 0 0 5px rgba(148,163,184,0.10);
-}
-
-.workflow-step strong,
-.workflow-step small {
-    display: block;
-}
-
-.workflow-step strong {
-    margin-bottom: 2px;
-    font-size: 0.76rem;
-}
-
-.workflow-step small {
-    color: var(--nexus-slate-500);
-    font-size: 0.67rem;
-    line-height: 1.32;
-}
-
-.workflow-step.is-active {
-    transform: translateY(-1px);
-    border-color: rgba(37,99,235,0.24);
-    background: rgba(239,246,255,0.98);
-    box-shadow: 0 16px 28px rgba(37,99,235,0.10);
-}
-
-.workflow-step.is-active .step-dot {
-    background: linear-gradient(135deg, var(--nexus-blue-700), var(--nexus-cyan-500));
-    box-shadow: 0 0 0 6px rgba(37,99,235,0.16);
-}
-
-.workflow-step.is-done {
-    border-color: rgba(16,185,129,0.18);
-    background: rgba(236,253,245,0.96);
-}
-
-.workflow-step.is-done .step-dot {
-    background: linear-gradient(135deg, #059669, #22c55e);
-    box-shadow: 0 0 0 6px rgba(34,197,94,0.12);
-}
-
-.workflow-step.is-error {
-    border-color: rgba(239,68,68,0.20);
-    background: rgba(254,242,242,0.98);
-}
-
-.workflow-step.is-error .step-dot {
-    background: linear-gradient(135deg, #dc2626, #fb7185);
-    box-shadow: 0 0 0 6px rgba(239,68,68,0.12);
+.row-processing-card.is-success .row-processing-bar span {
+    animation: none;
+    background: linear-gradient(90deg, #059669, #22c55e);
 }
 
 .creation-workflow-log {
@@ -1188,6 +1133,7 @@ body.workflow-modal-open {
     border-radius: inherit;
     background: linear-gradient(90deg, var(--nexus-blue-700), var(--nexus-cyan-500));
     animation: nexusProgressFlow 1.5s linear infinite;
+    transition: width .4s ease;
 }
 
 .table-empty-row td {
@@ -1219,36 +1165,55 @@ body.workflow-modal-open {
 }
 
 .creation-success-actions {
-    margin-top: 12px;
-    padding: 14px 0 0;
+    margin-top: 14px;
+    padding: 16px;
     border-top: 1px solid rgba(148,163,184,0.18);
     background:
-        radial-gradient(circle at top right, rgba(34,197,94,0.08), transparent 38%),
-        linear-gradient(180deg, rgba(255,255,255,0.12), rgba(240,253,244,0.22));
-    border-radius: 0;
-    box-shadow: none;
+        radial-gradient(circle at top right, rgba(34,197,94,0.10), transparent 40%),
+        linear-gradient(160deg, rgba(240,253,244,0.60), rgba(255,255,255,0.30));
+    border-radius: 16px;
+    border: 1px solid rgba(34,197,94,0.14);
+}
+
+.creation-success-actions .workflow-kicker {
+    background: rgba(220,252,231,0.94);
+    color: #166534;
 }
 
 .creation-success-actions h3 {
-    margin: 10px 0 6px;
+    margin: 10px 0 4px;
     font-size: 1.08rem;
 }
 
 .creation-success-actions p {
     margin: 0;
     color: var(--nexus-slate-600);
+    font-size: 0.86rem;
 }
 
 .creation-success-buttons {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    margin-top: 12px;
+    margin-top: 14px;
 }
 
 .creation-success-buttons .btn {
     min-height: 46px;
     border-radius: 16px;
+    font-weight: 700;
+}
+
+.creation-success-buttons .btn-primary {
+    background: linear-gradient(135deg, #0f2f67, #1d4ed8);
+    border: none;
+    box-shadow: 0 8px 24px rgba(29,78,216,0.28);
+    transition: box-shadow .16s ease, transform .16s ease;
+}
+
+.creation-success-buttons .btn-primary:hover {
+    box-shadow: 0 12px 32px rgba(29,78,216,0.38);
+    transform: translateY(-1px);
 }
 
 .table-pagination-shell {

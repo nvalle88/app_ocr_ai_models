@@ -483,49 +483,10 @@
             </div>
 
             <div class="creation-workflow-body">
-                <div class="creation-workflow-steps" role="list" aria-label="Progreso de creacion del caso">
-                    <div class="workflow-step" data-step="validate" role="listitem">
-                        <span class="step-dot"></span>
-                        <div>
-                            <strong>Validar</strong>
-                            <small>Entradas y formato</small>
-                        </div>
-                    </div>
-                    <div class="workflow-step" data-step="upload" role="listitem">
-                        <span class="step-dot"></span>
-                        <div>
-                            <strong>Preparar</strong>
-                            <small>Empaquetando archivos</small>
-                        </div>
-                    </div>
-                    <div class="workflow-step" data-step="ocr" role="listitem">
-                        <span class="step-dot"></span>
-                        <div>
-                            <strong>OCR</strong>
-                            <small>Enviando al motor</small>
-                        </div>
-                    </div>
-                    <div class="workflow-step" data-step="extract" role="listitem">
-                        <span class="step-dot"></span>
-                        <div>
-                            <strong>Extraer</strong>
-                            <small>Texto y metadatos</small>
-                        </div>
-                    </div>
-                    <div class="workflow-step" data-step="register" role="listitem">
-                        <span class="step-dot"></span>
-                        <div>
-                            <strong>Registrar</strong>
-                            <small>Guardando expediente</small>
-                        </div>
-                    </div>
-                    <div class="workflow-step" data-step="ready" role="listitem">
-                        <span class="step-dot"></span>
-                        <div>
-                            <strong>Listo</strong>
-                            <small>Caso disponible</small>
-                        </div>
-                    </div>
+                <div id="workflowProgressCard" class="row-processing-card" aria-live="polite">
+                    <strong id="workflowCardTitle">Validando informacion de entrada</strong>
+                    <span id="workflowCardDetail">Comprobando proceso, cantidad de archivos y formatos permitidos.</span>
+                    <div class="row-processing-bar"><span id="workflowCardBar"></span></div>
                 </div>
 
                 <div id="creationWorkflowLog" class="creation-workflow-log"></div>
@@ -546,6 +507,14 @@
                         <i class="fa-solid fa-table-list me-2"></i>
                         Seguir en Nexus
                     </button>
+                </div>
+            </div>
+
+            <div id="aiAnalysisPanel" class="d-none" aria-live="polite">
+                <div id="aiProgressCard" class="row-processing-card">
+                    <strong id="aiCardTitle">Procesando expediente</strong>
+                    <span id="aiCardDetail">Iniciando análisis del caso...</span>
+                    <div class="row-processing-bar"><span id="aiCardBar"></span></div>
                 </div>
             </div>
         </div>

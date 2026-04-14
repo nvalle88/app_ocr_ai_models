@@ -290,13 +290,21 @@
         const workflowDetail = q('#creationStageDetail');
         const workflowBadge = q('#creationStageBadge');
         const workflowLog = q('#creationWorkflowLog');
-        const workflowSteps = qa('.workflow-step', workflowEl);
         const btnCloseWorkflowModal = q('#btnCloseWorkflowModal');
+        const workflowCardTitle = q('#workflowCardTitle');
+        const workflowCardDetail = q('#workflowCardDetail');
+        const workflowCardBar = q('#workflowCardBar');
+        const workflowProgressCard = q('#workflowProgressCard');
         const creationSuccessActions = q('#creationSuccessActions');
         const creationSuccessTitle = q('#creationSuccessTitle');
         const creationSuccessDetail = q('#creationSuccessDetail');
         const btnGoCreatedCase = q('#btnGoCreatedCase');
         const btnStayOnIndex = q('#btnStayOnIndex');
+        const aiAnalysisPanel = q('#aiAnalysisPanel');
+        const aiCardTitle = q('#aiCardTitle');
+        const aiCardDetail = q('#aiCardDetail');
+        const aiCardBar = q('#aiCardBar');
+        const aiProgressCard = q('#aiProgressCard');
         const casesTableBody = q('#casesTableBody');
         const emptyCasesRow = q('#emptyCasesRow');
         const filterEmptyRow = q('#filterEmptyRow');
@@ -415,13 +423,15 @@
         function resetWorkflowUi() {
             clearDraftRow();
             hideWorkflowModal();
+            hideAiPanel();
             workflowEl?.classList.add('d-none');
             workflowLog.innerHTML = '';
             workflowBadge.textContent = 'En progreso';
             workflowBadge.className = 'workflow-badge';
             workflowTitle.textContent = 'Preparando caso';
             workflowDetail.textContent = 'Validando el proceso y los documentos seleccionados.';
-            workflowSteps.forEach(step => step.classList.remove('is-active', 'is-done', 'is-error'));
+            if (workflowProgressCard) workflowProgressCard.classList.remove('is-error', 'is-success');
+            if (workflowCardBar) workflowCardBar.style.width = '0%';
             btnCloseWorkflowModal?.classList.add('d-none');
         }
 
@@ -902,11 +912,15 @@
                 paintDraftRow(currentPhase.title, currentPhase.detail, progress);
             }
 
-            workflowSteps.forEach((step, stepIndex) => {
-                step.classList.toggle('is-active', mode === 'progress' && stepIndex === index);
-                step.classList.toggle('is-done', stepIndex < index || mode === 'success');
-                step.classList.toggle('is-error', mode === 'error' && stepIndex === index);
-            });
+            if (workflowCardTitle) workflowCardTitle.textContent = currentPhase.title;
+            if (workflowCardDetail) workflowCardDetail.textContent = currentPhase.detail;
+            if (workflowCardBar) workflowCardBar.style.width = progress + '%';
+
+            if (workflowProgressCard) {
+                workflowProgressCard.classList.remove('is-error', 'is-success');
+                if (mode === 'error') workflowProgressCard.classList.add('is-error');
+                if (mode === 'success') workflowProgressCard.classList.add('is-success');
+            }
         }
 
         function startCreationWorkflow(context) {
@@ -961,8 +975,7 @@
                         state.creationInterval = null;
                     }
 
-                    const failedIndex = Math.min(creationPhases.length - 2, Math.max(0, workflowSteps.findIndex(step => step.classList.contains('is-active'))));
-                    paintCreationPhase(failedIndex, 'error');
+                    paintCreationPhase(Math.max(0, creationPhases.length - 2), 'error');
                     workflowBadge.textContent = 'Error';
                     workflowBadge.className = 'workflow-badge is-error';
                     workflowTitle.textContent = 'No se pudo crear el caso';
@@ -1294,33 +1307,75 @@
             }
         }
 
+        const aiPhases = [
+            { icon: 'fa-file-arrow-up',    text: 'Enviando expediente a la IA',        detail: 'Preparando el paquete documental para su análisis...',       progress: 14 },
+            { icon: 'fa-magnifying-glass',  text: 'Leyendo y estructurando documentos', detail: 'El motor OCR está procesando el contenido extraído...',        progress: 30 },
+            { icon: 'fa-brain-circuit',     text: 'Modelo de IA analizando',            detail: 'Identificando entidades, fechas y datos clave del caso...',    progress: 50 },
+            { icon: 'fa-wand-magic-sparkles', text: 'Generando respuesta inicial',      detail: 'Construyendo el análisis preliminar del expediente...',        progress: 70 },
+            { icon: 'fa-shield-check',      text: 'Validando resultados',               detail: 'Verificando coherencia y completitud de la respuesta...',      progress: 88 },
+            { icon: 'fa-door-open',         text: 'Abriendo caso',                      detail: 'Todo listo. Redirigiendo al detalle del expediente...',        progress: 100 }
+        ];
+
+        function showAiPanel() {
+            if (!aiAnalysisPanel) return;
+            hideCreationSuccessActions();
+            btnCloseWorkflowModal?.classList.add('d-none');
+            workflowBadge.textContent = 'Analizando con IA';
+            workflowBadge.className = 'workflow-badge is-ai';
+            if (aiProgressCard) aiProgressCard.classList.remove('is-error', 'is-success');
+            if (aiCardBar) aiCardBar.style.width = '0%';
+            aiAnalysisPanel.classList.remove('d-none');
+        }
+
+        function hideAiPanel() {
+            aiAnalysisPanel?.classList.add('d-none');
+        }
+
+        function updateAiStep(index) {
+            const phase = aiPhases[index];
+            if (!phase) return;
+            if (aiCardTitle) aiCardTitle.textContent = phase.text;
+            if (aiCardDetail) aiCardDetail.textContent = phase.detail;
+            if (aiCardBar) aiCardBar.style.width = phase.progress + '%';
+            if (aiProgressCard) {
+                aiProgressCard.classList.remove('is-error', 'is-success');
+                if (index === aiPhases.length - 1) aiProgressCard.classList.add('is-success');
+            }
+        }
+
         async function openCreatedCase() {
             if (!state.lastCreatedCase || state.isOpeningCreatedCase) return;
 
             state.isOpeningCreatedCase = true;
-            btnCloseWorkflowModal?.classList.add('d-none');
-            workflowBadge.textContent = 'Procesando';
-            workflowBadge.className = 'workflow-badge';
-            appendWorkflowLog('Generando la respuesta inicial del caso antes de abrir el detalle.', 'info');
             btnGoCreatedCase?.classList.add('disabled');
             btnGoCreatedCase?.setAttribute('aria-disabled', 'true');
-            if (btnGoCreatedCase) {
-                btnGoCreatedCase.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Preparando caso';
-            }
-            if (btnStayOnIndex) {
-                btnStayOnIndex.disabled = true;
-            }
+            if (btnStayOnIndex) btnStayOnIndex.disabled = true;
+
+            showAiPanel();
+            updateAiStep(0);
+            appendWorkflowLog('Iniciando análisis con inteligencia artificial.', 'info');
+
+            let phaseIndex = 0;
+            const phaseTimer = setInterval(() => {
+                if (phaseIndex < aiPhases.length - 2) {
+                    phaseIndex++;
+                    updateAiStep(phaseIndex);
+                }
+            }, 1100);
 
             try {
-                creationSuccessDetail.textContent = 'Generando la respuesta inicial del caso para abrir el detalle completo.';
                 await runCaseProcessing(state.lastCreatedCase.caseCode, {
                     treatAsEvaluated: true,
                     suppressAlert: true,
                     onStart: () => {
-                        appendWorkflowLog('Lanzando el mismo procesamiento operativo del listado antes de abrir el caso.', 'info');
+                        appendWorkflowLog('Motor de IA procesando el expediente.', 'info');
                     },
                     onSuccess: async () => {
+                        clearInterval(phaseTimer);
+                        updateAiStep(aiPhases.length - 1);
                         updateMetrics();
+                        appendWorkflowLog('Análisis completado. Abriendo expediente.', 'success');
+                        await new Promise(r => window.setTimeout(r, 600));
                         const targetUrl = (config.detailsUrlTemplate || '/Nexus/Details1?caseCode=__CASE__')
                             .replace('__CASE__', encodeURIComponent(state.lastCreatedCase.caseCode));
                         startPageLoading('Abriendo expediente...');
@@ -1328,16 +1383,15 @@
                         window.location.href = targetUrl;
                     },
                     onError: async error => {
+                        clearInterval(phaseTimer);
                         console.error(error);
                         state.isOpeningCreatedCase = false;
+                        hideAiPanel();
                         btnCloseWorkflowModal?.classList.remove('d-none');
                         workflowBadge.textContent = 'Error';
                         workflowBadge.className = 'workflow-badge is-error';
-                        creationSuccessDetail.textContent = error.message || 'No se pudo preparar el caso.';
-                        hideCreationSuccessActions();
-                        if (state.lastCreatedCase) {
-                            showCreationSuccessActions(state.lastCreatedCase);
-                        }
+                        if (state.lastCreatedCase) showCreationSuccessActions(state.lastCreatedCase);
+                        appendWorkflowLog(error.message || 'No se pudo procesar el caso.', 'error');
                         Swal.fire({
                             icon: 'warning',
                             title: 'Advertencia',
@@ -1346,6 +1400,7 @@
                     }
                 });
             } catch (error) {
+                clearInterval(phaseTimer);
                 console.error(error);
             }
         }
