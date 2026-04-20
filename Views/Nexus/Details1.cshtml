@@ -208,6 +208,7 @@
                                         var requestHtml = RenderRequestBubble(entry.RequestText);
                                         var responseHtml = string.IsNullOrWhiteSpace(entry.ResponseText) ? string.Empty : RenderMarkdown(entry.ResponseText.Trim());
                                         var copyPayload = EncodeCopyPayload(entry.ResponseText);
+                                        var renderPayload = EncodeCopyPayload(ResolveRenderPreviewSource(entry.ResponseText));
                                         <article class="chat-turn">
                                             @if (!string.IsNullOrWhiteSpace(requestHtml))
                                             {
@@ -230,7 +231,8 @@
                                                         <button type="button"
                                                                 class="chat-render-btn"
                                                                 title="Renderizar markdown"
-                                                                aria-label="Renderizar markdown">
+                                                                aria-label="Renderizar markdown"
+                                                                data-render-source="@renderPayload">
                                                             <i class="fa-solid fa-wand-magic-sparkles"></i>
                                                             <span>Renderizar</span>
                                                         </button>
@@ -871,10 +873,81 @@
                 return '';
             }
 
+            function humanizeJsonKey(key) {
+                return (key || '')
+                    .toString()
+                    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+                    .replace(/[_-]+/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+            }
+
+            function isComplexJsonValue(value) {
+                return Array.isArray(value) || (value !== null && typeof value === 'object');
+            }
+
+            function formatJsonScalarForMarkdown(value) {
+                if (value === null || value === undefined) return '`null`';
+                if (typeof value === 'boolean') return value ? 'Sí' : 'No';
+                if (typeof value === 'number') return String(value);
+
+                const text = decodeHtmlEntities((value ?? '').toString()).trim();
+                return text || '` `';
+            }
+
+            function buildJsonMarkdownDocument(value, depth = 2) {
+                if (Array.isArray(value)) {
+                    if (!value.length) return '_Sin elementos_';
+
+                    const hasComplexItems = value.some(item => isComplexJsonValue(item));
+                    if (!hasComplexItems) {
+                        return value.map(item => `- ${formatJsonScalarForMarkdown(item)}`).join('\n');
+                    }
+
+                    return value.map((item, index) => {
+                        if (!isComplexJsonValue(item)) {
+                            return `- ${formatJsonScalarForMarkdown(item)}`;
+                        }
+
+                        const heading = `${'#'.repeat(Math.min(depth, 6))} Elemento ${index + 1}`;
+                        return `${heading}\n\n${buildJsonMarkdownDocument(item, depth + 1)}`;
+                    }).join('\n\n');
+                }
+
+                if (value !== null && typeof value === 'object') {
+                    const inlineLines = [];
+                    const sectionBlocks = [];
+
+                    Object.entries(value).forEach(([key, entryValue]) => {
+                        const label = humanizeJsonKey(key) || key;
+                        const scalar = !isComplexJsonValue(entryValue);
+                        const textValue = scalar ? formatJsonScalarForMarkdown(entryValue) : '';
+                        const isMultilineScalar = scalar && /\r|\n/.test(textValue);
+
+                        if (scalar && !isMultilineScalar) {
+                            inlineLines.push(`- **${label}:** ${textValue}`);
+                            return;
+                        }
+
+                        const heading = `${'#'.repeat(Math.min(depth, 6))} ${label}`;
+                        const content = scalar
+                            ? textValue
+                            : buildJsonMarkdownDocument(entryValue, depth + 1);
+                        sectionBlocks.push(`${heading}\n\n${content}`);
+                    });
+
+                    return [...(inlineLines.length ? [inlineLines.join('\n')] : []), ...sectionBlocks]
+                        .filter(Boolean)
+                        .join('\n\n');
+                }
+
+                return formatJsonScalarForMarkdown(value);
+            }
+
             function resolveMarkdownRenderSource(source) {
                 const raw = (source ?? '').toString().trim();
                 if (!raw) {
-                    return { content: '', extracted: false };
+                    return { content: '', extracted: false, fromJson: false };
                 }
 
                 const candidates = [raw, decodeHtmlEntities(raw)].filter(Boolean);
@@ -886,13 +959,11 @@
 
                     try {
                         const parsed = JSON.parse(trimmed);
-                        const embeddedMarkdown = findEmbeddedMarkdownValue(parsed);
-                        if (embeddedMarkdown) {
-                            return {
-                                content: embeddedMarkdown,
-                                extracted: true
-                            };
-                        }
+                        return {
+                            content: buildJsonMarkdownDocument(parsed),
+                            extracted: !!findEmbeddedMarkdownValue(parsed),
+                            fromJson: true
+                        };
                     } catch (e) {
                         // Si no es JSON válido, seguimos con el render normal.
                     }
@@ -900,7 +971,8 @@
 
                 return {
                     content: raw,
-                    extracted: false
+                    extracted: false,
+                    fromJson: false
                 };
             }
 
@@ -1402,14 +1474,15 @@
                 qa('#chatOutput .chat-turn-request, #chatOutput .chat-turn-response-body').forEach(sanitizeRichHtml);
                 enhanceMarkdownContent(chatOutputEl);
                 
-                function openChatMarkdownModal(markdownSource) {
-                    const resolved = resolveMarkdownRenderSource(markdownSource);
-                    const markdown = (resolved.content || '').trim();
+                function openChatMarkdownModal(responseSource, preferredMarkdownSource = '') {
+                    const resolved = resolveMarkdownRenderSource(responseSource);
+                    const preferred = decodeHtmlEntities(preferredMarkdownSource || '').trim();
+                    const markdown = (preferred || resolved.content || '').trim();
                     if (!chatMarkdownModal || !chatMarkdownModalContent || !markdown) return;
 
                     chatMarkdownModalContent.innerHTML = renderMarkdownHtml(markdown);
-                    chatMarkdownModalMeta.textContent = resolved.extracted
-                        ? 'Se renderizó el contenido Markdown detectado dentro de la respuesta.'
+                    chatMarkdownModalMeta.textContent = resolved.fromJson
+                        ? 'Se construyó una vista markdown a partir del JSON completo de la respuesta.'
                         : 'Vista interpretada directamente desde la respuesta original del chat.';
                     chatMarkdownModal.classList.remove('d-none');
                     chatMarkdownModal.setAttribute('aria-hidden', 'false');
@@ -1447,12 +1520,12 @@
                         const responseWrap = renderBtn.closest('.chat-turn-response');
                         const copyBtn = responseWrap?.querySelector('.chat-copy-btn');
                         const responseBody = responseWrap?.querySelector('.chat-turn-response-body');
-                        const markdownSource = (
+                        const responseSource = (
                             decodeBase64Utf8(copyBtn?.dataset.copySource) ||
                             responseBody?.innerText ||
                             ''
                         ).trim();
-                        openChatMarkdownModal(markdownSource);
+                        openChatMarkdownModal(responseSource);
                         return;
                     }
 
@@ -2370,6 +2443,11 @@
                     const copyButton = turn.actionsEl.querySelector('.chat-copy-btn');
                     if (copyButton) {
                         copyButton.dataset.copySource = encodeBase64Utf8(responseText);
+                    }
+                    const renderButton = turn.actionsEl.querySelector('.chat-render-btn');
+                    if (renderButton) {
+                        const renderSource = resolveMarkdownRenderSource(responseText);
+                        renderButton.dataset.renderSource = encodeBase64Utf8(renderSource.content || responseText);
                     }
 
                     turn.metaEl.textContent = new Date().toLocaleString('es-EC', {
@@ -3862,6 +3940,81 @@
         {
             return false;
         }
+    }
+
+    private static string ResolveRenderPreviewSource(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return string.Empty;
+
+        var raw = text.Trim();
+        var decoded = System.Net.WebUtility.HtmlDecode(raw).Trim();
+
+        foreach (var candidate in new[] { raw, decoded }.Where(value => !string.IsNullOrWhiteSpace(value)))
+        {
+            if (TryExtractEmbeddedMarkdown(candidate!, out var extracted) && !string.IsNullOrWhiteSpace(extracted))
+            {
+                return extracted;
+            }
+        }
+
+        return decoded;
+    }
+
+    private static bool TryExtractEmbeddedMarkdown(string content, out string extractedMarkdown)
+    {
+        extractedMarkdown = string.Empty;
+        var trimmed = (content ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) return false;
+        if (!(trimmed.StartsWith("{") || trimmed.StartsWith("["))) return false;
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(trimmed);
+            extractedMarkdown = FindEmbeddedMarkdown(document.RootElement) ?? string.Empty;
+            return !string.IsNullOrWhiteSpace(extractedMarkdown);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string? FindEmbeddedMarkdown(System.Text.Json.JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case System.Text.Json.JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (string.Equals(property.Name, "Markdown", StringComparison.OrdinalIgnoreCase) &&
+                        property.Value.ValueKind == System.Text.Json.JsonValueKind.String)
+                    {
+                        var value = property.Value.GetString()?.Trim();
+                        if (!string.IsNullOrWhiteSpace(value))
+                            return value;
+                    }
+                }
+
+                foreach (var property in element.EnumerateObject())
+                {
+                    var nested = FindEmbeddedMarkdown(property.Value);
+                    if (!string.IsNullOrWhiteSpace(nested))
+                        return nested;
+                }
+                break;
+
+            case System.Text.Json.JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    var nested = FindEmbeddedMarkdown(item);
+                    if (!string.IsNullOrWhiteSpace(nested))
+                        return nested;
+                }
+                break;
+        }
+
+        return null;
     }
 
     private static string EncodeCopyPayload(string? text)
