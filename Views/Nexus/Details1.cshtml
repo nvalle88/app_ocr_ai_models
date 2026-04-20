@@ -227,6 +227,13 @@
                                                             <i class="fa-regular fa-copy"></i>
                                                             <span>Copiar</span>
                                                         </button>
+                                                        <button type="button"
+                                                                class="chat-render-btn"
+                                                                title="Renderizar markdown"
+                                                                aria-label="Renderizar markdown">
+                                                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                                            <span>Renderizar</span>
+                                                        </button>
                                                     </div>
                                                     <div class="chat-turn-response-body">
                                                         @Html.Raw(responseHtml)
@@ -291,6 +298,34 @@
                                     <span class="spinner-icon visually-hidden" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>
                                 </button>
                             }
+                        </div>
+                    </div>
+
+                    <div id="chatMarkdownModal" class="chat-markdown-modal d-none" aria-hidden="true">
+                        <div class="chat-markdown-modal-backdrop"></div>
+                        <div class="chat-markdown-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="chatMarkdownModalTitle">
+                            <div class="chat-markdown-modal-card">
+                                <div class="chat-markdown-modal-head">
+                                    <div>
+                                        <span class="chat-markdown-modal-kicker">Vista interpretada</span>
+                                        <h3 id="chatMarkdownModalTitle">Markdown renderizado</h3>
+                                        <p id="chatMarkdownModalSubtitle">Vista enriquecida de la respuesta original del chat.</p>
+                                    </div>
+                                    <button id="chatMarkdownModalClose" type="button" class="chat-markdown-modal-close" aria-label="Cerrar vista renderizada">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                                <div class="chat-markdown-modal-body">
+                                    <div id="chatMarkdownModalMeta" class="chat-markdown-modal-meta"></div>
+                                    <div id="chatMarkdownModalContent" class="chat-markdown-modal-content"></div>
+                                </div>
+                                <div class="chat-markdown-modal-foot">
+                                    <button id="chatMarkdownModalDismiss" type="button" class="btn btn-outline-primary btn-sm">
+                                        <i class="fa-solid fa-check me-1"></i>
+                                        Entendido
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -805,6 +840,70 @@
                 return temp.innerHTML;
             }
 
+            function findEmbeddedMarkdownValue(node, depth = 0) {
+                if (!node || depth > 10) return '';
+
+                if (typeof node === 'string') {
+                    return '';
+                }
+
+                if (Array.isArray(node)) {
+                    for (const item of node) {
+                        const nested = findEmbeddedMarkdownValue(item, depth + 1);
+                        if (nested) return nested;
+                    }
+                    return '';
+                }
+
+                if (typeof node === 'object') {
+                    for (const [key, value] of Object.entries(node)) {
+                        if ((key || '').toLowerCase() === 'markdown' && typeof value === 'string' && value.trim()) {
+                            return value.trim();
+                        }
+                    }
+
+                    for (const value of Object.values(node)) {
+                        const nested = findEmbeddedMarkdownValue(value, depth + 1);
+                        if (nested) return nested;
+                    }
+                }
+
+                return '';
+            }
+
+            function resolveMarkdownRenderSource(source) {
+                const raw = (source ?? '').toString().trim();
+                if (!raw) {
+                    return { content: '', extracted: false };
+                }
+
+                const candidates = [raw, decodeHtmlEntities(raw)].filter(Boolean);
+                for (const candidate of candidates) {
+                    const trimmed = candidate.trim();
+                    if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) {
+                        continue;
+                    }
+
+                    try {
+                        const parsed = JSON.parse(trimmed);
+                        const embeddedMarkdown = findEmbeddedMarkdownValue(parsed);
+                        if (embeddedMarkdown) {
+                            return {
+                                content: embeddedMarkdown,
+                                extracted: true
+                            };
+                        }
+                    } catch (e) {
+                        // Si no es JSON válido, seguimos con el render normal.
+                    }
+                }
+
+                return {
+                    content: raw,
+                    extracted: false
+                };
+            }
+
             function normalizeRequestPayload(source) {
                 const raw = decodeHtmlEntities(source || '').trim();
                 if (!raw) {
@@ -1291,12 +1390,41 @@
                 const persistentUploadQueueEl = q('#persistentUploadQueue');
                 const previewEmptyState = q('#previewEmptyState');
                 const colRight = q('#colRight');
+                const chatMarkdownModal = q('#chatMarkdownModal');
+                const chatMarkdownModalContent = q('#chatMarkdownModalContent');
+                const chatMarkdownModalMeta = q('#chatMarkdownModalMeta');
+                const chatMarkdownModalClose = q('#chatMarkdownModalClose');
+                const chatMarkdownModalDismiss = q('#chatMarkdownModalDismiss');
                 let transientAttachments = [];
                 let persistentUploadDrafts = [];
                 let persistentUploadTicker = null;
 
                 qa('#chatOutput .chat-turn-request, #chatOutput .chat-turn-response-body').forEach(sanitizeRichHtml);
                 enhanceMarkdownContent(chatOutputEl);
+                
+                function openChatMarkdownModal(markdownSource) {
+                    const resolved = resolveMarkdownRenderSource(markdownSource);
+                    const markdown = (resolved.content || '').trim();
+                    if (!chatMarkdownModal || !chatMarkdownModalContent || !markdown) return;
+
+                    chatMarkdownModalContent.innerHTML = renderMarkdownHtml(markdown);
+                    chatMarkdownModalMeta.textContent = resolved.extracted
+                        ? 'Se renderizó el contenido Markdown detectado dentro de la respuesta.'
+                        : 'Vista interpretada directamente desde la respuesta original del chat.';
+                    chatMarkdownModal.classList.remove('d-none');
+                    chatMarkdownModal.setAttribute('aria-hidden', 'false');
+                    document.body.classList.add('chat-markdown-modal-open');
+                }
+
+                function closeChatMarkdownModal() {
+                    if (!chatMarkdownModal) return;
+                    chatMarkdownModal.classList.add('d-none');
+                    chatMarkdownModal.setAttribute('aria-hidden', 'true');
+                    document.body.classList.remove('chat-markdown-modal-open');
+                    if (chatMarkdownModalContent) {
+                        chatMarkdownModalContent.innerHTML = '';
+                    }
+                }
 
                 function ensureChatOutput() {
                     if (chatOutputEl) return chatOutputEl;
@@ -1310,7 +1438,24 @@
                     return chatOutputEl;
                 }
 
+                closeChatMarkdownModal();
+                window.addEventListener('pageshow', () => closeChatMarkdownModal());
+
                 document.addEventListener('click', async (event) => {
+                    const renderBtn = event.target.closest('.chat-render-btn');
+                    if (renderBtn) {
+                        const responseWrap = renderBtn.closest('.chat-turn-response');
+                        const copyBtn = responseWrap?.querySelector('.chat-copy-btn');
+                        const responseBody = responseWrap?.querySelector('.chat-turn-response-body');
+                        const markdownSource = (
+                            decodeBase64Utf8(copyBtn?.dataset.copySource) ||
+                            responseBody?.innerText ||
+                            ''
+                        ).trim();
+                        openChatMarkdownModal(markdownSource);
+                        return;
+                    }
+
                     const copyBtn = event.target.closest('.chat-copy-btn');
                     if (!copyBtn) return;
 
@@ -1323,6 +1468,18 @@
                     }
 
                     await copyTextToClipboard(copyBtn, textToCopy);
+                });
+
+                chatMarkdownModalClose?.addEventListener('click', closeChatMarkdownModal);
+                chatMarkdownModalDismiss?.addEventListener('click', closeChatMarkdownModal);
+                chatMarkdownModal?.addEventListener('click', event => {
+                    if (!event.target.classList.contains('chat-markdown-modal-backdrop')) return;
+                    closeChatMarkdownModal();
+                });
+                window.addEventListener('keydown', event => {
+                    if (event.key !== 'Escape') return;
+                    if (chatMarkdownModal?.classList.contains('d-none')) return;
+                    closeChatMarkdownModal();
                 });
 
                 function setDocumentFocus(enabled) {
@@ -1659,7 +1816,13 @@
                     const actionsEl = document.createElement('div');
                     actionsEl.className = 'chat-turn-response-actions';
                     actionsEl.hidden = true;
-                    actionsEl.innerHTML = '<button type="button" class="chat-copy-btn" title="Copiar respuesta" aria-label="Copiar respuesta"><i class="fa-regular fa-copy"></i><span>Copiar</span></button>';
+                    actionsEl.innerHTML = `
+                        <button type="button" class="chat-copy-btn" title="Copiar respuesta" aria-label="Copiar respuesta">
+                            <i class="fa-regular fa-copy"></i><span>Copiar</span>
+                        </button>
+                        <button type="button" class="chat-render-btn" title="Renderizar markdown" aria-label="Renderizar markdown">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i><span>Renderizar</span>
+                        </button>`;
 
                     const responseBodyEl = document.createElement('div');
                     responseBodyEl.className = 'chat-turn-response-body';

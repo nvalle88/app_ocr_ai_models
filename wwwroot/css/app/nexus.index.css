@@ -565,6 +565,7 @@
     inset: 0;
     background: rgba(15, 23, 42, 0.40);
     backdrop-filter: blur(10px);
+    animation: modalBackdropIn .35s ease both;
 }
 
 .creation-workflow-modal-dialog {
@@ -572,6 +573,17 @@
     z-index: 1;
     width: min(1080px, 100%);
     max-height: calc(100vh - 48px);
+    animation: modalDialogIn .4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes modalBackdropIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@keyframes modalDialogIn {
+    from { opacity: 0; transform: translateY(20px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 body.workflow-modal-open {
@@ -587,6 +599,37 @@ body.workflow-modal-open {
     font-weight: 800;
     background: rgba(219,234,254,0.92);
     color: var(--nexus-blue-700);
+    transition: background .35s ease, color .35s ease, transform .2s ease;
+}
+
+.workflow-badge.is-success,
+.workflow-badge.is-error,
+.workflow-badge.is-ai {
+    animation: badgePop .35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes badgePop {
+    0%   { transform: scale(0.85); opacity: 0.4; }
+    60%  { transform: scale(1.06); }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* Smooth text transitions for modal header title/detail */
+#creationStageTitle,
+#creationStageDetail {
+    transition: opacity .22s ease, transform .22s ease;
+}
+
+#creationStageTitle.card-text-exit,
+#creationStageDetail.card-text-exit {
+    opacity: 0;
+    transform: translateY(-4px);
+}
+
+#creationStageTitle.card-text-enter,
+#creationStageDetail.card-text-enter {
+    opacity: 0;
+    transform: translateY(4px);
 }
 
 .workflow-badge.is-success {
@@ -668,6 +711,12 @@ body.workflow-modal-open {
     border-radius: 12px;
     background: rgba(255,255,255,0.82);
     border: 1px solid rgba(148,163,184,0.14);
+    animation: logItemIn .3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes logItemIn {
+    from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .workflow-log-dot {
@@ -1101,16 +1150,48 @@ body.workflow-modal-open {
     border-radius: 18px;
     background: rgba(239,246,255,0.92);
     border: 1px solid rgba(37,99,235,0.12);
+    transition: background .35s ease, border-color .35s ease;
 }
 
 .row-processing-card strong {
     font-size: 0.9rem;
+    display: block;
+    transition: opacity .22s ease, transform .22s ease;
 }
 
 .row-processing-card span {
     color: var(--nexus-slate-600);
     font-size: 0.8rem;
     line-height: 1.45;
+    display: block;
+    transition: opacity .22s ease, transform .22s ease;
+}
+
+/* Claude-like smooth text transition classes */
+.row-processing-card strong.card-text-exit,
+.row-processing-card span.card-text-exit {
+    opacity: 0;
+    transform: translateY(-6px);
+}
+
+.row-processing-card strong.card-text-enter,
+.row-processing-card span.card-text-enter {
+    opacity: 0;
+    transform: translateY(6px);
+}
+
+/* AI panel smooth reveal */
+#aiAnalysisPanel {
+    transition: opacity .4s ease, transform .4s ease;
+}
+
+#aiAnalysisPanel:not(.d-none) {
+    animation: cardSlideIn .4s ease both;
+}
+
+@keyframes cardSlideIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 
 .row-processing-card.is-error {
@@ -1173,6 +1254,10 @@ body.workflow-modal-open {
         linear-gradient(160deg, rgba(240,253,244,0.60), rgba(255,255,255,0.30));
     border-radius: 16px;
     border: 1px solid rgba(34,197,94,0.14);
+}
+
+.creation-success-actions:not(.d-none) {
+    animation: cardSlideIn .4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .creation-success-actions .workflow-kicker {

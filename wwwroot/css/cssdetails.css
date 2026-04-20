@@ -2068,7 +2068,8 @@ aside#colRight .studio-grid {
     margin-top: 0;
 }
 
-.chat-copy-btn {
+.chat-copy-btn,
+.chat-render-btn {
     border: 1px solid rgba(37,99,235,0.14);
     background: rgba(239,246,255,0.96);
     color: #1d4ed8;
@@ -2083,7 +2084,14 @@ aside#colRight .studio-grid {
     transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
 }
 
-.chat-copy-btn:hover {
+.chat-render-btn {
+    border-color: rgba(14,165,233,0.18);
+    background: rgba(240,249,255,0.98);
+    color: #0369a1;
+}
+
+.chat-copy-btn:hover,
+.chat-render-btn:hover {
     transform: translateY(-1px);
     box-shadow: 0 10px 20px rgba(37,99,235,0.12);
 }
@@ -2092,6 +2100,151 @@ aside#colRight .studio-grid {
     background: rgba(236,253,245,0.96);
     border-color: rgba(34,197,94,0.18);
     color: #15803d;
+}
+
+.chat-turn-response-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.chat-markdown-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 4000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.chat-markdown-modal.d-none {
+    display: none !important;
+}
+
+.chat-markdown-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.52);
+    backdrop-filter: blur(10px);
+}
+
+.chat-markdown-modal-dialog {
+    position: relative;
+    z-index: 1;
+    width: min(960px, 100%);
+    max-height: calc(100vh - 48px);
+}
+
+.chat-markdown-modal-card {
+    display: flex;
+    flex-direction: column;
+    max-height: inherit;
+    border-radius: 28px;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at top right, rgba(59,130,246,0.14), transparent 34%),
+        linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.98));
+    border: 1px solid rgba(148,163,184,0.22);
+    box-shadow: 0 36px 70px rgba(15,23,42,0.26);
+}
+
+.chat-markdown-modal-head,
+.chat-markdown-modal-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 24px;
+}
+
+.chat-markdown-modal-head {
+    border-bottom: 1px solid rgba(148,163,184,0.16);
+}
+
+.chat-markdown-modal-kicker {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(219,234,254,0.92);
+    color: #1d4ed8;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.chat-markdown-modal-head h3 {
+    margin: 10px 0 6px;
+    font-size: 1.18rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.chat-markdown-modal-head p,
+.chat-markdown-modal-meta {
+    margin: 0;
+    color: #475569;
+    line-height: 1.55;
+}
+
+.chat-markdown-modal-close {
+    width: 42px;
+    height: 42px;
+    border: 1px solid rgba(148,163,184,0.22);
+    border-radius: 999px;
+    background: rgba(255,255,255,0.9);
+    color: #334155;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+}
+
+.chat-markdown-modal-close:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 24px rgba(15,23,42,0.10);
+    background: rgba(248,250,252,0.98);
+}
+
+.chat-markdown-modal-body {
+    display: grid;
+    gap: 14px;
+    padding: 0 24px 24px;
+    overflow: auto;
+}
+
+.chat-markdown-modal-meta {
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: rgba(239,246,255,0.82);
+    border: 1px solid rgba(125,211,252,0.28);
+    font-size: 0.86rem;
+}
+
+.chat-markdown-modal-content {
+    padding: 22px 24px;
+    border-radius: 22px;
+    background: rgba(255,255,255,0.98);
+    border: 1px solid rgba(148,163,184,0.14);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.98);
+    overflow: auto;
+}
+
+.chat-markdown-modal-content > *:first-child {
+    margin-top: 0;
+}
+
+.chat-markdown-modal-content > *:last-child {
+    margin-bottom: 0;
+}
+
+body.chat-markdown-modal-open {
+    overflow: hidden;
 }
 
 .chat-live-state {
@@ -2579,9 +2732,31 @@ aside#colRight .studio-grid {
         max-height: 320px;
     }
 
-    .chat-copy-btn {
+    .chat-copy-btn,
+    .chat-render-btn {
         padding: 6px 9px;
         font-size: 0.72rem;
+    }
+
+    .chat-markdown-modal {
+        padding: 14px;
+    }
+
+    .chat-markdown-modal-dialog {
+        max-height: calc(100vh - 28px);
+    }
+
+    .chat-markdown-modal-head,
+    .chat-markdown-modal-foot {
+        padding: 16px 18px;
+    }
+
+    .chat-markdown-modal-body {
+        padding: 0 18px 18px;
+    }
+
+    .chat-markdown-modal-content {
+        padding: 18px;
     }
 
     .chat-input-inner {

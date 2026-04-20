@@ -362,6 +362,23 @@
             { title: 'Consolidando resultado', detail: 'Publicando categoria y estado final.' }
         ];
 
+        /* ── Claude-like smooth text transition helper ── */
+        function animateCardText(el, newText) {
+            if (!el || el.textContent === newText) return Promise.resolve();
+            return new Promise(resolve => {
+                el.classList.add('card-text-exit');
+                setTimeout(() => {
+                    el.textContent = newText;
+                    el.classList.remove('card-text-exit');
+                    el.classList.add('card-text-enter');
+                    // Force reflow so the enter class applies before we remove it
+                    void el.offsetWidth;
+                    el.classList.remove('card-text-enter');
+                    resolve();
+                }, 180);
+            });
+        }
+
         function getSelectedFiles() {
             return state.selectedFiles.slice();
         }
@@ -899,8 +916,8 @@
 
         function paintCreationPhase(index, mode = 'progress') {
             const currentPhase = creationPhases[index] || creationPhases[0];
-            workflowTitle.textContent = currentPhase.title;
-            workflowDetail.textContent = currentPhase.detail;
+            animateCardText(workflowTitle, currentPhase.title);
+            animateCardText(workflowDetail, currentPhase.detail);
 
             const progress = mode === 'success'
                 ? 100
@@ -912,8 +929,8 @@
                 paintDraftRow(currentPhase.title, currentPhase.detail, progress);
             }
 
-            if (workflowCardTitle) workflowCardTitle.textContent = currentPhase.title;
-            if (workflowCardDetail) workflowCardDetail.textContent = currentPhase.detail;
+            animateCardText(workflowCardTitle, currentPhase.title);
+            animateCardText(workflowCardDetail, currentPhase.detail);
             if (workflowCardBar) workflowCardBar.style.width = progress + '%';
 
             if (workflowProgressCard) {
@@ -1334,8 +1351,8 @@
         function updateAiStep(index) {
             const phase = aiPhases[index];
             if (!phase) return;
-            if (aiCardTitle) aiCardTitle.textContent = phase.text;
-            if (aiCardDetail) aiCardDetail.textContent = phase.detail;
+            animateCardText(aiCardTitle, phase.text);
+            animateCardText(aiCardDetail, phase.detail);
             if (aiCardBar) aiCardBar.style.width = phase.progress + '%';
             if (aiProgressCard) {
                 aiProgressCard.classList.remove('is-error', 'is-success');
