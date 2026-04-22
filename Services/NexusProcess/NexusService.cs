@@ -55,6 +55,20 @@ public class NexusService : INexusService
         var dataFiles = processCase.DataFile.ToList();
         var processDefinition = processCase.DefinitionCodeNavigation; //proceso
 
+        if (!string.IsNullOrWhiteSpace(req.ProcessCode) &&
+            (processDefinition == null || !string.Equals(processDefinition.Code, req.ProcessCode, StringComparison.OrdinalIgnoreCase)))
+        {
+            var requestedProcess = await db.Process
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Code == req.ProcessCode);
+
+            if (requestedProcess != null)
+            {
+                processDefinition = requestedProcess;
+            }
+        }
+
+        if (processDefinition == null) return null!;
 
         var agenteProceso = BuscarPromptPorAgenteProceso(req, processDefinition);
         if (agenteProceso == null || agenteProceso.Agent == null) return null!;
@@ -143,6 +157,18 @@ public class NexusService : INexusService
                 requestText = string.IsNullOrWhiteSpace(requestText)
                     ? $"Adjuntos temporales: {attachmentText}"
                     : $"{requestText}\nAdjuntos temporales: {attachmentText}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(req.ProcessCode) &&
+                !string.Equals(processCase.DefinitionCode, processDefinition.Code, StringComparison.OrdinalIgnoreCase))
+            {
+                var processLabel = !string.IsNullOrWhiteSpace(processDefinition.Name)
+                    ? processDefinition.Name
+                    : processDefinition.Code;
+
+                requestText = string.IsNullOrWhiteSpace(requestText)
+                    ? $"Procesar con {processLabel}"
+                    : $"Procesar con {processLabel}\n\n{requestText}";
             }
 
             var final = new FinalResponseResult

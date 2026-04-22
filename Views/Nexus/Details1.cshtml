@@ -9,6 +9,8 @@
     var documentCount = Model.ProcessCase.DataFile?.Count() ?? 0;
     var lastResponseDate = orderedResults.LastOrDefault()?.CreatedDate;
     var processTitle = Model.ProcessCase.DefinitionCodeNavigation?.Name?.Trim();
+    var processAgents = Model?.AgentProccessButtons?.ToList() ?? [];
+    var hasQuickProcessAgents = (Model?.HasButton ?? false) && processAgents.Any();
 }
 
 
@@ -183,9 +185,16 @@
 
                             <button id="btnExportPdf" type="button"
                                     class="btn btn-primary btn-lg d-flex align-items-center gap-2"
-                                    title="Exportar resultados a PDF">
+                                    title="Descargar el historial completo en PDF renderizado">
                                 <i class="fa fa-file-pdf me-1" aria-hidden="true"></i>
-                                <span>Exportar PDF</span>
+                                <span>PDF renderizado</span>
+                            </button>
+
+                            <button id="btnExportConversationMd" type="button"
+                                    class="btn btn-light btn-lg d-flex align-items-center gap-2"
+                                    title="Descargar la conversación completa en Markdown">
+                                <i class="fa-solid fa-file-lines" aria-hidden="true"></i>
+                                <span>Conversación .md</span>
                             </button>
                         </div>
                     </div>
@@ -208,7 +217,7 @@
                                         var requestHtml = RenderRequestBubble(entry.RequestText);
                                         var responseHtml = string.IsNullOrWhiteSpace(entry.ResponseText) ? string.Empty : RenderMarkdown(entry.ResponseText.Trim());
                                         var copyPayload = EncodeCopyPayload(entry.ResponseText);
-                                        var renderPayload = EncodeCopyPayload(ResolveRenderPreviewSource(entry.ResponseText));
+                                        var renderPayload = copyPayload;
                                         <article class="chat-turn">
                                             @if (!string.IsNullOrWhiteSpace(requestHtml))
                                             {
@@ -269,10 +278,44 @@
                                 <button id="btnAttachTransient"
                                         type="button"
                                         class="chat-plus-btn"
-                                        title="Adjuntar solo a este mensaje"
-                                        aria-label="Adjuntar solo a este mensaje">
+                                        title="Abrir herramientas del chat"
+                                        aria-label="Abrir herramientas del chat"
+                                        aria-haspopup="true"
+                                        aria-expanded="false"
+                                        aria-controls="chatComposerMenu">
                                     <span aria-hidden="true">+</span>
                                 </button>
+                                <div id="chatComposerMenu" class="chat-composer-menu" hidden>
+                                    <div class="chat-composer-menu-head">
+                                        <span class="chat-composer-menu-kicker">Herramientas</span>
+                                        <strong>Adjuntar o elegir proceso</strong>
+                                        <span>Selecciona archivos temporales o cambia el proceso solo para la siguiente respuesta, sin salir del detalle.</span>
+                                    </div>
+                                    <div class="chat-composer-menu-list">
+                                        <button id="chatComposerAttachOption"
+                                                type="button"
+                                                class="chat-composer-option"
+                                                data-composer-action="files">
+                                            <span class="chat-composer-option-icon" aria-hidden="true">
+                                                <i class="fa-solid fa-image"></i>
+                                            </span>
+                                            <span class="chat-composer-option-copy">
+                                                <strong>Imagen o documento</strong>
+                                                <small>Adjunta archivos temporales a este mensaje desde aquí.</small>
+                                            </span>
+                                            <span class="chat-composer-option-cta">Adjuntar</span>
+                                        </button>
+                                        <div class="chat-composer-menu-divider"></div>
+                                        <div class="chat-composer-menu-section">
+                                            <div class="chat-composer-menu-section-head">
+                                                <div class="chat-composer-menu-section-label">Procesar con</div>
+                                                <small id="chatComposerProcessHint">Cargando procesos autorizados...</small>
+                                            </div>
+                                            <div id="chatComposerProcessList" class="chat-composer-process-grid" aria-live="polite"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="chatProcessSelection" class="chat-process-selection d-none" aria-live="polite"></div>
                                 <div id="chatAttachments" class="chat-attachments d-none"></div>
                                 <textarea id="chatInput" class="chat-input form-control" rows="2"
                                       placeholder="Pregunta, comenta o adjunta archivos temporales..."></textarea>
@@ -322,10 +365,20 @@
                                     <div id="chatMarkdownModalContent" class="chat-markdown-modal-content"></div>
                                 </div>
                                 <div class="chat-markdown-modal-foot">
-                                    <button id="chatMarkdownModalDismiss" type="button" class="btn btn-outline-primary btn-sm">
-                                        <i class="fa-solid fa-check me-1"></i>
-                                        Entendido
-                                    </button>
+                                    <div class="chat-markdown-modal-foot-actions">
+                                        <button id="chatMarkdownModalDownloadPdf" type="button" class="btn btn-light btn-sm" disabled aria-disabled="true">
+                                            <i class="fa-solid fa-file-pdf me-1"></i>
+                                            Descargar PDF
+                                        </button>
+                                        <button id="chatMarkdownModalDownload" type="button" class="btn btn-primary btn-sm" disabled aria-disabled="true">
+                                            <i class="fa-solid fa-download me-1"></i>
+                                            Descargar .md
+                                        </button>
+                                        <button id="chatMarkdownModalDismiss" type="button" class="btn btn-outline-primary btn-sm">
+                                            <i class="fa-solid fa-check me-1"></i>
+                                            Entendido
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -343,7 +396,7 @@
                 </div>
                 <div class="card-body d-flex flex-column panel-body panel-height studio-panel-body">
                     @{
-                        var showStudioTiles = (Model?.HasButton ?? false);
+                        var showStudioTiles = hasQuickProcessAgents;
                     }
                     <!-- START: Studio tiles Botones dibujar y ocultar-->
                     @* <div class="studio-grid" aria-hidden="@(showStudioTiles ? "false" : "true")" data-studio-visible="@showStudioTiles.ToString().ToLower()" style="@(showStudioTiles ? "" : "display:none;")">
@@ -380,14 +433,15 @@
                         </div>*@
                     <!-- START: Studio tiles Botones dibujar y ocultar-->
                     @* Si showStudioTiles == false NO se genera ni HTML ni script *@
-                    @if (showStudioTiles && Model?.AgentProccessButtons != null && Model.AgentProccessButtons.Any())
+                    @if (showStudioTiles && processAgents.Any())
                     {
                         <div class="studio-grid" aria-hidden="false" data-studio-visible="true">
-                            @foreach (var b in Model.AgentProccessButtons)
+                            @foreach (var b in processAgents)
                             {
                                 var btnId = !string.IsNullOrWhiteSpace(b.ButtonId) ? b.ButtonId : ("studioBtn_" + (b.AgentProcessId?.ToString() ?? Guid.NewGuid().ToString()));
                                 var cssClass = !string.IsNullOrWhiteSpace(b.ClassName) ? b.ClassName : "studio-tile";
-                                <button id="@btnId" class="@cssClass" title="@(b.Tittle ?? "")" type="button" aria-label="@(b.AriaLabel ?? b.Name ?? "")" data-agentprocessid="@(b.AgentProcessId)">
+                                var agentDisplayName = !string.IsNullOrWhiteSpace(b.Name) ? b.Name : (b.AriaLabel ?? "Agente");
+                                <button id="@btnId" class="@cssClass" title="@(b.Tittle ?? "")" type="button" aria-label="@(b.AriaLabel ?? b.Name ?? "")" data-agentprocessid="@(b.AgentProcessId)" data-agent-name="@agentDisplayName">
                                     <div class="tile-top">
                                         <div class="tile-icon"><i class="@(b.Icon ?? "")"></i></div>
                                         <div class="tile-menu"><i class="@(b.IconMenu ?? "fa fa-ellipsis-vertical")"></i></div>
@@ -504,146 +558,37 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
     <script>
-        // Reemplaza sólo el listener / lógica de export por este bloque
         document.addEventListener('DOMContentLoaded', () => {
-          const exportBtn = document.getElementById('btnExportPdf');
-          if (!exportBtn) return;
+            const exportPdfBtn = document.getElementById('btnExportPdf');
+            const exportMdBtn = document.getElementById('btnExportConversationMd');
 
-          const caseCode = '@Model.ProcessCase.CaseCode';
-          const caseDateStr = '@((Model.ProcessCase.FinalResponseResults != null && Model.ProcessCase.FinalResponseResults.Any()) ? Model.ProcessCase.FinalResponseResults.OrderByDescending(r => r.CreatedDate).FirstOrDefault()?.CreatedDate.ToLocalTime().ToString("dd/MM/yyyy, HH:mm") : "")';
-          const filesCount = @(Model.ProcessCase.DataFile?.Count() ?? 0);
-
-          function pad(n){ return String(n).padStart(2,'0'); }
-          function formatDate(d){ try { return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; } catch(e){ return d.toString(); } }
-          function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }
-
-          exportBtn.addEventListener('click', async (ev) => {
-            ev.preventDefault();
-            exportBtn.disabled = true;
-            const orig = exportBtn.innerHTML;
-            exportBtn.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> Generando...';
-
-            try {
-              // esperar fuentes para que iconos se rendericen
-              if (document.fonts && document.fonts.ready) {
-                try { await document.fonts.ready; } catch(_) {}
-              }
-
-              const chatOut = document.getElementById('chatOutput');
-              if (!chatOut) throw new Error('No se encontró #chatOutput');
-
-              // Contenedor a rasterizar: NO incluimos cabecera ni "Resumen"
-              const docWrap = document.createElement('div');
-              docWrap.style.boxSizing = 'border-box';
-              docWrap.style.padding = '8px 12px';
-              docWrap.style.fontFamily = getComputedStyle(document.body).fontFamily || 'Arial, sans-serif';
-              docWrap.style.color = getComputedStyle(document.body).color || '#222';
-              docWrap.style.background = '#fff';
-              docWrap.style.width = '100%';
-
-              // CSS para evitar cortes internos
-              const avoidBreakCss = `
-                .chat-turn, .chat-turn-request, .chat-turn-response, .chat-response, .chat-response-final, .chat-divider, .note-detail, .pdf-page-box {
-                  page-break-inside: avoid;
-                  break-inside: avoid;
-                  -webkit-column-break-inside: avoid;
-                  -ms-break-inside: avoid;
-                }
-                img { page-break-inside: avoid; break-inside: avoid; max-width:100%; }
-                p, div, li, pre { widows: 3; orphans: 3; }
-                * { -webkit-hyphens: none; -ms-hyphens: none; hyphens: none; }
-              `;
-              const styleEl = document.createElement('style');
-              styleEl.innerHTML = avoidBreakCss;
-              docWrap.appendChild(styleEl);
-
-              // Clonar sólo el contenido del chat (sin encabezado ni resumen)
-              const contentClone = chatOut.cloneNode(true);
-              contentClone.querySelectorAll('textarea, input, button, .chat-input, .chat-send-btn').forEach(n => n.remove());
-              contentClone.style.marginTop = '0';
-              contentClone.style.width = '100%';
-              docWrap.appendChild(contentClone);
-
-              // Opciones: reservamos espacio superior (margin top) para la cabecera
-              // Ajusta top (en mm) según el tamaño de la cabecera. Aquí uso 26 mm.
-              const now = new Date();
-              const filename = `NE-${caseCode || 'case'}_report_${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}.pdf`;
-              const opt = {
-                margin: [26, 10, 14, 10], // top, left, bottom, right (mm) -> top aumentado para espacio cabecera
-                filename: filename,
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: {
-                  scale: 2,
-                  useCORS: true,
-                  allowTaint: false,
-                  logging: false,
-                  windowWidth: docWrap.scrollWidth || document.documentElement.clientWidth
-                },
-                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-                pagebreak: { mode: ['css', 'legacy'] }
-              };
-
-              // Generar PDF y luego dibujar la cabecera en cada página
-              const worker = html2pdf().set(opt).from(docWrap).toPdf();
-              worker.get('pdf').then(function(pdf) {
+            exportPdfBtn?.addEventListener('click', async (ev) => {
+                ev.preventDefault();
                 try {
-                  const total = pdf.internal.getNumberOfPages();
-                  const pageW = pdf.internal.pageSize.getWidth();
-                  const marginLeft = 10;
-                  const marginRight = 10;
-                  const genDateStr = formatDate(now);
-
-                  for (let i = 1; i <= total; i++) {
-                    pdf.setPage(i);
-
-                    // Dibujar cabecera (texto a ~12-16 mm desde el borde superior)
-                    pdf.setFontSize(10);
-                    pdf.setTextColor(34,34,34);
-                    pdf.text(`Caso: ${String(caseCode)}`, marginLeft, 12);
-
-                    pdf.setFontSize(8);
-                    pdf.setTextColor(100,100,100);
-                    pdf.text(`Fecha del caso: ${String(caseDateStr)}`, marginLeft, 16);
-
-                    // Derechos (alineado a la derecha)
-                    pdf.setFontSize(8);
-                    pdf.text(`Generado: ${genDateStr}`, pageW - marginRight, 12, { align: 'right' });
-                    pdf.text(`Ficheros: ${filesCount}`, pageW - marginRight, 16, { align: 'right' });
-
-                    // Línea separadora bajo cabecera
-                    pdf.setDrawColor(220);
-                    pdf.setLineWidth(0.4);
-                    pdf.line(marginLeft, 19, pageW - marginRight, 19);
-                  }
-                } catch (errHead) {
-                  console.warn('No se pudo añadir cabecera por página:', errHead);
+                    await window.NexusDetails1Exports?.downloadConversationPdf?.(exportPdfBtn);
+                } catch (err) {
+                    console.error('conversation pdf export error', err);
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Advertencia',
+                        text: 'No se pudo generar el PDF renderizado: ' + (err && err.message ? err.message : err),
+                    });
                 }
-                pdf.save(filename);
-              }).catch(err => {
-                console.error('html2pdf get(pdf) error:', err);
-                // fallback sin await
-                html2pdf().set(opt).from(docWrap).save().catch(e => {
-                  console.error('Fallback html2pdf.save error:', e);
-                  Swal.fire({
-                        icon: 'warning',
-                        title: 'Advertencia',
-                        text: 'No se pudo generar el PDF automáticamente. Revisa la consola. ',
-                    });
-                });
-              });
+            });
 
-            } catch (err) {
-              console.error('Export error:', err);
-              Swal.fire({
+            exportMdBtn?.addEventListener('click', async (ev) => {
+                ev.preventDefault();
+                try {
+                    await window.NexusDetails1Exports?.downloadConversationMarkdown?.(exportMdBtn);
+                } catch (err) {
+                    console.error('conversation markdown export error', err);
+                    Swal.fire({
                         icon: 'warning',
                         title: 'Advertencia',
-                        text: 'No se pudo generar el PDF: ' + (err && err.message ? err.message : err),
+                        text: 'No se pudo descargar la conversación en Markdown: ' + (err && err.message ? err.message : err),
                     });
-            } finally {
-              exportBtn.disabled = false;
-              exportBtn.innerHTML = orig;
-            }
-          });
+                }
+            });
         });
     </script>
 
@@ -1453,10 +1398,22 @@
                 const sendBtn = q('#sendChat');
                 let chatOutputEl = q('#chatOutput');
                 const caseCode = '@Model.ProcessCase.CaseCode';
+                const caseDisplayCode = 'NE-@caseShortCode';
+                const caseDateStr = '@((Model.ProcessCase.FinalResponseResults != null && Model.ProcessCase.FinalResponseResults.Any()) ? Model.ProcessCase.FinalResponseResults.OrderByDescending(r => r.CreatedDate).FirstOrDefault()?.CreatedDate.ToLocalTime().ToString("dd/MM/yyyy, HH:mm") : "")';
+                const filesCount = @(Model.ProcessCase.DataFile?.Count() ?? 0);
+                const getProcessesUrl = '@Url.Action("GetProcessesByUser", "Nexus")';
+                const baseProcessCode = '@Html.Raw(System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(Model.ProcessCase.DefinitionCode ?? string.Empty))';
+                const processTitleText = '@Html.Raw(System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(processTitle ?? string.Empty))';
+                const baseProcessName = processTitleText || 'Flujo base del caso';
                 const chatFilesInput = q('#chatFilesInput');
                 const caseFilesInput = q('#caseFilesInput');
                 const attachTransientBtn = q('#btnAttachTransient');
                 const attachPermanentBtn = q('#btnAttachPermanent');
+                const chatComposerMenu = q('#chatComposerMenu');
+                const chatComposerAttachOption = q('#chatComposerAttachOption');
+                const chatComposerProcessHint = q('#chatComposerProcessHint');
+                const chatComposerProcessList = q('#chatComposerProcessList');
+                const chatProcessSelection = q('#chatProcessSelection');
                 const chatAttachmentsEl = q('#chatAttachments');
                 const sourcesStatusEl = q('#sourcesStatus');
                 const persistentUploadQueueEl = q('#persistentUploadQueue');
@@ -1466,20 +1423,844 @@
                 const chatMarkdownModalContent = q('#chatMarkdownModalContent');
                 const chatMarkdownModalMeta = q('#chatMarkdownModalMeta');
                 const chatMarkdownModalClose = q('#chatMarkdownModalClose');
+                const chatMarkdownModalDownloadPdf = q('#chatMarkdownModalDownloadPdf');
+                const chatMarkdownModalDownload = q('#chatMarkdownModalDownload');
                 const chatMarkdownModalDismiss = q('#chatMarkdownModalDismiss');
                 let transientAttachments = [];
                 let persistentUploadDrafts = [];
                 let persistentUploadTicker = null;
+                let currentMarkdownDownload = { content: '', filename: '' };
+                let selectedComposerProcess = null;
+                let composerProcesses = [];
+                let composerProcessLoadPromise = null;
+                let composerProcessesLoaded = false;
+                let composerProcessLoadError = '';
 
                 qa('#chatOutput .chat-turn-request, #chatOutput .chat-turn-response-body').forEach(sanitizeRichHtml);
                 enhanceMarkdownContent(chatOutputEl);
                 
+                function sanitizeFileNameSegment(value) {
+                    return (value || '')
+                        .toString()
+                        .trim()
+                        .replace(/[^a-z0-9]+/gi, '-')
+                        .replace(/-+/g, '-')
+                        .replace(/^-|-$/g, '')
+                        .toLowerCase() || 'caso';
+                }
+
+                function buildRenderDownloadFileName() {
+                    const now = new Date();
+                    const pad = num => String(num).padStart(2, '0');
+                    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+                    return `nexus-${sanitizeFileNameSegment(caseCode)}-render-${stamp}.md`;
+                }
+
+                function setMarkdownDownloadState(content = '') {
+                    const markdown = (content || '').toString();
+                    currentMarkdownDownload = {
+                        content: markdown,
+                        filename: markdown ? buildRenderDownloadFileName() : ''
+                    };
+
+                    if (chatMarkdownModalDownload) {
+                        chatMarkdownModalDownload.disabled = !markdown;
+                        chatMarkdownModalDownload.setAttribute('aria-disabled', markdown ? 'false' : 'true');
+                    }
+                    if (chatMarkdownModalDownloadPdf) {
+                        chatMarkdownModalDownloadPdf.disabled = !markdown;
+                        chatMarkdownModalDownloadPdf.setAttribute('aria-disabled', markdown ? 'false' : 'true');
+                    }
+                }
+
+                function downloadTextFile(filename, content, mimeType = 'text/markdown;charset=utf-8') {
+                    if (!content) return;
+
+                    const blob = new Blob([content], { type: mimeType });
+                    const downloadUrl = URL.createObjectURL(blob);
+                    const anchor = document.createElement('a');
+                    anchor.href = downloadUrl;
+                    anchor.download = filename || buildRenderDownloadFileName();
+                    anchor.style.display = 'none';
+                    document.body.appendChild(anchor);
+                    anchor.click();
+                    anchor.remove();
+
+                    window.setTimeout(() => {
+                        try { URL.revokeObjectURL(downloadUrl); } catch (e) { /* ignore */ }
+                    }, 1500);
+                }
+
+                function formatExportDate(date = new Date()) {
+                    try {
+                        return date.toLocaleString('es-EC', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                    } catch (e) {
+                        return date.toString();
+                    }
+                }
+
+                function buildConversationFileBaseName() {
+                    return `nexus-${sanitizeFileNameSegment(caseCode)}-conversacion`;
+                }
+
+                async function runButtonAction(button, busyHtml, action) {
+                    if (!button) {
+                        return action();
+                    }
+
+                    const original = button.innerHTML;
+                    button.disabled = true;
+                    button.setAttribute('aria-busy', 'true');
+                    if (busyHtml) {
+                        button.innerHTML = busyHtml;
+                    }
+
+                    try {
+                        return await action();
+                    } finally {
+                        button.disabled = false;
+                        button.setAttribute('aria-busy', 'false');
+                        button.innerHTML = original;
+                    }
+                }
+
+                function getConversationTurns() {
+                    const thread = ensureChatOutput();
+                    if (!thread) return [];
+
+                    return Array.from(thread.querySelectorAll('.chat-turn'))
+                        .map((turn, index) => {
+                            const requestNode = turn.querySelector('.chat-turn-request');
+                            const requestPayload = normalizeRequestPayload(requestNode?.innerHTML || '');
+                            const responseWrap = turn.querySelector('.chat-turn-response');
+                            const renderBtn = responseWrap?.querySelector('.chat-render-btn');
+                            const copyBtn = responseWrap?.querySelector('.chat-copy-btn');
+                            const responseBody = responseWrap?.querySelector('.chat-turn-response-body');
+                            const responseSource = (
+                                decodeBase64Utf8(renderBtn?.dataset.renderSource) ||
+                                decodeBase64Utf8(copyBtn?.dataset.copySource) ||
+                                responseBody?.innerText ||
+                                ''
+                            ).trim();
+                            const resolvedResponse = resolveMarkdownRenderSource(responseSource);
+                            const requestMarkdown = [requestPayload.message, requestPayload.attachments]
+                                .filter(Boolean)
+                                .join('\n\n')
+                                .trim();
+
+                            return {
+                                index: index + 1,
+                                meta: (turn.querySelector('.chat-turn-meta')?.innerText || '').trim(),
+                                requestMarkdown,
+                                responseMarkdown: (resolvedResponse.content || '').trim()
+                            };
+                        })
+                        .filter(turn => turn.requestMarkdown || turn.responseMarkdown);
+                }
+
+                function buildConversationMarkdownDocument() {
+                    const turns = getConversationTurns();
+                    const lines = [
+                        `# Conversación completa del caso ${caseDisplayCode || caseCode}`,
+                        '',
+                        `- **Caso:** ${caseCode}`,
+                        processTitleText ? `- **Flujo base:** ${processTitleText}` : '',
+                        caseDateStr ? `- **Última respuesta registrada:** ${caseDateStr}` : '',
+                        `- **Documentos del caso:** ${filesCount}`,
+                        `- **Interacciones exportadas:** ${turns.length}`,
+                        `- **Generado:** ${formatExportDate(new Date())}`,
+                        ''
+                    ].filter(Boolean);
+
+                    turns.forEach(turn => {
+                        lines.push('---', '', `## Interacción ${turn.index}`, '');
+                        if (turn.meta) {
+                            lines.push(`- **Fecha:** ${turn.meta}`, '');
+                        }
+
+                        if (turn.requestMarkdown) {
+                            lines.push('### Solicitud', '', turn.requestMarkdown, '');
+                        }
+
+                        if (turn.responseMarkdown) {
+                            lines.push('### Respuesta renderizada', '', turn.responseMarkdown, '');
+                        }
+                    });
+
+                    return lines.join('\n').trim();
+                }
+
+                function buildExportMetaItems(extraItems = []) {
+                    return [
+                        { label: 'Caso', value: caseDisplayCode || caseCode },
+                        processTitleText ? { label: 'Flujo base', value: processTitleText } : null,
+                        { label: 'Documentos', value: String(filesCount) },
+                        caseDateStr ? { label: 'Última respuesta', value: caseDateStr } : null,
+                        { label: 'Generado', value: formatExportDate(new Date()) },
+                        ...extraItems.filter(Boolean)
+                    ].filter(Boolean);
+                }
+
+                function createMarkdownExportNode({ title, subtitle = '', markdown, metaItems = [] }) {
+                    const renderedHtml = renderMarkdownHtml(markdown || '');
+                    const metaHtml = metaItems.length
+                        ? `<div class="export-pdf-meta">${metaItems.map(item => `
+                                <div class="export-pdf-meta-item">
+                                    <span>${escapeHtml(item.label)}</span>
+                                    <strong>${escapeHtml(item.value)}</strong>
+                                </div>`).join('')}
+                           </div>`
+                        : '';
+
+                    const wrapper = document.createElement('div');
+                    wrapper.style.background = '#ffffff';
+                    wrapper.style.width = '100%';
+                    wrapper.style.boxSizing = 'border-box';
+                    wrapper.innerHTML = `
+                        <style>
+                            .export-pdf-root, .export-pdf-root * { box-sizing: border-box; }
+                            .export-pdf-root {
+                                font-family: "Segoe UI", Arial, sans-serif;
+                                color: #0f172a;
+                                background: #ffffff;
+                                padding: 12px;
+                            }
+                            .export-pdf-shell {
+                                display: grid;
+                                gap: 22px;
+                            }
+                            .export-pdf-hero {
+                                padding: 24px 26px;
+                                border-radius: 28px;
+                                background:
+                                    radial-gradient(circle at top right, rgba(59,130,246,0.15), transparent 36%),
+                                    linear-gradient(180deg, #f8fbff, #eef6ff);
+                                border: 1px solid rgba(96,165,250,0.20);
+                            }
+                            .export-pdf-kicker {
+                                display: inline-flex;
+                                align-items: center;
+                                padding: 6px 10px;
+                                border-radius: 999px;
+                                background: rgba(219,234,254,0.96);
+                                color: #1d4ed8;
+                                font-size: 11px;
+                                font-weight: 800;
+                                letter-spacing: 0.05em;
+                                text-transform: uppercase;
+                            }
+                            .export-pdf-hero h1 {
+                                margin: 14px 0 6px;
+                                font-size: 26px;
+                                line-height: 1.18;
+                                color: #0f172a;
+                            }
+                            .export-pdf-hero p {
+                                margin: 0;
+                                color: #475569;
+                                font-size: 13px;
+                                line-height: 1.6;
+                            }
+                            .export-pdf-meta {
+                                display: grid;
+                                grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+                                gap: 12px;
+                                margin-top: 18px;
+                            }
+                            .export-pdf-meta-item {
+                                display: grid;
+                                gap: 4px;
+                                padding: 12px 14px;
+                                border-radius: 18px;
+                                background: rgba(255,255,255,0.96);
+                                border: 1px solid rgba(148,163,184,0.18);
+                                page-break-inside: avoid;
+                                break-inside: avoid;
+                            }
+                            .export-pdf-meta-item span {
+                                color: #64748b;
+                                font-size: 10px;
+                                font-weight: 800;
+                                letter-spacing: 0.04em;
+                                text-transform: uppercase;
+                            }
+                            .export-pdf-meta-item strong {
+                                color: #0f172a;
+                                font-size: 13px;
+                                line-height: 1.45;
+                            }
+                            .export-pdf-body {
+                                padding: 26px 28px 30px;
+                                border-radius: 28px;
+                                background: #ffffff;
+                                border: 1px solid #dbe5f1;
+                                overflow: visible;
+                                overflow-wrap: anywhere;
+                            }
+                            .export-pdf-body h1,
+                            .export-pdf-body h2,
+                            .export-pdf-body h3,
+                            .export-pdf-body h4,
+                            .export-pdf-body h5,
+                            .export-pdf-body h6 {
+                                color: #0f172a;
+                                page-break-after: avoid;
+                            }
+                            .export-pdf-body p,
+                            .export-pdf-body li,
+                            .export-pdf-body blockquote,
+                            .export-pdf-body pre {
+                                page-break-inside: avoid;
+                                break-inside: avoid;
+                            }
+                            .export-pdf-body table,
+                            .export-pdf-body div,
+                            .export-pdf-body section,
+                            .export-pdf-body article,
+                            .export-pdf-body aside {
+                                max-width: 100%;
+                            }
+                            .export-pdf-body table {
+                                width: 100%;
+                                border-collapse: collapse;
+                                margin: 16px 0;
+                                font-size: 11px;
+                                table-layout: fixed;
+                                page-break-inside: auto;
+                                break-inside: auto;
+                            }
+                            .export-pdf-body thead {
+                                display: table-header-group;
+                            }
+                            .export-pdf-body tfoot {
+                                display: table-row-group;
+                            }
+                            .export-pdf-body tr {
+                                page-break-inside: avoid;
+                                break-inside: avoid;
+                            }
+                            .export-pdf-body th,
+                            .export-pdf-body td {
+                                border: 1px solid #dbe5f1;
+                                padding: 7px 8px;
+                                vertical-align: top;
+                                white-space: normal;
+                                overflow-wrap: anywhere;
+                                word-break: break-word;
+                                hyphens: auto;
+                            }
+                            .export-pdf-body th {
+                                background: #eff6ff;
+                                color: #1e3a8a;
+                            }
+                            .export-pdf-body pre {
+                                margin: 16px 0;
+                                padding: 16px;
+                                border-radius: 18px;
+                                background: #0f172a;
+                                color: #e2e8f0;
+                                overflow: auto;
+                            }
+                            .export-pdf-body code {
+                                font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+                            }
+                            .export-pdf-body :not(pre) > code {
+                                display: inline-block;
+                                padding: 2px 6px;
+                                border-radius: 8px;
+                                background: rgba(15, 23, 42, 0.06);
+                                color: #be123c;
+                            }
+                            .export-pdf-body blockquote {
+                                margin: 14px 0;
+                                padding: 10px 14px;
+                                border-left: 4px solid rgba(37,99,235,0.30);
+                                background: rgba(239,246,255,0.64);
+                                border-radius: 0 14px 14px 0;
+                            }
+                            .export-pdf-body hr {
+                                border: 0;
+                                border-top: 1px solid #dbe5f1;
+                                margin: 22px 0;
+                            }
+                            .export-pdf-body ul,
+                            .export-pdf-body ol {
+                                padding-left: 1.3rem;
+                            }
+                            .export-pdf-body img {
+                                max-width: 100%;
+                                height: auto;
+                                page-break-inside: avoid;
+                                break-inside: avoid;
+                            }
+                        </style>
+                        <div class="export-pdf-root">
+                            <div class="export-pdf-shell">
+                                <div class="export-pdf-hero">
+                                    <span class="export-pdf-kicker">Nexus export</span>
+                                    <h1>${escapeHtml(title || 'Documento renderizado')}</h1>
+                                    ${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ''}
+                                    ${metaHtml}
+                                </div>
+                                <div class="export-pdf-body">${renderedHtml}</div>
+                            </div>
+                        </div>`;
+
+                    return wrapper;
+                }
+
+                async function exportMarkdownPdfDocument({ button = null, busyHtml = '', filename, title, subtitle = '', markdown, metaItems = [] }) {
+                    return runButtonAction(button, busyHtml, async () => {
+                        const content = (markdown || '').trim();
+                        if (!content) {
+                            throw new Error('No hay contenido renderizado para exportar.');
+                        }
+
+                        if (document.fonts && document.fonts.ready) {
+                            try { await document.fonts.ready; } catch (e) { /* ignore */ }
+                        }
+
+                        const docWrap = createMarkdownExportNode({
+                            title,
+                            subtitle,
+                            markdown: content,
+                            metaItems
+                        });
+                        const exportStage = document.createElement('div');
+                        exportStage.className = 'export-pdf-stage';
+                        exportStage.style.position = 'fixed';
+                        exportStage.style.top = '0';
+                        exportStage.style.left = '120vw';
+                        exportStage.style.width = '920px';
+                        exportStage.style.maxWidth = '920px';
+                        exportStage.style.height = '100vh';
+                        exportStage.style.overflow = 'auto';
+                        exportStage.style.background = '#ffffff';
+                        exportStage.style.pointerEvents = 'none';
+                        exportStage.style.zIndex = '2147483000';
+
+                        docWrap.style.position = 'relative';
+                        docWrap.style.left = '0';
+                        docWrap.style.top = '0';
+                        docWrap.style.width = '860px';
+                        docWrap.style.maxWidth = '860px';
+                        docWrap.style.margin = '0 auto';
+                        docWrap.style.opacity = '1';
+                        docWrap.style.background = '#ffffff';
+                        docWrap.style.zIndex = '1';
+                        exportStage.appendChild(docWrap);
+                        document.body.appendChild(exportStage);
+
+                        await new Promise(resolve => {
+                            window.requestAnimationFrame(() => {
+                                window.requestAnimationFrame(resolve);
+                            });
+                        });
+
+                        const opt = {
+                            margin: [10, 10, 12, 10],
+                            filename,
+                            image: { type: 'jpeg', quality: 0.98 },
+                            html2canvas: {
+                                scale: 2,
+                                useCORS: true,
+                                allowTaint: false,
+                                logging: false,
+                                backgroundColor: '#ffffff',
+                                scrollX: 0,
+                                scrollY: 0,
+                                windowWidth: Math.max(docWrap.scrollWidth || 0, 920),
+                                windowHeight: Math.max(docWrap.scrollHeight || 0, 1600)
+                            },
+                            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                            pagebreak: { mode: ['css', 'legacy'] }
+                        };
+
+                        try {
+                            await html2pdf().set(opt).from(docWrap).save();
+                        } finally {
+                            exportStage.remove();
+                        }
+                    });
+                }
+
+                async function downloadConversationPdf(button = null) {
+                    const markdown = buildConversationMarkdownDocument();
+                    return exportMarkdownPdfDocument({
+                        button,
+                        busyHtml: '<i class="fa-solid fa-spinner fa-spin me-1"></i> Generando PDF...',
+                        filename: `${buildConversationFileBaseName()}.pdf`,
+                        title: `Conversación renderizada ${caseDisplayCode || caseCode}`,
+                        subtitle: 'Documento exportado desde el detalle del caso con el contenido ya interpretado a markdown.',
+                        markdown,
+                        metaItems: buildExportMetaItems([
+                            { label: 'Interacciones', value: String(getConversationTurns().length) }
+                        ])
+                    });
+                }
+
+                async function downloadConversationMarkdown(button = null) {
+                    return runButtonAction(button, '<i class="fa-solid fa-spinner fa-spin me-1"></i> Preparando .md...', async () => {
+                        const markdown = buildConversationMarkdownDocument();
+                        if (!markdown) {
+                            throw new Error('No hay conversación para exportar.');
+                        }
+
+                        downloadTextFile(`${buildConversationFileBaseName()}.md`, markdown);
+                    });
+                }
+
+                async function downloadCurrentModalPdf(button = null) {
+                    const markdown = (currentMarkdownDownload.content || '').trim();
+                    if (!markdown) {
+                        throw new Error('No hay contenido renderizado para exportar.');
+                    }
+
+                    const pdfFilename = (currentMarkdownDownload.filename || buildRenderDownloadFileName()).replace(/\.md$/i, '.pdf');
+                    return exportMarkdownPdfDocument({
+                        button,
+                        busyHtml: '<i class="fa-solid fa-spinner fa-spin me-1"></i> Generando PDF...',
+                        filename: pdfFilename,
+                        title: 'Respuesta renderizada del chat',
+                        subtitle: 'Versión exportada del contenido interpretado desde la respuesta original.',
+                        markdown,
+                        metaItems: buildExportMetaItems()
+                    });
+                }
+
+                function areSameProcessCodes(left, right) {
+                    return (left || '').toString().trim().toLowerCase() === (right || '').toString().trim().toLowerCase();
+                }
+
+                function getBaseComposerProcess() {
+                    return {
+                        code: baseProcessCode,
+                        name: baseProcessName,
+                        description: 'Proceso configurado actualmente para este caso.',
+                        isBase: true
+                    };
+                }
+
+                function normalizeComposerProcessEntry(entry) {
+                    const code = (entry?.processId ?? entry?.ProcessId ?? '').toString().trim();
+                    if (!code) return null;
+
+                    return {
+                        code,
+                        name: (entry?.processName ?? entry?.ProcessName ?? code).toString().trim(),
+                        description: (entry?.description ?? entry?.Description ?? 'Proceso disponible para esta conversación.').toString().trim(),
+                        agentProcessId: (entry?.processAgentId ?? entry?.ProcessAgentId ?? '').toString().trim(),
+                        isBase: areSameProcessCodes(code, baseProcessCode)
+                    };
+                }
+
+                function getComposerProcessCatalog() {
+                    const baseProcess = getBaseComposerProcess();
+                    const seen = new Set();
+                    const items = [baseProcess];
+                    seen.add((baseProcess.code || '').toString().trim().toLowerCase());
+
+                    composerProcesses.forEach(process => {
+                        const normalized = normalizeComposerProcessEntry(process);
+                        if (!normalized) return;
+                        const key = normalized.code.toLowerCase();
+                        if (seen.has(key)) return;
+                        seen.add(key);
+                        items.push(normalized);
+                    });
+
+                    return items;
+                }
+
+                function renderComposerProcessOptions(state = 'ready') {
+                    if (!chatComposerProcessList) return;
+
+                    const activeProcess = getActiveComposerProcess();
+                    const isLoading = state === 'loading';
+                    const hasError = state === 'error';
+
+                    if (chatComposerProcessHint) {
+                        chatComposerProcessHint.textContent = isLoading
+                            ? 'Cargando procesos autorizados...'
+                            : hasError
+                                ? 'No se pudieron cargar los procesos. Puedes seguir con el flujo base.'
+                                : selectedComposerProcess
+                                    ? `La siguiente respuesta usará ${activeProcess.name}.`
+                                    : 'La siguiente respuesta usará el flujo base del caso.';
+                    }
+
+                    if (isLoading) {
+                        chatComposerProcessList.innerHTML = `
+                            <div class="chat-composer-process-state">
+                                <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+                                <span>Cargando procesos autorizados...</span>
+                            </div>`;
+                        return;
+                    }
+
+                    if (hasError) {
+                        chatComposerProcessList.innerHTML = `
+                            <div class="chat-composer-process-state is-error">
+                                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                                <span>${escapeHtml(composerProcessLoadError || 'No se pudieron cargar los procesos autorizados.')}</span>
+                            </div>`;
+                        return;
+                    }
+
+                    const catalog = getComposerProcessCatalog();
+                    if (!catalog.length) {
+                        chatComposerProcessList.innerHTML = `
+                            <div class="chat-composer-process-state is-empty">
+                                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                                <span>No hay procesos configurados para este usuario.</span>
+                            </div>`;
+                        return;
+                    }
+
+                    chatComposerProcessList.innerHTML = catalog.map(process => {
+                        const isActive = process.isBase
+                            ? !selectedComposerProcess
+                            : areSameProcessCodes(activeProcess.code, process.code);
+                        const badge = isActive
+                            ? (process.isBase ? 'Base' : 'Activo')
+                            : (process.isBase ? 'Caso' : 'Usar');
+                        const description = process.description || (process.isBase
+                            ? 'Proceso configurado actualmente para este caso.'
+                            : 'Proceso disponible para esta conversación.');
+
+                        return `
+                            <button type="button"
+                                    class="chat-composer-process-card${isActive ? ' is-active' : ''}${process.isBase ? ' is-base' : ''}"
+                                    data-composer-process-code="${escapeHtml(process.code)}"
+                                    data-composer-process-name="${escapeHtml(process.name)}"
+                                    data-composer-process-description="${escapeHtml(description)}"
+                                    data-composer-process-base="${process.isBase ? 'true' : 'false'}"
+                                    aria-pressed="${isActive ? 'true' : 'false'}">
+                                <span class="chat-composer-process-card-icon" aria-hidden="true">
+                                    <i class="fa-solid ${process.isBase ? 'fa-circle-check' : 'fa-layer-group'}"></i>
+                                </span>
+                                <span class="chat-composer-process-card-copy">
+                                    <strong>${escapeHtml(process.name)}</strong>
+                                    <small>${escapeHtml(description)}</small>
+                                </span>
+                                <span class="chat-composer-process-card-badge">${escapeHtml(badge)}</span>
+                            </button>`;
+                    }).join('');
+                }
+
+                function ensureComposerProcesses(force = false) {
+                    if (!chatComposerProcessList) {
+                        return Promise.resolve([]);
+                    }
+
+                    if (composerProcessesLoaded && !force) {
+                        renderComposerProcessOptions();
+                        return Promise.resolve(composerProcesses);
+                    }
+
+                    if (composerProcessLoadPromise && !force) {
+                        return composerProcessLoadPromise;
+                    }
+
+                    composerProcessLoadError = '';
+                    renderComposerProcessOptions('loading');
+
+                    composerProcessLoadPromise = fetch(getProcessesUrl, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json' }
+                    })
+                        .then(async response => {
+                            if (!response.ok) {
+                                throw new Error(response.statusText || 'No se pudieron consultar los procesos.');
+                            }
+
+                            return response.json();
+                        })
+                        .then(payload => {
+                            const rows = Array.isArray(payload)
+                                ? payload
+                                : (Array.isArray(payload?.processes) ? payload.processes : (Array.isArray(payload?.Processes) ? payload.Processes : []));
+
+                            composerProcesses = rows
+                                .map(normalizeComposerProcessEntry)
+                                .filter(Boolean)
+                                .sort((left, right) => (left?.name || '').localeCompare((right?.name || '').toString(), 'es', { sensitivity: 'base' }));
+                            composerProcessesLoaded = true;
+                            composerProcessLoadError = '';
+                            renderComposerProcessOptions();
+                            return composerProcesses;
+                        })
+                        .catch(error => {
+                            console.error('composer processes load error', error);
+                            composerProcesses = [];
+                            composerProcessesLoaded = false;
+                            composerProcessLoadError = error?.message || 'No se pudieron cargar los procesos autorizados.';
+                            renderComposerProcessOptions('error');
+                            return [];
+                        })
+                        .finally(() => {
+                            composerProcessLoadPromise = null;
+                        });
+
+                    return composerProcessLoadPromise;
+                }
+
+                function setComposerMenu(open) {
+                    if (!attachTransientBtn || !chatComposerMenu) return;
+
+                    const shouldOpen = !!open;
+                    attachTransientBtn.classList.toggle('is-open', shouldOpen);
+                    attachTransientBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+                    chatComposerMenu.hidden = !shouldOpen;
+
+                    if (shouldOpen) {
+                        renderComposerProcessOptions(composerProcessesLoaded ? 'ready' : 'loading');
+                        ensureComposerProcesses();
+                    }
+                }
+
+                function buildAgentProcessPreview(agentName, message) {
+                    const cleanAgent = (agentName || '').toString().trim();
+                    const cleanMessage = (message || '').toString().trim();
+
+                    if (cleanMessage) {
+                        return cleanAgent
+                            ? `Procesar con ${cleanAgent}\n\n${cleanMessage}`
+                            : cleanMessage;
+                    }
+
+                    return cleanAgent
+                        ? `Procesar con ${cleanAgent}`
+                        : 'Procesar con un flujo puntual';
+                }
+
+                function getActiveComposerProcess() {
+                    return selectedComposerProcess || getBaseComposerProcess();
+                }
+
+                function renderComposerProcessSelection() {
+                    if (!chatProcessSelection) return;
+
+                    const activeProcess = getActiveComposerProcess();
+                    const isOverride = !!selectedComposerProcess;
+                    const detail = activeProcess.description || (isOverride
+                        ? 'Proceso seleccionado solo para la siguiente respuesta.'
+                        : 'La conversación seguirá usando el flujo base del caso.');
+
+                    chatProcessSelection.innerHTML = `
+                        <div class="chat-process-selection-pill${isOverride ? ' is-override' : ''}" title="${escapeHtml(detail)}">
+                            <span class="chat-process-selection-badge">${isOverride ? 'Procesar con' : 'Proceso base'}</span>
+                            <span class="chat-process-selection-name">${escapeHtml(activeProcess.name || baseProcessName)}</span>
+                            <div class="chat-process-selection-actions">
+                                <button type="button" class="chat-process-selection-action" data-chat-process-action="open-menu">
+                                    <i class="fa-solid fa-repeat" aria-hidden="true"></i>
+                                    <span>Cambiar</span>
+                                </button>
+                                ${isOverride
+                                    ? `<button type="button" class="chat-process-selection-action is-subtle" data-chat-process-action="reset-process" aria-label="Volver al proceso base" title="Volver al proceso base">
+                                           <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                                       </button>`
+                                    : ''}
+                            </div>
+                        </div>`;
+
+                    chatProcessSelection.classList.remove('d-none');
+                    renderComposerProcessOptions(composerProcessLoadError ? 'error' : (composerProcessesLoaded ? 'ready' : 'loading'));
+                }
+
+                function setSelectedComposerProcess(processInfo = null) {
+                    if (processInfo?.code && !areSameProcessCodes(processInfo.code, baseProcessCode)) {
+                        selectedComposerProcess = {
+                            code: (processInfo.code || '').toString().trim(),
+                            name: (processInfo.name || processInfo.processName || 'Otro proceso').toString().trim(),
+                            description: (processInfo.description || processInfo.processDescription || 'Proceso seleccionado para esta conversación.').toString().trim()
+                        };
+                    } else {
+                        selectedComposerProcess = null;
+                    }
+
+                    renderComposerProcessSelection();
+                }
+
+                function buildChatSendPayload(message) {
+                    if (selectedComposerProcess?.code && !areSameProcessCodes(selectedComposerProcess.code, baseProcessCode)) {
+                        return buildPromptPayload('CHAT', message, { processCode: selectedComposerProcess.code });
+                    }
+
+                    return buildPromptPayload('CHAT', message);
+                }
+
+                async function runAgentProcess(trigger) {
+                    if (!trigger?.dataset?.agentprocessid) return;
+
+                    const message = textarea?.value?.trim() || '';
+                    const agentName = (
+                        trigger.dataset.agentName ||
+                        trigger.getAttribute('aria-label') ||
+                        trigger.title ||
+                        'otro agente'
+                    ).trim();
+                    const thinking = startThinking();
+                    let pendingTurn = null;
+
+                    try {
+                        setComposerMenu(false);
+                        setBtnLoading(true);
+                        trigger.disabled = true;
+                        trigger.classList.add('loading', 'is-loading');
+                        trigger.setAttribute('aria-busy', 'true');
+
+                        pendingTurn = createPendingConversationTurn(buildAgentProcessPreview(agentName, message));
+
+                        await stabilizePositionDuringTransition(900);
+                        const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(buildPromptPayload('BUTTON', message, { id: trigger.dataset.agentprocessid }))
+                        });
+
+                        if (!resp.ok) throw new Error(resp.statusText || 'Error en la petición');
+                        const data = await resp.json();
+                        await appendConversationTurn(data, 4, pendingTurn);
+
+                        const ta = q('#chatInput');
+                        if (ta) {
+                            ta.value = '';
+                            clearTransientAttachments();
+                            try { autoResize(ta); } catch (e) {}
+                            try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
+                        }
+                    } catch (err) {
+                        console.error('agent process error', err);
+                        setConversationTurnError(pendingTurn, err && err.message ? err.message : 'Error en la petición');
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Advertencia',
+                            text: 'Error al procesar el caso: ' + (err && err.message ? err.message : 'Error en la petición'),
+                        });
+                    } finally {
+                        trigger.disabled = false;
+                        trigger.classList.remove('loading', 'is-loading');
+                        trigger.setAttribute('aria-busy', 'false');
+                        setBtnLoading(false);
+                        stopThinking(thinking);
+                        positionChatInput();
+                    }
+                }
+
                 function openChatMarkdownModal(responseSource, preferredMarkdownSource = '') {
                     const resolved = resolveMarkdownRenderSource(responseSource);
                     const preferred = decodeHtmlEntities(preferredMarkdownSource || '').trim();
                     const markdown = (preferred || resolved.content || '').trim();
                     if (!chatMarkdownModal || !chatMarkdownModalContent || !markdown) return;
 
+                    setMarkdownDownloadState(markdown);
                     chatMarkdownModalContent.innerHTML = renderMarkdownHtml(markdown);
                     chatMarkdownModalMeta.textContent = resolved.fromJson
                         ? 'Se construyó una vista markdown a partir del JSON completo de la respuesta.'
@@ -1494,6 +2275,7 @@
                     chatMarkdownModal.classList.add('d-none');
                     chatMarkdownModal.setAttribute('aria-hidden', 'true');
                     document.body.classList.remove('chat-markdown-modal-open');
+                    setMarkdownDownloadState('');
                     if (chatMarkdownModalContent) {
                         chatMarkdownModalContent.innerHTML = '';
                     }
@@ -1511,6 +2293,11 @@
                     return chatOutputEl;
                 }
 
+                window.NexusDetails1Exports = {
+                    downloadConversationPdf,
+                    downloadConversationMarkdown
+                };
+
                 closeChatMarkdownModal();
                 window.addEventListener('pageshow', () => closeChatMarkdownModal());
 
@@ -1521,6 +2308,7 @@
                         const copyBtn = responseWrap?.querySelector('.chat-copy-btn');
                         const responseBody = responseWrap?.querySelector('.chat-turn-response-body');
                         const responseSource = (
+                            decodeBase64Utf8(renderBtn.dataset.renderSource) ||
                             decodeBase64Utf8(copyBtn?.dataset.copySource) ||
                             responseBody?.innerText ||
                             ''
@@ -1544,13 +2332,87 @@
                 });
 
                 chatMarkdownModalClose?.addEventListener('click', closeChatMarkdownModal);
+                chatMarkdownModalDownloadPdf?.addEventListener('click', async () => {
+                    try {
+                        await downloadCurrentModalPdf(chatMarkdownModalDownloadPdf);
+                    } catch (err) {
+                        console.error('modal pdf export error', err);
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Advertencia',
+                            text: 'No se pudo descargar el PDF renderizado: ' + (err && err.message ? err.message : err),
+                        });
+                    }
+                });
+                chatMarkdownModalDownload?.addEventListener('click', () => {
+                    if (!currentMarkdownDownload.content) return;
+                    downloadTextFile(currentMarkdownDownload.filename, currentMarkdownDownload.content);
+                });
                 chatMarkdownModalDismiss?.addEventListener('click', closeChatMarkdownModal);
                 chatMarkdownModal?.addEventListener('click', event => {
                     if (!event.target.classList.contains('chat-markdown-modal-backdrop')) return;
                     closeChatMarkdownModal();
                 });
+                attachTransientBtn?.addEventListener('click', event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setComposerMenu(chatComposerMenu?.hidden);
+                });
+
+                chatComposerAttachOption?.addEventListener('click', event => {
+                    event.preventDefault();
+                    setComposerMenu(false);
+                    chatFilesInput?.click();
+                });
+
+                chatComposerMenu?.addEventListener('click', event => {
+                    const option = event.target.closest('.chat-composer-process-card');
+                    if (!option) return;
+
+                    event.preventDefault();
+
+                    if (option.dataset.composerProcessBase === 'true' || areSameProcessCodes(option.dataset.composerProcessCode, baseProcessCode)) {
+                        setSelectedComposerProcess(null);
+                    } else {
+                        setSelectedComposerProcess({
+                            code: option.dataset.composerProcessCode,
+                            name: option.dataset.composerProcessName,
+                            description: option.dataset.composerProcessDescription
+                        });
+                    }
+
+                    setComposerMenu(false);
+                    try { textarea?.focus({ preventScroll: true }); } catch (e) { textarea?.focus(); }
+                });
+
+                chatProcessSelection?.addEventListener('click', event => {
+                    const action = event.target.closest('[data-chat-process-action]');
+                    if (!action) return;
+
+                    const actionType = action.dataset.chatProcessAction;
+                    if (actionType === 'open-menu') {
+                        event.preventDefault();
+                        setComposerMenu(true);
+                        return;
+                    }
+
+                    if (actionType === 'reset-process') {
+                        event.preventDefault();
+                        setSelectedComposerProcess(null);
+                        setComposerMenu(false);
+                    }
+                });
+
+                document.addEventListener('click', event => {
+                    if (chatComposerMenu?.hidden) return;
+                    if (chatComposerMenu.contains(event.target) || attachTransientBtn?.contains(event.target) || chatProcessSelection?.contains(event.target)) return;
+                    setComposerMenu(false);
+                });
                 window.addEventListener('keydown', event => {
                     if (event.key !== 'Escape') return;
+                    if (!chatComposerMenu?.hidden) {
+                        setComposerMenu(false);
+                    }
                     if (chatMarkdownModal?.classList.contains('d-none')) return;
                     closeChatMarkdownModal();
                 });
@@ -1687,18 +2549,48 @@
                     setTimeout(() => cleanupPersistentUploadDrafts(), success ? 1800 : 2600);
                 }
 
+                async function writeTextToClipboard(text) {
+                    if (navigator.clipboard?.writeText) {
+                        try {
+                            await navigator.clipboard.writeText(text);
+                            return true;
+                        } catch (err) {
+                            console.warn('clipboard api unavailable, trying fallback', err);
+                        }
+                    }
+
+                    const helper = document.createElement('textarea');
+                    helper.value = text;
+                    helper.setAttribute('readonly', 'readonly');
+                    helper.style.position = 'fixed';
+                    helper.style.top = '-9999px';
+                    helper.style.opacity = '0';
+                    document.body.appendChild(helper);
+                    helper.focus();
+                    helper.select();
+
+                    try {
+                        return document.execCommand('copy');
+                    } finally {
+                        helper.remove();
+                    }
+                }
+
                 async function copyTextToClipboard(button, text) {
                     if (!text) return;
 
                     const original = button.innerHTML;
                     try {
-                        await navigator.clipboard.writeText(text);
+                        const copied = await writeTextToClipboard(text);
+                        if (!copied) {
+                            throw new Error('No fue posible copiar el contenido.');
+                        }
                         button.classList.add('is-copied');
                         button.innerHTML = '<i class="fa-solid fa-check"></i><span>Copiado</span>';
                     } catch (err) {
                         console.error('copy error', err);
                         button.classList.add('is-copied');
-                        button.innerHTML = '<i class="fa-solid fa-check"></i><span>Listo</span>';
+                        button.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i><span>Error</span>';
                     } finally {
                         window.setTimeout(() => {
                             button.classList.remove('is-copied');
@@ -2069,49 +2961,9 @@
                 // Bind genérico para tiles (si existen)
                 if (studioTiles && studioTiles.length > 0) {
                     studioTiles.forEach(tile => {
-                        tile.addEventListener('click', async (ev) => {
+                        tile.addEventListener('click', (ev) => {
                             ev.preventDefault();
-                            const btn = tile;
-                            btn.disabled = true;
-                            btn.classList.add('loading');
-                            const message  = textarea?.value?.trim();
-                            const thinking = startThinking();
-                            setBtnLoading(true);
-                            try {
-                                await stabilizePositionDuringTransition(900);
-                                const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify(buildPromptPayload('BUTTON', message, { id: btn.dataset.agentprocessid }))
-                                });
-                                setBtnLoading(false);
-                                stopThinking(thinking);
-                                if (!resp.ok) throw new Error(resp.statusText || 'Error en la petición');
-                                const data = await resp.json();
-                                await appendConversationTurn(data, 4);
-
-                                const ta = q('#chatInput');
-                                if (ta) {
-                                    ta.value = '';
-                                    clearTransientAttachments();
-                                    try { autoResize(ta); } catch (e) {}
-                                    try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
-                                }
-                            } catch (err) {
-                                console.error('studio tile error', err);
-                                stopThinking();
-                                setBtnLoading(false);
-                                Swal.fire({
-                                    icon: 'warning',
-                                    title: 'Advertencia',
-                                    text: 'Error al generar la respuesta: ' + (err && err.message ? err.message : 'Error en la petición'),
-                                });
-                            } finally {
-                                btn.disabled = false;
-                                btn.classList.remove('loading');
-                                stopThinking();
-                                positionChatInput();
-                            }
+                            runAgentProcess(tile);
                         });
                     });
                 }
@@ -2321,7 +3173,6 @@
                 }
 
                 if (attachTransientBtn && chatFilesInput) {
-                    attachTransientBtn.addEventListener('click', () => chatFilesInput.click());
                     chatFilesInput.addEventListener('change', async () => {
                         try {
                             const payloads = await filesToPayload(chatFilesInput.files);
@@ -2446,8 +3297,7 @@
                     }
                     const renderButton = turn.actionsEl.querySelector('.chat-render-btn');
                     if (renderButton) {
-                        const renderSource = resolveMarkdownRenderSource(responseText);
-                        renderButton.dataset.renderSource = encodeBase64Utf8(renderSource.content || responseText);
+                        renderButton.dataset.renderSource = encodeBase64Utf8(responseText);
                     }
 
                     turn.metaEl.textContent = new Date().toLocaleString('es-EC', {
@@ -2468,7 +3318,11 @@
                     let pendingTurn = null;
                     try {
                         setBtnLoading(true);
-                        pendingTurn = createPendingConversationTurn(text || '');
+                        const activeProcess = getActiveComposerProcess();
+                        const requestPreview = selectedComposerProcess
+                            ? buildAgentProcessPreview(activeProcess.name, text || '')
+                            : (text || '');
+                        pendingTurn = createPendingConversationTurn(requestPreview);
                         const minDelay = 700, maxDelay = 1600;
                         const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
                         await sleep(randomDelay);
@@ -2477,15 +3331,24 @@
                         const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(buildPromptPayload('CHAT', text))
+                            body: JSON.stringify(buildChatSendPayload(text))
                         });
 
                         setBtnLoading(false);
 
                         if (!resp.ok) throw new Error(resp.statusText);
                         const data = await resp.json();
+                        const normalizedRequestText = ((data.request ?? data.requestText ?? data.RequestText ?? text) || '').toString();
+                        const normalizedData = selectedComposerProcess
+                            ? {
+                                ...data,
+                                request: buildAgentProcessPreview(activeProcess.name, normalizedRequestText),
+                                requestText: buildAgentProcessPreview(activeProcess.name, normalizedRequestText),
+                                RequestText: buildAgentProcessPreview(activeProcess.name, normalizedRequestText)
+                            }
+                            : data;
 
-                        await appendConversationTurn(data, 7, pendingTurn);
+                        await appendConversationTurn(normalizedData, 7, pendingTurn);
 
                         textarea.value = '';
                         clearTransientAttachments();
@@ -2894,6 +3757,8 @@
                 const btnRefresh = q('#btnRefreshSources');
                 if (btnRefresh) btnRefresh.addEventListener('click', () => loadCaseDocuments(currentPreview.id || null));
                 bindTableRows();
+                renderComposerProcessSelection();
+                ensureComposerProcesses();
                 renderTransientAttachments();
                 setDocumentFocus(false);
 
