@@ -120,6 +120,12 @@
                                     <button id="btnDownloadPreview" class="btn btn-sm btn-light" title="Descargar">
                                         <i class="fa fa-download"></i>
                                     </button>
+                                    <button id="btnRotateLeft" type="button" class="btn btn-sm btn-light" title="Girar a la izquierda">
+                                        <i class="fa-solid fa-rotate-left"></i>
+                                    </button>
+                                    <button id="btnRotateRight" type="button" class="btn btn-sm btn-light" title="Girar a la derecha">
+                                        <i class="fa-solid fa-rotate-right"></i>
+                                    </button>
                                     <span id="zoomLabel" class="zoom-status">100%</span>
                                     <span class="preview-zoom-hint">Ctrl + rueda</span>
                                     <div class="btn-group ms-2" role="group" aria-label="Zoom controls">
@@ -148,6 +154,7 @@
                 </div>
             </div>
         </aside>
+        <div class="layout-splitter splitter-left" id="splitterLeft" role="separator" tabindex="0" aria-label="Ajustar ancho entre documentos y conversación" aria-orientation="vertical"></div>
 
         <!-- CENTER: Chat / Resultados -->
         <main class="col-lg-8 center-col" id="colCenter">
@@ -275,47 +282,78 @@
                                         style="display:none !important;"
                                         multiple
                                         accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff,.xml,.html,.htm,image/*,application/pdf,text/xml,application/xml,text/html" />
-                                <button id="btnAttachTransient"
-                                        type="button"
-                                        class="chat-plus-btn"
-                                        title="Abrir herramientas del chat"
-                                        aria-label="Abrir herramientas del chat"
-                                        aria-haspopup="true"
-                                        aria-expanded="false"
-                                        aria-controls="chatComposerMenu">
-                                    <span aria-hidden="true">+</span>
-                                </button>
-                                <div id="chatComposerMenu" class="chat-composer-menu" hidden>
-                                    <div class="chat-composer-menu-head">
-                                        <span class="chat-composer-menu-kicker">Herramientas</span>
-                                        <strong>Adjuntar o elegir proceso</strong>
-                                        <span>Selecciona archivos temporales o cambia el proceso solo para la siguiente respuesta, sin salir del detalle.</span>
-                                    </div>
-                                    <div class="chat-composer-menu-list">
-                                        <button id="chatComposerAttachOption"
+                                <div class="chat-input-actions" aria-label="Herramientas del chat">
+                                    <div class="chat-action-shell">
+                                        <button id="btnAttachTransient"
                                                 type="button"
-                                                class="chat-composer-option"
-                                                data-composer-action="files">
-                                            <span class="chat-composer-option-icon" aria-hidden="true">
-                                                <i class="fa-solid fa-image"></i>
-                                            </span>
-                                            <span class="chat-composer-option-copy">
-                                                <strong>Imagen o documento</strong>
-                                                <small>Adjunta archivos temporales a este mensaje desde aquí.</small>
-                                            </span>
-                                            <span class="chat-composer-option-cta">Adjuntar</span>
+                                                class="chat-plus-btn"
+                                                title="Adjuntar"
+                                                aria-label="Adjuntar"
+                                                aria-haspopup="true"
+                                                aria-expanded="false"
+                                                aria-controls="chatAttachMenu">
+                                            <span aria-hidden="true">+</span>
                                         </button>
-                                        <div class="chat-composer-menu-divider"></div>
-                                        <div class="chat-composer-menu-section">
-                                            <div class="chat-composer-menu-section-head">
-                                                <div class="chat-composer-menu-section-label">Procesar con</div>
-                                                <small id="chatComposerProcessHint">Cargando procesos autorizados...</small>
+                                        <div id="chatAttachMenu" class="chat-compact-menu chat-attach-menu" hidden>
+                                            <div class="chat-compact-menu-head">
+                                                <span class="chat-compact-menu-kicker">Adjuntar</span>
+                                                <strong>Agregar archivos</strong>
                                             </div>
-                                            <div id="chatComposerProcessList" class="chat-composer-process-grid" aria-live="polite"></div>
+                                            <div class="chat-compact-menu-list">
+                                                <button id="chatAttachAnyOption"
+                                                        type="button"
+                                                        class="chat-compact-option"
+                                                        data-chat-file-mode="file">
+                                                    <span class="chat-compact-option-icon" aria-hidden="true">
+                                                        <i class="fa-solid fa-paperclip"></i>
+                                                    </span>
+                                                    <span class="chat-compact-option-copy">
+                                                        <strong>Imagen o fichero</strong>
+                                                        <small>Adjuntar fotos, PDF, XML, HTML y otros archivos soportados.</small>
+                                                    </span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="chat-action-shell chat-process-picker-shell">
+                                        <div class="chat-process-combo" role="group" aria-label="Proceso y ejecución">
+                                            <button id="btnProcessPicker"
+                                                    type="button"
+                                                    class="chat-process-picker-btn"
+                                                    title="Cambiar proceso"
+                                                    aria-label="Cambiar proceso"
+                                                    aria-haspopup="true"
+                                                    aria-expanded="false"
+                                                    aria-controls="chatProcessMenu">
+                                                <span class="chat-process-picker-icon" aria-hidden="true">
+                                                    <i class="fa-solid fa-bolt"></i>
+                                                </span>
+                                                <span class="chat-process-picker-copy">
+                                                    <span class="chat-process-picker-label" id="chatProcessPickerLabel">@(!string.IsNullOrWhiteSpace(processTitle) ? processTitle : (Model.ProcessCase.DefinitionCode ?? "Proceso del caso"))</span>
+                                                </span>
+                                                <span class="chat-process-picker-caret" aria-hidden="true">
+                                                    <i class="fa-solid fa-chevron-up"></i>
+                                                </span>
+                                            </button>
+                                            <button id="btnProcessExecute"
+                                                    type="button"
+                                                    class="chat-process-execute-btn"
+                                                    title="Ejecutar con este proceso"
+                                                    aria-label="Ejecutar con este proceso">
+                                                <i class="fa-solid fa-play" aria-hidden="true"></i>
+                                            </button>
+                                        </div>
+                                        <div id="chatProcessMenu" class="chat-compact-menu chat-process-menu" hidden>
+                                            <div class="chat-compact-menu-head">
+                                                <span class="chat-compact-menu-kicker">Proceso</span>
+                                                <strong>Procesar con</strong>
+                                                <small id="chatProcessMenuHint">Cargando procesos autorizados...</small>
+                                            </div>
+                                            <div id="chatProcessMenuList" class="chat-process-menu-list" aria-live="polite"></div>
                                         </div>
                                     </div>
                                 </div>
-                                <div id="chatProcessSelection" class="chat-process-selection d-none" aria-live="polite"></div>
                                 <div id="chatAttachments" class="chat-attachments d-none"></div>
                                 <textarea id="chatInput" class="chat-input form-control" rows="2"
                                       placeholder="Pregunta, comenta o adjunta archivos temporales..."></textarea>
@@ -386,6 +424,7 @@
                 </div>
             </div>
         </main>
+        <div class="layout-splitter splitter-right" id="splitterRight" role="separator" tabindex="0" aria-label="Ajustar ancho entre conversación y notas" aria-orientation="vertical"></div>
 
         <!-- RIGHT: Studio / Acciones -->
         <aside class="col-lg-1 right-col" id="colRight" aria-hidden="false">
@@ -1393,6 +1432,11 @@
             }
 
             document.addEventListener('DOMContentLoaded', () => {
+                const layoutRow = q('.layout-row');
+                const colLeft = q('#colLeft');
+                const colCenter = q('#colCenter');
+                const splitterLeft = q('#splitterLeft');
+                const splitterRight = q('#splitterRight');
                 const textarea = q('#chatInput');
                 const chatInner = q('#chatInputInner');
                 const sendBtn = q('#sendChat');
@@ -1404,16 +1448,22 @@
                 const getProcessesUrl = '@Url.Action("GetProcessesByUser", "Nexus")';
                 const baseProcessCode = '@Html.Raw(System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(Model.ProcessCase.DefinitionCode ?? string.Empty))';
                 const processTitleText = '@Html.Raw(System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(processTitle ?? string.Empty))';
-                const baseProcessName = processTitleText || 'Flujo base del caso';
+                const baseProcessName = processTitleText || '@Html.Raw(System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(Model.ProcessCase.DefinitionCode ?? "Proceso del caso"))';
+                const transientImageAccept = '.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff,image/*';
+                const transientFileAccept = '.pdf,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff,.xml,.html,.htm,image/*,application/pdf,text/xml,application/xml,text/html';
                 const chatFilesInput = q('#chatFilesInput');
                 const caseFilesInput = q('#caseFilesInput');
                 const attachTransientBtn = q('#btnAttachTransient');
                 const attachPermanentBtn = q('#btnAttachPermanent');
-                const chatComposerMenu = q('#chatComposerMenu');
-                const chatComposerAttachOption = q('#chatComposerAttachOption');
-                const chatComposerProcessHint = q('#chatComposerProcessHint');
-                const chatComposerProcessList = q('#chatComposerProcessList');
-                const chatProcessSelection = q('#chatProcessSelection');
+                const chatAttachMenu = q('#chatAttachMenu');
+                const chatAttachAnyOption = q('#chatAttachAnyOption');
+                const processCombo = q('.chat-process-combo');
+                const processPickerBtn = q('#btnProcessPicker');
+                const processExecuteBtn = q('#btnProcessExecute');
+                const processPickerLabel = q('#chatProcessPickerLabel');
+                const chatProcessMenu = q('#chatProcessMenu');
+                const chatProcessMenuHint = q('#chatProcessMenuHint');
+                const chatProcessMenuList = q('#chatProcessMenuList');
                 const chatAttachmentsEl = q('#chatAttachments');
                 const sourcesStatusEl = q('#sourcesStatus');
                 const persistentUploadQueueEl = q('#persistentUploadQueue');
@@ -1570,7 +1620,7 @@
                         `# Conversación completa del caso ${caseDisplayCode || caseCode}`,
                         '',
                         `- **Caso:** ${caseCode}`,
-                        processTitleText ? `- **Flujo base:** ${processTitleText}` : '',
+                        processTitleText ? `- **Proceso del caso:** ${processTitleText}` : '',
                         caseDateStr ? `- **Última respuesta registrada:** ${caseDateStr}` : '',
                         `- **Documentos del caso:** ${filesCount}`,
                         `- **Interacciones exportadas:** ${turns.length}`,
@@ -1599,7 +1649,7 @@
                 function buildExportMetaItems(extraItems = []) {
                     return [
                         { label: 'Caso', value: caseDisplayCode || caseCode },
-                        processTitleText ? { label: 'Flujo base', value: processTitleText } : null,
+                        processTitleText ? { label: 'Proceso del caso', value: processTitleText } : null,
                         { label: 'Documentos', value: String(filesCount) },
                         caseDateStr ? { label: 'Última respuesta', value: caseDateStr } : null,
                         { label: 'Generado', value: formatExportDate(new Date()) },
@@ -1942,21 +1992,23 @@
                     return {
                         code: baseProcessCode,
                         name: baseProcessName,
-                        description: 'Proceso configurado actualmente para este caso.',
-                        isBase: true
+                        description: 'Proceso con el que se está trabajando actualmente en este caso.',
+                        isCurrent: true
                     };
                 }
 
                 function normalizeComposerProcessEntry(entry) {
-                    const code = (entry?.processId ?? entry?.ProcessId ?? '').toString().trim();
+                    const code = (entry?.code ?? entry?.Code ?? entry?.processId ?? entry?.ProcessId ?? '').toString().trim();
                     if (!code) return null;
 
                     return {
                         code,
-                        name: (entry?.processName ?? entry?.ProcessName ?? code).toString().trim(),
-                        description: (entry?.description ?? entry?.Description ?? 'Proceso disponible para esta conversación.').toString().trim(),
-                        agentProcessId: (entry?.processAgentId ?? entry?.ProcessAgentId ?? '').toString().trim(),
-                        isBase: areSameProcessCodes(code, baseProcessCode)
+                        name: (entry?.name ?? entry?.Name ?? entry?.processName ?? entry?.ProcessName ?? code).toString().trim(),
+                        description: (entry?.description ?? entry?.Description ?? entry?.processDescription ?? entry?.ProcessDescription ?? 'Proceso disponible para esta conversación.').toString().trim(),
+                        agentProcessId: (entry?.agentProcessId ?? entry?.AgentProcessId ?? entry?.processAgentId ?? entry?.ProcessAgentId ?? '').toString().trim(),
+                        isCurrent: typeof entry?.isCurrent === 'boolean'
+                            ? entry.isCurrent
+                            : areSameProcessCodes(code, baseProcessCode)
                     };
                 }
 
@@ -1978,26 +2030,35 @@
                     return items;
                 }
 
-                function renderComposerProcessOptions(state = 'ready') {
-                    if (!chatComposerProcessList) return;
+                function updateProcessPickerButton() {
+                    if (!processPickerBtn || !processPickerLabel) return;
+
+                    const activeProcess = getActiveComposerProcess();
+                    const label = (activeProcess.name || baseProcessName || 'Proceso actual').toString().trim();
+                    processPickerLabel.textContent = label;
+                    processCombo?.classList.toggle('is-override', !!selectedComposerProcess);
+                    processPickerBtn.classList.toggle('is-override', !!selectedComposerProcess);
+                    processPickerBtn.title = activeProcess.description || label;
+                    if (processExecuteBtn) {
+                        processExecuteBtn.title = `Ejecutar este caso con ${label}`;
+                        processExecuteBtn.setAttribute('aria-label', `Ejecutar este caso con ${label}`);
+                        processExecuteBtn.classList.toggle('is-override', !!selectedComposerProcess);
+                    }
+                }
+
+                function renderProcessMenuOptions(state = 'ready') {
+                    if (!chatProcessMenuList) return;
 
                     const activeProcess = getActiveComposerProcess();
                     const isLoading = state === 'loading';
                     const hasError = state === 'error';
 
-                    if (chatComposerProcessHint) {
-                        chatComposerProcessHint.textContent = isLoading
-                            ? 'Cargando procesos autorizados...'
-                            : hasError
-                                ? 'No se pudieron cargar los procesos. Puedes seguir con el flujo base.'
-                                : selectedComposerProcess
-                                    ? `La siguiente respuesta usará ${activeProcess.name}.`
-                                    : 'La siguiente respuesta usará el flujo base del caso.';
-                    }
-
                     if (isLoading) {
-                        chatComposerProcessList.innerHTML = `
-                            <div class="chat-composer-process-state">
+                        if (chatProcessMenuHint) {
+                            chatProcessMenuHint.textContent = 'Cargando procesos autorizados...';
+                        }
+                        chatProcessMenuList.innerHTML = `
+                            <div class="chat-process-menu-state">
                                 <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
                                 <span>Cargando procesos autorizados...</span>
                             </div>`;
@@ -2005,8 +2066,11 @@
                     }
 
                     if (hasError) {
-                        chatComposerProcessList.innerHTML = `
-                            <div class="chat-composer-process-state is-error">
+                        if (chatProcessMenuHint) {
+                            chatProcessMenuHint.textContent = 'No se pudieron cargar los procesos. Seguimos con el actual.';
+                        }
+                        chatProcessMenuList.innerHTML = `
+                            <div class="chat-process-menu-state is-error">
                                 <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
                                 <span>${escapeHtml(composerProcessLoadError || 'No se pudieron cargar los procesos autorizados.')}</span>
                             </div>`;
@@ -2014,53 +2078,64 @@
                     }
 
                     const catalog = getComposerProcessCatalog();
+                    const alternativeCount = Math.max(0, catalog.filter(process => !process.isCurrent).length);
+
+                    if (chatProcessMenuHint) {
+                        chatProcessMenuHint.textContent = selectedComposerProcess
+                            ? `Proceso listo. Pulsa ejecutar para correr este caso con ${activeProcess.name}.`
+                            : alternativeCount > 0
+                                ? `Selecciona un proceso y luego pulsa ejecutar. Hay ${alternativeCount} alternativa${alternativeCount === 1 ? '' : 's'} disponible${alternativeCount === 1 ? '' : 's'}.`
+                                : 'Solo está disponible el proceso actual del caso.';
+                    }
+
                     if (!catalog.length) {
-                        chatComposerProcessList.innerHTML = `
-                            <div class="chat-composer-process-state is-empty">
+                        chatProcessMenuList.innerHTML = `
+                            <div class="chat-process-menu-state is-empty">
                                 <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
                                 <span>No hay procesos configurados para este usuario.</span>
                             </div>`;
                         return;
                     }
 
-                    chatComposerProcessList.innerHTML = catalog.map(process => {
-                        const isActive = process.isBase
+                    chatProcessMenuList.innerHTML = catalog.map(process => {
+                        const isActive = process.isCurrent
                             ? !selectedComposerProcess
                             : areSameProcessCodes(activeProcess.code, process.code);
                         const badge = isActive
-                            ? (process.isBase ? 'Base' : 'Activo')
-                            : (process.isBase ? 'Caso' : 'Usar');
-                        const description = process.description || (process.isBase
-                            ? 'Proceso configurado actualmente para este caso.'
+                            ? 'Activo'
+                            : 'Elegir';
+                        const description = process.description || (process.isCurrent
+                            ? 'Proceso actual del caso.'
                             : 'Proceso disponible para esta conversación.');
 
                         return `
                             <button type="button"
-                                    class="chat-composer-process-card${isActive ? ' is-active' : ''}${process.isBase ? ' is-base' : ''}"
-                                    data-composer-process-code="${escapeHtml(process.code)}"
-                                    data-composer-process-name="${escapeHtml(process.name)}"
-                                    data-composer-process-description="${escapeHtml(description)}"
-                                    data-composer-process-base="${process.isBase ? 'true' : 'false'}"
+                                    class="chat-process-option${isActive ? ' is-active' : ''}${process.isCurrent ? ' is-current' : ''}"
+                                    data-process-code="${escapeHtml(process.code)}"
+                                    data-process-name="${escapeHtml(process.name)}"
+                                    data-process-description="${escapeHtml(description)}"
+                                    data-process-agent-id="${escapeHtml(process.agentProcessId || '')}"
+                                    data-process-current="${process.isCurrent ? 'true' : 'false'}"
                                     aria-pressed="${isActive ? 'true' : 'false'}">
-                                <span class="chat-composer-process-card-icon" aria-hidden="true">
-                                    <i class="fa-solid ${process.isBase ? 'fa-circle-check' : 'fa-layer-group'}"></i>
-                                </span>
-                                <span class="chat-composer-process-card-copy">
+                                <span class="chat-process-option-copy">
                                     <strong>${escapeHtml(process.name)}</strong>
                                     <small>${escapeHtml(description)}</small>
                                 </span>
-                                <span class="chat-composer-process-card-badge">${escapeHtml(badge)}</span>
+                                <span class="chat-process-option-meta">
+                                    <span class="chat-process-option-badge">${escapeHtml(badge)}</span>
+                                    ${isActive ? '<i class="fa-solid fa-check" aria-hidden="true"></i>' : '<i class="fa-solid fa-chevron-right" aria-hidden="true"></i>'}
+                                </span>
                             </button>`;
                     }).join('');
                 }
 
                 function ensureComposerProcesses(force = false) {
-                    if (!chatComposerProcessList) {
+                    if (!chatProcessMenuList) {
                         return Promise.resolve([]);
                     }
 
                     if (composerProcessesLoaded && !force) {
-                        renderComposerProcessOptions();
+                        renderProcessMenuOptions();
                         return Promise.resolve(composerProcesses);
                     }
 
@@ -2069,7 +2144,7 @@
                     }
 
                     composerProcessLoadError = '';
-                    renderComposerProcessOptions('loading');
+                    renderProcessMenuOptions('loading');
 
                     composerProcessLoadPromise = fetch(getProcessesUrl, {
                         method: 'GET',
@@ -2093,7 +2168,7 @@
                                 .sort((left, right) => (left?.name || '').localeCompare((right?.name || '').toString(), 'es', { sensitivity: 'base' }));
                             composerProcessesLoaded = true;
                             composerProcessLoadError = '';
-                            renderComposerProcessOptions();
+                            renderProcessMenuOptions();
                             return composerProcesses;
                         })
                         .catch(error => {
@@ -2101,7 +2176,7 @@
                             composerProcesses = [];
                             composerProcessesLoaded = false;
                             composerProcessLoadError = error?.message || 'No se pudieron cargar los procesos autorizados.';
-                            renderComposerProcessOptions('error');
+                            renderProcessMenuOptions('error');
                             return [];
                         })
                         .finally(() => {
@@ -2111,18 +2186,43 @@
                     return composerProcessLoadPromise;
                 }
 
-                function setComposerMenu(open) {
-                    if (!attachTransientBtn || !chatComposerMenu) return;
+                function setAttachMenu(open) {
+                    if (!attachTransientBtn || !chatAttachMenu) return;
 
                     const shouldOpen = !!open;
+                    if (shouldOpen) {
+                        setProcessMenu(false);
+                    }
+
                     attachTransientBtn.classList.toggle('is-open', shouldOpen);
                     attachTransientBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
-                    chatComposerMenu.hidden = !shouldOpen;
+                    chatAttachMenu.hidden = !shouldOpen;
+                }
+
+                function setProcessMenu(open) {
+                    if (!processPickerBtn || !chatProcessMenu) return;
+
+                    const shouldOpen = !!open;
+                    if (shouldOpen) {
+                        setAttachMenu(false);
+                    }
+
+                    processCombo?.classList.toggle('is-open', shouldOpen);
+                    processPickerBtn.classList.toggle('is-open', shouldOpen);
+                    processPickerBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+                    chatProcessMenu.hidden = !shouldOpen;
 
                     if (shouldOpen) {
-                        renderComposerProcessOptions(composerProcessesLoaded ? 'ready' : 'loading');
+                        renderProcessMenuOptions(composerProcessesLoaded ? 'ready' : 'loading');
                         ensureComposerProcesses();
                     }
+                }
+
+                function openTransientFilePicker(mode = 'file') {
+                    if (!chatFilesInput) return;
+
+                    chatFilesInput.accept = mode === 'image' ? transientImageAccept : transientFileAccept;
+                    chatFilesInput.click();
                 }
 
                 function buildAgentProcessPreview(agentName, message) {
@@ -2144,56 +2244,109 @@
                     return selectedComposerProcess || getBaseComposerProcess();
                 }
 
-                function renderComposerProcessSelection() {
-                    if (!chatProcessSelection) return;
-
-                    const activeProcess = getActiveComposerProcess();
-                    const isOverride = !!selectedComposerProcess;
-                    const detail = activeProcess.description || (isOverride
-                        ? 'Proceso seleccionado solo para la siguiente respuesta.'
-                        : 'La conversación seguirá usando el flujo base del caso.');
-
-                    chatProcessSelection.innerHTML = `
-                        <div class="chat-process-selection-pill${isOverride ? ' is-override' : ''}" title="${escapeHtml(detail)}">
-                            <span class="chat-process-selection-badge">${isOverride ? 'Procesar con' : 'Proceso base'}</span>
-                            <span class="chat-process-selection-name">${escapeHtml(activeProcess.name || baseProcessName)}</span>
-                            <div class="chat-process-selection-actions">
-                                <button type="button" class="chat-process-selection-action" data-chat-process-action="open-menu">
-                                    <i class="fa-solid fa-repeat" aria-hidden="true"></i>
-                                    <span>Cambiar</span>
-                                </button>
-                                ${isOverride
-                                    ? `<button type="button" class="chat-process-selection-action is-subtle" data-chat-process-action="reset-process" aria-label="Volver al proceso base" title="Volver al proceso base">
-                                           <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-                                       </button>`
-                                    : ''}
-                            </div>
-                        </div>`;
-
-                    chatProcessSelection.classList.remove('d-none');
-                    renderComposerProcessOptions(composerProcessLoadError ? 'error' : (composerProcessesLoaded ? 'ready' : 'loading'));
-                }
-
                 function setSelectedComposerProcess(processInfo = null) {
                     if (processInfo?.code && !areSameProcessCodes(processInfo.code, baseProcessCode)) {
                         selectedComposerProcess = {
                             code: (processInfo.code || '').toString().trim(),
                             name: (processInfo.name || processInfo.processName || 'Otro proceso').toString().trim(),
-                            description: (processInfo.description || processInfo.processDescription || 'Proceso seleccionado para esta conversación.').toString().trim()
+                            description: (processInfo.description || processInfo.processDescription || 'Proceso seleccionado para esta conversación.').toString().trim(),
+                            agentProcessId: (processInfo.agentProcessId || processInfo.processAgentId || '').toString().trim()
                         };
                     } else {
                         selectedComposerProcess = null;
                     }
 
-                    renderComposerProcessSelection();
+                    updateProcessPickerButton();
+                    renderProcessMenuOptions(composerProcessLoadError ? 'error' : (composerProcessesLoaded ? 'ready' : 'loading'));
                 }
 
                 function buildChatSendPayload(message) {
                     if (selectedComposerProcess?.code && !areSameProcessCodes(selectedComposerProcess.code, baseProcessCode)) {
-                        return buildPromptPayload('CHAT', message, { processCode: selectedComposerProcess.code });
+                        return buildPromptPayload('CHAT', message, {
+                            processCode: selectedComposerProcess.code,
+                            id: parseInt(selectedComposerProcess.agentProcessId || '0', 10) || 0
+                        });
                     }
 
                     return buildPromptPayload('CHAT', message);
+                }
+
+                function buildImplicitProcessExecutionPrompt(processName) {
+                    const cleanName = (processName || 'proceso actual').toString().trim();
+                    return `Ejecuta el analisis completo de este caso usando ${cleanName} y genera la respuesta final.`;
+                }
+
+                function isComposerBusy() {
+                    return !!sendBtn?.classList.contains('loading');
+                }
+
+                async function dispatchComposerRequest(options = {}) {
+                    const forceProcessExecution = !!options.forceProcessExecution;
+                    const text = textarea?.value?.trim() || '';
+                    if (!text && transientAttachments.length === 0 && !forceProcessExecution) return;
+                    if (isComposerBusy()) return;
+
+                    let pendingTurn = null;
+                    try {
+                        setBtnLoading(true);
+                        const activeProcess = getActiveComposerProcess();
+                        const requestPreview = (selectedComposerProcess || forceProcessExecution)
+                            ? buildAgentProcessPreview(activeProcess.name, text || '')
+                            : (text || '');
+                        const payloadText = text || (forceProcessExecution
+                            ? buildImplicitProcessExecutionPrompt(activeProcess.name)
+                            : '');
+
+                        pendingTurn = createPendingConversationTurn(requestPreview);
+                        const minDelay = 700, maxDelay = 1600;
+                        const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+                        await sleep(randomDelay);
+
+                        await stabilizePositionDuringTransition(900);
+                        const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(buildChatSendPayload(payloadText))
+                        });
+
+                        setBtnLoading(false);
+
+                        if (!resp.ok) throw new Error(resp.statusText);
+                        const data = await resp.json();
+                        const normalizedRequestText = ((data.request ?? data.requestText ?? data.RequestText ?? payloadText) || '').toString();
+                        const normalizedDisplayText = text ? normalizedRequestText : '';
+                        const normalizedData = (selectedComposerProcess || forceProcessExecution)
+                            ? {
+                                ...data,
+                                request: buildAgentProcessPreview(activeProcess.name, normalizedDisplayText),
+                                requestText: buildAgentProcessPreview(activeProcess.name, normalizedDisplayText),
+                                RequestText: buildAgentProcessPreview(activeProcess.name, normalizedDisplayText)
+                            }
+                            : data;
+
+                        await appendConversationTurn(normalizedData, 7, pendingTurn);
+
+                        textarea.value = '';
+                        clearTransientAttachments();
+                        autoResize(textarea);
+                        try { textarea.focus({ preventScroll: true }); } catch (e) { textarea.focus(); }
+                    } catch (err) {
+                        console.error(err);
+                        setBtnLoading(false);
+                        setConversationTurnError(pendingTurn, err && err.message ? err.message : 'Error en la petición');
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Advertencia',
+                            text: 'Error: ' + (err && err.message ? err.message : 'Error en la petición'),
+                        });
+                    } finally {
+                        stopThinking();
+                        positionChatInput();
+                    }
+                }
+
+                async function executeSelectedProcessNow() {
+                    await dispatchComposerRequest({ forceProcessExecution: true });
                 }
 
                 async function runAgentProcess(trigger) {
@@ -2210,7 +2363,8 @@
                     let pendingTurn = null;
 
                     try {
-                        setComposerMenu(false);
+                        setAttachMenu(false);
+                        setProcessMenu(false);
                         setBtnLoading(true);
                         trigger.disabled = true;
                         trigger.classList.add('loading', 'is-loading');
@@ -2356,63 +2510,69 @@
                 attachTransientBtn?.addEventListener('click', event => {
                     event.preventDefault();
                     event.stopPropagation();
-                    setComposerMenu(chatComposerMenu?.hidden);
+                    setAttachMenu(chatAttachMenu?.hidden);
                 });
 
-                chatComposerAttachOption?.addEventListener('click', event => {
+                chatAttachAnyOption?.addEventListener('click', event => {
                     event.preventDefault();
-                    setComposerMenu(false);
-                    chatFilesInput?.click();
+                    setAttachMenu(false);
+                    openTransientFilePicker('file');
                 });
 
-                chatComposerMenu?.addEventListener('click', event => {
-                    const option = event.target.closest('.chat-composer-process-card');
+                processPickerBtn?.addEventListener('click', event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setProcessMenu(chatProcessMenu?.hidden);
+                });
+
+                chatProcessMenu?.addEventListener('click', event => {
+                    const option = event.target.closest('.chat-process-option');
                     if (!option) return;
 
                     event.preventDefault();
 
-                    if (option.dataset.composerProcessBase === 'true' || areSameProcessCodes(option.dataset.composerProcessCode, baseProcessCode)) {
+                    if (option.dataset.processCurrent === 'true' || areSameProcessCodes(option.dataset.processCode, baseProcessCode)) {
                         setSelectedComposerProcess(null);
                     } else {
                         setSelectedComposerProcess({
-                            code: option.dataset.composerProcessCode,
-                            name: option.dataset.composerProcessName,
-                            description: option.dataset.composerProcessDescription
+                            code: option.dataset.processCode,
+                            name: option.dataset.processName,
+                            description: option.dataset.processDescription,
+                            agentProcessId: option.dataset.processAgentId
                         });
                     }
 
-                    setComposerMenu(false);
+                    setProcessMenu(false);
                     try { textarea?.focus({ preventScroll: true }); } catch (e) { textarea?.focus(); }
                 });
 
-                chatProcessSelection?.addEventListener('click', event => {
-                    const action = event.target.closest('[data-chat-process-action]');
-                    if (!action) return;
-
-                    const actionType = action.dataset.chatProcessAction;
-                    if (actionType === 'open-menu') {
-                        event.preventDefault();
-                        setComposerMenu(true);
-                        return;
-                    }
-
-                    if (actionType === 'reset-process') {
-                        event.preventDefault();
-                        setSelectedComposerProcess(null);
-                        setComposerMenu(false);
-                    }
+                processExecuteBtn?.addEventListener('click', async event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setProcessMenu(false);
+                    setAttachMenu(false);
+                    await executeSelectedProcessNow();
                 });
 
                 document.addEventListener('click', event => {
-                    if (chatComposerMenu?.hidden) return;
-                    if (chatComposerMenu.contains(event.target) || attachTransientBtn?.contains(event.target) || chatProcessSelection?.contains(event.target)) return;
-                    setComposerMenu(false);
+                    const target = event.target;
+
+                    if (!chatAttachMenu?.hidden) {
+                        if (!(chatAttachMenu.contains(target) || attachTransientBtn?.contains(target))) {
+                            setAttachMenu(false);
+                        }
+                    }
+
+                    if (!chatProcessMenu?.hidden) {
+                        if (!(chatProcessMenu.contains(target) || processPickerBtn?.contains(target))) {
+                            setProcessMenu(false);
+                        }
+                    }
                 });
                 window.addEventListener('keydown', event => {
                     if (event.key !== 'Escape') return;
-                    if (!chatComposerMenu?.hidden) {
-                        setComposerMenu(false);
-                    }
+                    if (!chatAttachMenu?.hidden) setAttachMenu(false);
+                    if (!chatProcessMenu?.hidden) setProcessMenu(false);
                     if (chatMarkdownModal?.classList.contains('d-none')) return;
                     closeChatMarkdownModal();
                 });
@@ -2425,6 +2585,7 @@
                         colRight.setAttribute('aria-hidden', applyDesktopFocus ? 'true' : 'false');
                     }
                     positionChatInput();
+                    syncSplitterAccessibility();
                 }
 
                 function setSourcesStatus(text, tone = 'muted') {
@@ -3192,6 +3353,7 @@
                             });
                         } finally {
                             chatFilesInput.value = '';
+                            chatFilesInput.accept = transientFileAccept;
                         }
                     });
                 }
@@ -3313,60 +3475,7 @@
                 }
 
                 async function sendMessage() {
-                    const text = textarea?.value?.trim();
-                    if (!text && transientAttachments.length === 0) return;
-                    let pendingTurn = null;
-                    try {
-                        setBtnLoading(true);
-                        const activeProcess = getActiveComposerProcess();
-                        const requestPreview = selectedComposerProcess
-                            ? buildAgentProcessPreview(activeProcess.name, text || '')
-                            : (text || '');
-                        pendingTurn = createPendingConversationTurn(requestPreview);
-                        const minDelay = 700, maxDelay = 1600;
-                        const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
-                        await sleep(randomDelay);
-
-                        await stabilizePositionDuringTransition(900);
-                        const resp = await fetch('@Url.Action("EjecutarPrompt", "Nexus")', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(buildChatSendPayload(text))
-                        });
-
-                        setBtnLoading(false);
-
-                        if (!resp.ok) throw new Error(resp.statusText);
-                        const data = await resp.json();
-                        const normalizedRequestText = ((data.request ?? data.requestText ?? data.RequestText ?? text) || '').toString();
-                        const normalizedData = selectedComposerProcess
-                            ? {
-                                ...data,
-                                request: buildAgentProcessPreview(activeProcess.name, normalizedRequestText),
-                                requestText: buildAgentProcessPreview(activeProcess.name, normalizedRequestText),
-                                RequestText: buildAgentProcessPreview(activeProcess.name, normalizedRequestText)
-                            }
-                            : data;
-
-                        await appendConversationTurn(normalizedData, 7, pendingTurn);
-
-                        textarea.value = '';
-                        clearTransientAttachments();
-                        autoResize(textarea);
-                        try { textarea.focus({ preventScroll: true }); } catch (e) { textarea.focus(); }
-                    } catch (err) {
-                        console.error(err);
-                        setBtnLoading(false);
-                        setConversationTurnError(pendingTurn, err && err.message ? err.message : 'Error en la petición');
-                        Swal.fire({
-                            icon: 'warning',
-                            title: 'Advertencia',
-                            text: 'Error: ' + (err && err.message ? err.message : 'Error en la petición'),
-                        });
-                    } finally {
-                        stopThinking();
-                        positionChatInput();
-                    }
+                    await dispatchComposerRequest();
                 }
                 if (sendBtn) sendBtn.addEventListener('click', sendMessage);
 
@@ -3397,8 +3506,188 @@
                 const btnBackToList = q('#btnBackToList');
                 const btnOpenInViewer = q('#btnOpenInViewer');
                 const btnDownloadPreview = q('#btnDownloadPreview');
-                let currentPreview = { url: '', type: '', ext: '', id: '' };
+                const btnRotateLeft = q('#btnRotateLeft');
+                const btnRotateRight = q('#btnRotateRight');
+                let currentPreview = { url: '', type: '', ext: '', id: '', rotation: 0 };
                 window.addEventListener('resize', () => setDocumentFocus(!!currentPreview.url));
+
+                function normalizePreviewRotation(value) {
+                    const numeric = Number.isFinite(Number(value)) ? Number(value) : 0;
+                    return ((numeric % 360) + 360) % 360;
+                }
+
+                function canRotatePreview() {
+                    const previewType = (currentPreview?.type || '').toLowerCase();
+                    return !!currentPreview?.url && (previewType === 'img' || previewType === 'pdf');
+                }
+
+                function updatePreviewRotationControls() {
+                    const enabled = canRotatePreview();
+                    const rotationLabel = normalizePreviewRotation(currentPreview?.rotation || 0);
+                    [btnRotateLeft, btnRotateRight].forEach(button => {
+                        if (!button) return;
+                        button.disabled = !enabled;
+                        button.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+                        button.classList.toggle('disabled', !enabled);
+                    });
+
+                    if (btnRotateLeft) {
+                        btnRotateLeft.title = enabled
+                            ? `Girar a la izquierda (${rotationLabel}°)`
+                            : 'La rotación está disponible para imágenes y PDF';
+                    }
+                    if (btnRotateRight) {
+                        btnRotateRight.title = enabled
+                            ? `Girar a la derecha (${rotationLabel}°)`
+                            : 'La rotación está disponible para imágenes y PDF';
+                    }
+                }
+
+                async function rotateCurrentPreview(delta) {
+                    if (!canRotatePreview()) return;
+                    currentPreview.rotation = normalizePreviewRotation((currentPreview.rotation || 0) + delta);
+                    updatePreviewRotationControls();
+                    await renderPreview(currentPreview.url, currentPreview.type, currentPreview.ext, currentPreview.id);
+                }
+
+                function readRootCssPx(variableName, fallback) {
+                    const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(variableName));
+                    return Number.isFinite(value) ? value : fallback;
+                }
+
+                function isDesktopResizableLayout() {
+                    return window.matchMedia('(min-width: 992px)').matches && !document.documentElement.classList.contains('document-focus');
+                }
+
+                function getResizableMetrics() {
+                    if (!layoutRow) return null;
+                    const rect = layoutRow.getBoundingClientRect();
+                    const gap = readRootCssPx('--columns-gap', 14);
+                    const splitterSize = readRootCssPx('--splitter-size', 12);
+                    const availableWidth = Math.max(0, rect.width - (gap * 4) - (splitterSize * 2));
+                    const leftWidth = Math.round(colLeft?.getBoundingClientRect().width || readRootCssPx('--left-panel-width', 272));
+                    const rightWidth = Math.round(colRight?.getBoundingClientRect().width || readRootCssPx('--right-panel-width', 286));
+                    return { rect, availableWidth, leftWidth, rightWidth };
+                }
+
+                function applyPanelWidths(nextLeftWidth = null, nextRightWidth = null) {
+                    if (nextLeftWidth != null) {
+                        document.documentElement.style.setProperty('--left-panel-width', `${Math.round(nextLeftWidth)}px`);
+                    }
+                    if (nextRightWidth != null) {
+                        document.documentElement.style.setProperty('--right-panel-width', `${Math.round(nextRightWidth)}px`);
+                    }
+                    positionChatInput();
+                }
+
+                function syncSplitterAccessibility() {
+                    const metrics = getResizableMetrics();
+                    if (!metrics) return;
+                    const centerMin = 460;
+                    const minLeft = 220;
+                    const minRight = 240;
+                    const maxLeft = Math.max(minLeft, metrics.availableWidth - metrics.rightWidth - centerMin);
+                    const maxRight = Math.max(minRight, metrics.availableWidth - metrics.leftWidth - centerMin);
+
+                    if (splitterLeft) {
+                        splitterLeft.setAttribute('aria-valuemin', String(minLeft));
+                        splitterLeft.setAttribute('aria-valuemax', String(Math.round(maxLeft)));
+                        splitterLeft.setAttribute('aria-valuenow', String(Math.round(metrics.leftWidth)));
+                    }
+
+                    if (splitterRight) {
+                        splitterRight.setAttribute('aria-valuemin', String(minRight));
+                        splitterRight.setAttribute('aria-valuemax', String(Math.round(maxRight)));
+                        splitterRight.setAttribute('aria-valuenow', String(Math.round(metrics.rightWidth)));
+                    }
+                }
+
+                function initPanelSplitters() {
+                    if (!layoutRow || !splitterLeft || !splitterRight) return;
+
+                    const centerMin = 460;
+                    const minLeft = 220;
+                    const minRight = 240;
+                    let activeResize = null;
+
+                    function endResize() {
+                        if (!activeResize) return;
+                        layoutRow.classList.remove('is-resizing');
+                        activeResize = null;
+                        syncSplitterAccessibility();
+                    }
+
+                    function onPointerMove(event) {
+                        if (!activeResize || !isDesktopResizableLayout()) return;
+                        const metrics = getResizableMetrics();
+                        if (!metrics) return;
+
+                        if (activeResize.side === 'left') {
+                            const maxLeft = Math.max(minLeft, metrics.availableWidth - metrics.rightWidth - centerMin);
+                            const delta = event.clientX - activeResize.startX;
+                            const nextLeft = Math.min(maxLeft, Math.max(minLeft, activeResize.startWidth + delta));
+                            applyPanelWidths(nextLeft, null);
+                        } else {
+                            const maxRight = Math.max(minRight, metrics.availableWidth - metrics.leftWidth - centerMin);
+                            const delta = activeResize.startX - event.clientX;
+                            const nextRight = Math.min(maxRight, Math.max(minRight, activeResize.startWidth + delta));
+                            applyPanelWidths(null, nextRight);
+                        }
+
+                        syncSplitterAccessibility();
+                    }
+
+                    function startResize(side, event) {
+                        if (!isDesktopResizableLayout()) return;
+                        const metrics = getResizableMetrics();
+                        if (!metrics) return;
+
+                        activeResize = {
+                            side,
+                            startX: event.clientX,
+                            startWidth: side === 'left' ? metrics.leftWidth : metrics.rightWidth
+                        };
+
+                        layoutRow.classList.add('is-resizing');
+                        try { event.target?.setPointerCapture?.(event.pointerId); } catch (e) { /* ignore */ }
+                        event.preventDefault();
+                    }
+
+                    function onSplitterKeyDown(side, event) {
+                        if (!isDesktopResizableLayout()) return;
+                        const step = event.shiftKey ? 36 : 18;
+                        const metrics = getResizableMetrics();
+                        if (!metrics) return;
+
+                        if (side === 'left' && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+                            const maxLeft = Math.max(minLeft, metrics.availableWidth - metrics.rightWidth - centerMin);
+                            const direction = event.key === 'ArrowRight' ? 1 : -1;
+                            const nextLeft = Math.min(maxLeft, Math.max(minLeft, metrics.leftWidth + (direction * step)));
+                            applyPanelWidths(nextLeft, null);
+                            syncSplitterAccessibility();
+                            event.preventDefault();
+                        }
+
+                        if (side === 'right' && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+                            const maxRight = Math.max(minRight, metrics.availableWidth - metrics.leftWidth - centerMin);
+                            const direction = event.key === 'ArrowLeft' ? 1 : -1;
+                            const nextRight = Math.min(maxRight, Math.max(minRight, metrics.rightWidth + (direction * step)));
+                            applyPanelWidths(null, nextRight);
+                            syncSplitterAccessibility();
+                            event.preventDefault();
+                        }
+                    }
+
+                    splitterLeft.addEventListener('pointerdown', event => startResize('left', event));
+                    splitterRight.addEventListener('pointerdown', event => startResize('right', event));
+                    splitterLeft.addEventListener('keydown', event => onSplitterKeyDown('left', event));
+                    splitterRight.addEventListener('keydown', event => onSplitterKeyDown('right', event));
+                    window.addEventListener('pointermove', onPointerMove);
+                    window.addEventListener('pointerup', endResize);
+                    window.addEventListener('pointercancel', endResize);
+                    window.addEventListener('resize', syncSplitterAccessibility);
+                    syncSplitterAccessibility();
+                }
 
                 async function getMarkupPreviewPayload(fileId) {
                     const response = await fetch(`@Url.Action("GetCaseDocumentPreview", "Nexus")?caseCode=${caseCode}&fileId=${fileId}`);
@@ -3420,7 +3709,8 @@
                     if (previewTitle) previewTitle.textContent = title;
                     if (previewEmptyState) previewEmptyState.style.display = 'none';
 
-                    currentPreview = { url: url, type: type, ext: ext, id: row.dataset.id || '' };
+                    currentPreview = { url: url, type: type, ext: ext, id: row.dataset.id || '', rotation: 0 };
+                    updatePreviewRotationControls();
                     const requiresLayoutExpand = !document.documentElement.classList.contains('document-focus');
                     setDocumentFocus(true);
                     await stabilizePositionDuringTransition(requiresLayoutExpand ? 190 : 0);
@@ -3432,10 +3722,11 @@
                     __pdfRenderToken++;
                     if (previewContent) previewContent.innerHTML = '';
                     if (previewContent) previewContent.dataset.zoomKind = 'none';
-                    currentPreview = { url: '', type: '', ext: '', id: '' };
+                    currentPreview = { url: '', type: '', ext: '', id: '', rotation: 0 };
                     qa('.source-row.selected').forEach(r => r.classList.remove('selected'));
                     if (previewTitle) previewTitle.textContent = 'Vista previa del documento';
                     if (previewEmptyState) previewEmptyState.style.display = '';
+                    updatePreviewRotationControls();
                     setDocumentFocus(false);
                     positionChatInput();
                 }
@@ -3456,10 +3747,21 @@
                     a.click();
                     a.remove();
                 });
+                btnRotateLeft?.addEventListener('click', async event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    await rotateCurrentPreview(-90);
+                });
+                btnRotateRight?.addEventListener('click', async event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    await rotateCurrentPreview(90);
+                });
 
                 async function renderPreview(url, type, ext = '', fileId = '') {
                     __pdfRenderToken++;
                     const myToken = __pdfRenderToken;
+                    const previewRotation = normalizePreviewRotation(currentPreview?.rotation || 0);
 
                     try {
                         window.NexusPreviewZoom?.reset?.();
@@ -3475,6 +3777,7 @@
                     previewContent.style.webkitOverflowScrolling = 'touch';
                     previewContent.style.boxSizing = 'border-box';
                     if (previewEmptyState) previewEmptyState.style.display = 'none';
+                    updatePreviewRotationControls();
 
                     if (!url) {
                         if (previewEmptyState) previewEmptyState.style.display = '';
@@ -3590,7 +3893,6 @@
                         img.src = url;
                         img.className = 'img-fluid rounded preview-image';
                         img.style.maxHeight = 'none';
-                        img.style.width = '100%';
                         img.style.objectFit = 'contain';
                         img.onerror = () => {
                             previewContent.innerHTML = '<p class="text-danger">Error al cargar la imagen.</p>';
@@ -3601,24 +3903,38 @@
                             const availableHeight = Math.max(160, (zoomWrapper.clientHeight || previewContent.clientHeight || img.naturalHeight || 0) - 18);
                             const naturalWidth = img.naturalWidth || availableWidth;
                             const naturalHeight = img.naturalHeight || availableHeight;
-                            const fitScale = Math.min(availableWidth / naturalWidth, availableHeight / naturalHeight, 1);
-                            const baseWidth = Math.max(140, Math.round(naturalWidth * fitScale));
-                            const baseHeight = Math.max(140, Math.round(naturalHeight * fitScale));
+                            const isQuarterTurn = previewRotation === 90 || previewRotation === 270;
+                            const rotatedWidth = isQuarterTurn ? naturalHeight : naturalWidth;
+                            const rotatedHeight = isQuarterTurn ? naturalWidth : naturalHeight;
+                            const fitScale = Math.min(availableWidth / rotatedWidth, availableHeight / rotatedHeight, 1);
+                            const baseWidth = Math.max(140, Math.round(rotatedWidth * fitScale));
+                            const baseHeight = Math.max(140, Math.round(rotatedHeight * fitScale));
+                            const innerBaseWidth = Math.max(140, Math.round(naturalWidth * fitScale));
+                            const innerBaseHeight = Math.max(140, Math.round(naturalHeight * fitScale));
 
                             stage.dataset.baseWidth = baseWidth.toString();
                             stage.dataset.baseHeight = baseHeight.toString();
+                            stage.dataset.rotation = previewRotation.toString();
                             img.dataset.baseWidth = baseWidth.toString();
                             img.dataset.baseHeight = baseHeight.toString();
+                            img.dataset.innerBaseWidth = innerBaseWidth.toString();
+                            img.dataset.innerBaseHeight = innerBaseHeight.toString();
+                            img.dataset.rotation = previewRotation.toString();
 
                             stage.style.width = `${baseWidth}px`;
                             stage.style.height = `${baseHeight}px`;
-                            img.style.width = '100%';
-                            img.style.height = '100%';
+                            img.style.width = `${innerBaseWidth}px`;
+                            img.style.height = `${innerBaseHeight}px`;
                             img.style.maxWidth = 'none';
                             img.style.maxHeight = 'none';
+                            img.style.transform = `translate(-50%, -50%) rotate(${previewRotation}deg)`;
+                            img.style.position = 'absolute';
+                            img.style.top = '50%';
+                            img.style.left = '50%';
 
                             zoomWrapper.scrollLeft = 0;
                             zoomWrapper.scrollTop = 0;
+                            updatePreviewRotationControls();
                             stabilizePositionDuringTransition(400).then(() => positionChatInput());
                         };
 
@@ -3693,11 +4009,11 @@
                             const paddingX = (parseFloat(cs.paddingLeft || 0) || 0) + (parseFloat(cs.paddingRight || 0) || 0);
                             const availableWidth = Math.max(300, (previewContent.clientWidth || 800) - paddingX - 24);
 
-                            const unscaledViewport = page.getViewport({ scale: 1 });
+                            const unscaledViewport = page.getViewport({ scale: 1, rotation: previewRotation });
                             const scale = Math.max(0.5, (availableWidth) / unscaledViewport.width);
-                            const cssViewport = page.getViewport({ scale });
+                            const cssViewport = page.getViewport({ scale, rotation: previewRotation });
                             const outputScale = Math.max(1, window.devicePixelRatio || 1);
-                            const pixelViewport = page.getViewport({ scale: scale * outputScale });
+                            const pixelViewport = page.getViewport({ scale: scale * outputScale, rotation: previewRotation });
                             pageBox.style.width = Math.floor(cssViewport.width + 18) + 'px';
                             pageBox.dataset.baseWidth = Math.floor(cssViewport.width).toString();
                             const canvas = document.createElement('canvas');
@@ -3745,6 +4061,7 @@
 
                         if (progressWrap && progressWrap.parentNode) progressWrap.parentNode.removeChild(progressWrap);
 
+                        updatePreviewRotationControls();
                         if (previewContent) { stabilizePositionDuringTransition(500).then(() => positionChatInput()); }
                     } catch (err) {
                         console.error('Error al cargar PDF completo', err);
@@ -3757,10 +4074,13 @@
                 const btnRefresh = q('#btnRefreshSources');
                 if (btnRefresh) btnRefresh.addEventListener('click', () => loadCaseDocuments(currentPreview.id || null));
                 bindTableRows();
-                renderComposerProcessSelection();
+                updatePreviewRotationControls();
+                updateProcessPickerButton();
+                renderProcessMenuOptions('loading');
                 ensureComposerProcesses();
                 renderTransientAttachments();
                 setDocumentFocus(false);
+                initPanelSplitters();
 
                 window.addEventListener('resize', () => { positionChatInput(); stabilizePositionDuringTransition(); });
                 const mo = new MutationObserver(() => { positionChatInput(); stabilizePositionDuringTransition(); });
@@ -4484,26 +4804,38 @@
 
                     const baseW = parseFloat(stage.dataset.baseWidth || img.dataset.baseWidth || img.naturalWidth || img.clientWidth || 0) || 1;
                     const baseH = parseFloat(stage.dataset.baseHeight || img.dataset.baseHeight || img.naturalHeight || img.clientHeight || 0) || 1;
+                    const innerBaseW = parseFloat(img.dataset.innerBaseWidth || baseW) || baseW;
+                    const innerBaseH = parseFloat(img.dataset.innerBaseHeight || baseH) || baseH;
+                    const rotation = (((parseFloat(img.dataset.rotation || stage.dataset.rotation || '0') || 0) % 360) + 360) % 360;
                     img.dataset.baseWidth = baseW.toString();
                     img.dataset.baseHeight = baseH.toString();
+                    img.dataset.innerBaseWidth = innerBaseW.toString();
+                    img.dataset.innerBaseHeight = innerBaseH.toString();
                     stage.dataset.baseWidth = baseW.toString();
                     stage.dataset.baseHeight = baseH.toString();
+                    stage.dataset.rotation = rotation.toString();
 
                     preserveWrapperScroll(wrapper, () => {
                         const scaledW = Math.max(120, Math.round(baseW * currentScale));
                         const scaledH = Math.max(120, Math.round(baseH * currentScale));
+                        const innerScaledW = Math.max(120, Math.round(innerBaseW * currentScale));
+                        const innerScaledH = Math.max(120, Math.round(innerBaseH * currentScale));
 
                         stage.style.width = `${scaledW}px`;
                         stage.style.height = `${scaledH}px`;
                         stage.style.minWidth = currentScale <= 1 ? '' : `${scaledW}px`;
                         stage.style.minHeight = `${scaledH}px`;
+                        stage.style.position = 'relative';
 
                         img.style.transition = 'none';
-                        img.style.transform = 'none';
+                        img.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
                         img.style.display = 'block';
                         img.style.boxSizing = 'border-box';
-                        img.style.width = '100%';
-                        img.style.height = '100%';
+                        img.style.position = 'absolute';
+                        img.style.top = '50%';
+                        img.style.left = '50%';
+                        img.style.width = `${innerScaledW}px`;
+                        img.style.height = `${innerScaledH}px`;
                         img.style.maxWidth = 'none';
                         img.style.maxHeight = 'none';
                         img.style.objectFit = 'contain';

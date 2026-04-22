@@ -73,8 +73,12 @@ public class NexusService : INexusService
         var agenteProceso = BuscarPromptPorAgenteProceso(req, processDefinition);
         if (agenteProceso == null || agenteProceso.Agent == null) return null!;
 
-        var promptModel = agenteProceso.Agent.OPAIModelPrompt?.First().PromptCodeNavigation;
-        var agentPrompt = agenteProceso.Agent.OPAIModelPrompt?.First();
+        var agentPrompt = agenteProceso.Agent.OPAIModelPrompt?
+            .FirstOrDefault(op =>
+                op.TypeAgentNavigation != null &&
+                op.TypeAgentNavigation.Code == req.Origin)
+            ?? agenteProceso.Agent.OPAIModelPrompt?.FirstOrDefault();
+        var promptModel = agentPrompt?.PromptCodeNavigation;
         string prompt = promptModel?.Content ?? "";
 
         if (string.IsNullOrWhiteSpace(prompt) || agentPrompt == null)
@@ -221,19 +225,35 @@ public class NexusService : INexusService
             .Include(ap => ap.Agent)
                 .ThenInclude(a => a.OPAIModelPrompt)
                 .ThenInclude(op => op.PromptCodeNavigation)
+            .Include(ap => ap.Agent)
+                .ThenInclude(a => a.OPAIModelPrompt)
+                .ThenInclude(op => op.TypeAgentNavigation)
             .Include(ap => ap.Agent.AgentConfig)
             .Where(ap => ap.DefinitionCode == process.Code && ap.Agent.IsActive)
             .AsQueryable();
 
         if (req?.Id > 0)
         {
+            var selectedProcess = query.FirstOrDefault(ap => ap.Id == req.Id);
+            if (selectedProcess != null)
+            {
+                return selectedProcess;
+            }
+
             query = query.Where(ap => ap.Id == req.Id);
         }
 
         var data = query.FirstOrDefault(ap =>
-            ap.Agent.OPAIModelPrompt.Any(op => op.TypeAgentNavigation.Code == req!.Origin));
+            ap.Agent.OPAIModelPrompt.Any(op =>
+                op.TypeAgentNavigation != null &&
+                op.TypeAgentNavigation.Code == req!.Origin));
 
-        return data;
+        if (data != null)
+        {
+            return data;
+        }
+
+        return query.FirstOrDefault();
     }
 
     public async Task<OpenAiResponseDto> CallOpenAiAsync(
