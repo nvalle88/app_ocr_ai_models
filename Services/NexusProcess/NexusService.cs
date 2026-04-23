@@ -102,6 +102,12 @@ public class NexusService : INexusService
                 transientFiles = [.. await Task.WhenAll(ocrTasks)];
             }
 
+            var transientFileNames = transientFiles
+                .Select(file => (file.OriginalName ?? string.Empty).Trim())
+                .Where(fileName => !string.IsNullOrWhiteSpace(fileName))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
             var userContent = req.Message ?? "";
             if (req.FileUrls != null && req.FileUrls.Count > 0)
             {
@@ -110,8 +116,10 @@ public class NexusService : INexusService
 
             if (transientFiles.Count > 0)
             {
-                var attachmentLabel = transientFiles.Count == 1 ? "1 adjunto temporal" : $"{transientFiles.Count} adjuntos temporales";
-                userContent += $"\n\n{attachmentLabel} enviados en esta interacción.";
+                var attachmentLabel = transientFileNames.Count > 0
+                    ? string.Join(", ", transientFileNames)
+                    : (transientFiles.Count == 1 ? "1 adjunto temporal" : $"{transientFiles.Count} adjuntos temporales");
+                userContent += $"\n\nAdjuntos temporales enviados en esta interacción: {attachmentLabel}.";
             }
 
             var combined = new StringBuilder();
@@ -155,9 +163,9 @@ public class NexusService : INexusService
             var requestText = string.IsNullOrWhiteSpace(req.Message) ? agenteProceso.Agent.Description ?? string.Empty : req.Message.Trim();
             if (transientFiles.Count > 0)
             {
-                var attachmentText = transientFiles.Count == 1
-                    ? "1 adjunto temporal"
-                    : $"{transientFiles.Count} adjuntos temporales";
+                var attachmentText = transientFileNames.Count > 0
+                    ? string.Join(", ", transientFileNames)
+                    : (transientFiles.Count == 1 ? "1 adjunto temporal" : $"{transientFiles.Count} adjuntos temporales");
                 requestText = string.IsNullOrWhiteSpace(requestText)
                     ? $"Adjuntos temporales: {attachmentText}"
                     : $"{requestText}\nAdjuntos temporales: {attachmentText}";
@@ -234,13 +242,16 @@ public class NexusService : INexusService
 
         if (req?.Id > 0)
         {
-            var selectedProcess = query.FirstOrDefault(ap => ap.Id == req.Id);
+            var selectedProcess = query.FirstOrDefault(ap =>
+                ap.Id == req.Id &&
+                ap.Agent.OPAIModelPrompt.Any(op =>
+                    op.TypeAgentNavigation != null &&
+                    op.TypeAgentNavigation.Code == req.Origin));
+
             if (selectedProcess != null)
             {
                 return selectedProcess;
             }
-
-            query = query.Where(ap => ap.Id == req.Id);
         }
 
         var data = query.FirstOrDefault(ap =>
@@ -348,7 +359,9 @@ public class NexusService : INexusService
     public async Task<ViewCaseDetails?> ObtenerDetailsProcessCase(Guid caseCode, IdentityUser? user)
     {
         var proccess = await db.ProcessCase
-            .Include(pc => pc.FinalResponseResults).Include(pc => pc.DataFile)
+            .Include(pc => pc.FinalResponseResults)
+            .Include(pc => pc.DataFile)
+            .Include(pc => pc.DefinitionCodeNavigation)
             .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode) ?? throw new NegocioException("No hay información que mostrar");
         var agents = await GetAgentTypesForUserAndProcessAsync(user, proccess.DefinitionCode);
         bool hasChat = false;

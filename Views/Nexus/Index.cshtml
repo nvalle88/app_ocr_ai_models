@@ -372,6 +372,18 @@
                                                     <i class="fa-solid fa-eye"></i>
                                                 </button>
                                                 <button type="button"
+                                                        class="btn btn-outline-info btn-sm icon-action btnShowCaseDocuments"
+                                                        data-casecode="@currentCase.CaseCode"
+                                                        data-caselabel="@shortCaseCode"
+                                                        title="Ver miniaturas">
+                                                    <i class="fa-solid fa-images"></i>
+                                                </button>
+                                                <a href="@Url.Action("DownloadCaseDocumentsZip", "Nexus", new { caseCode = currentCase.CaseCode })"
+                                                   class="btn btn-outline-secondary btn-sm icon-action"
+                                                   title="Descargar documentos ZIP">
+                                                    <i class="fa-solid fa-file-zipper"></i>
+                                                </a>
+                                                <button type="button"
                                                         class="btn btn-success btn-sm icon-action btnProcessRow"
                                                         data-nameproccess="@shortCaseCode"
                                                         data-casecode="@currentCase.CaseCode"
@@ -382,6 +394,18 @@
                                             }
                                             else
                                             {
+                                                <button type="button"
+                                                        class="btn btn-outline-info btn-sm icon-action btnShowCaseDocuments"
+                                                        data-casecode="@currentCase.CaseCode"
+                                                        data-caselabel="@shortCaseCode"
+                                                        title="Ver miniaturas">
+                                                    <i class="fa-solid fa-images"></i>
+                                                </button>
+                                                <a href="@Url.Action("DownloadCaseDocumentsZip", "Nexus", new { caseCode = currentCase.CaseCode })"
+                                                   class="btn btn-outline-secondary btn-sm icon-action"
+                                                   title="Descargar documentos ZIP">
+                                                    <i class="fa-solid fa-file-zipper"></i>
+                                                </a>
                                                 <button type="button"
                                                         class="btn btn-success btn-sm icon-action btnProcessRow"
                                                         data-nameproccess="@shortCaseCode"
@@ -521,6 +545,42 @@
     </div>
 </div>
 
+<div id="caseDocumentsModal" class="case-documents-modal d-none" aria-hidden="true">
+    <div class="case-documents-modal-backdrop"></div>
+    <div class="case-documents-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="caseDocumentsModalTitle">
+        <div class="case-documents-modal-card">
+            <div class="case-documents-modal-head">
+                <div>
+                    <span class="workflow-kicker">Documentos del caso</span>
+                    <h3 id="caseDocumentsModalTitle">Miniaturas del expediente</h3>
+                    <p id="caseDocumentsModalSubtitle">Cargando documentos...</p>
+                </div>
+                <div class="case-documents-modal-actions">
+                    <a id="btnCaseDocumentsZipModal"
+                       href="#"
+                       class="btn btn-light btn-sm d-none"
+                       title="Descargar todos los documentos en ZIP">
+                        <i class="fa-solid fa-file-zipper me-1"></i>
+                        Descargar .zip
+                    </a>
+                    <button id="btnCloseCaseDocumentsModal" type="button" class="btn btn-outline-secondary btn-sm">
+                        <i class="fa-solid fa-xmark me-1"></i>
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+
+            <div class="case-documents-modal-body">
+                <div id="caseDocumentsModalState" class="case-documents-modal-state" aria-live="polite">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <span>Cargando documentos del caso...</span>
+                </div>
+                <div id="caseDocumentsModalGrid" class="case-documents-grid d-none"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 @section Styles {
     <link rel="stylesheet" href="~/css/app/nexus.index.css" />
 }
@@ -532,6 +592,9 @@
             processCaseUrl: '@Url.Action("ProcessCaseAjax", "Nexus")',
             processesUrl: '@Url.Action("GetProcessesByUser", "Nexus")',
             detailsUrlTemplate: '@Url.Action("Details1", "Nexus")?caseCode=__CASE__',
+            caseDocumentsUrlTemplate: '@Url.Action("GetCaseDocuments", "Nexus")?caseCode=__CASE__',
+            caseDocumentsZipUrlTemplate: '@Url.Action("DownloadCaseDocumentsZip", "Nexus")?caseCode=__CASE__',
+            caseDocumentDownloadUrlTemplate: '@Url.Action("DownloadCaseDocument", "Nexus")?caseCode=__CASE__&fileId=__FILE__',
             indexUrl: '@Url.Action("Index", "Nexus")',
             currentPage: @pageNumber,
             pageSize: @pageSize,

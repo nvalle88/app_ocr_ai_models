@@ -203,6 +203,17 @@
                                 <i class="fa-solid fa-file-lines" aria-hidden="true"></i>
                                 <span>Conversación .md</span>
                             </button>
+
+                            @if (documentCount > 0)
+                            {
+                                <a href="@Url.Action("DownloadCaseDocumentsZip", "Nexus", new { caseCode = Model.ProcessCase.CaseCode })"
+                                   class="btn btn-light btn-lg d-flex align-items-center gap-2"
+                                   id="btnDownloadCaseZip"
+                                   title="Descargar todos los documentos del caso en ZIP">
+                                    <i class="fa-solid fa-file-zipper" aria-hidden="true"></i>
+                                    <span>Documentos .zip</span>
+                                </a>
+                            }
                         </div>
                     </div>
                 </div>
@@ -972,7 +983,7 @@
 
                 const attachmentParts = [];
                 temp.querySelectorAll('.chat-request-attachments').forEach(node => {
-                    const value = (node.textContent || '').trim();
+                    const value = (node.getAttribute('data-attachments') || node.textContent || '').trim();
                     if (value) attachmentParts.push(value);
                     node.remove();
                 });
@@ -1016,10 +1027,52 @@
                 }
 
                 if (normalized.attachments) {
-                    parts.push(`<div class="chat-request-attachments">${escapeHtml(normalized.attachments)}</div>`);
+                    parts.push(renderRequestAttachmentsHtml(normalized.attachments));
                 }
 
                 return parts.join('');
+            }
+
+            function getAttachmentNames(rawAttachments) {
+                const normalized = (rawAttachments || '')
+                    .toString()
+                    .replace(/^adjuntos?\s+temporales?:/i, '')
+                    .trim();
+
+                if (!normalized) return [];
+
+                return normalized
+                    .split(/\s*,\s*/)
+                    .map(item => item.trim())
+                    .filter(Boolean);
+            }
+
+            function getAttachmentExtension(fileName) {
+                const cleanName = (fileName || '').toString().trim();
+                const dotIndex = cleanName.lastIndexOf('.');
+                return dotIndex >= 0 ? cleanName.slice(dotIndex) : '';
+            }
+
+            function renderRequestAttachmentsHtml(rawAttachments) {
+                const attachmentNames = getAttachmentNames(rawAttachments);
+                if (!attachmentNames.length) {
+                    return `<div class="chat-request-attachments" data-attachments="${escapeHtml(rawAttachments)}">${escapeHtml(rawAttachments)}</div>`;
+                }
+
+                return `
+                    <div class="chat-request-attachments" data-attachments="${escapeHtml(rawAttachments)}">
+                        <span class="chat-request-attachments-label">Adjuntos temporales</span>
+                        ${attachmentNames.map(fileName => {
+                            const extension = getAttachmentExtension(fileName);
+                            const type = getDocumentType(extension);
+                            const icon = getDocumentIcon(type, extension);
+                            return `
+                                <span class="chat-request-attachment-item">
+                                    <i class="fa ${icon}" aria-hidden="true"></i>
+                                    <span>${escapeHtml(fileName)}</span>
+                                </span>`;
+                        }).join('')}
+                    </div>`;
             }
 
             function getDocumentType(extension) {
@@ -2164,8 +2217,7 @@
 
                             composerProcesses = rows
                                 .map(normalizeComposerProcessEntry)
-                                .filter(Boolean)
-                                .sort((left, right) => (left?.name || '').localeCompare((right?.name || '').toString(), 'es', { sensitivity: 'base' }));
+                                .filter(Boolean);
                             composerProcessesLoaded = true;
                             composerProcessLoadError = '';
                             renderProcessMenuOptions();
@@ -2263,8 +2315,7 @@
                 function buildChatSendPayload(message) {
                     if (selectedComposerProcess?.code && !areSameProcessCodes(selectedComposerProcess.code, baseProcessCode)) {
                         return buildPromptPayload('CHAT', message, {
-                            processCode: selectedComposerProcess.code,
-                            id: parseInt(selectedComposerProcess.agentProcessId || '0', 10) || 0
+                            processCode: selectedComposerProcess.code
                         });
                     }
 
@@ -5097,10 +5148,57 @@
 
         if (!string.IsNullOrWhiteSpace(attachments))
         {
-            parts.Add($"<div class=\"chat-request-attachments\">{System.Net.WebUtility.HtmlEncode(attachments)}</div>");
+            parts.Add(RenderRequestAttachmentsHtml(attachments));
         }
 
         return string.Join(string.Empty, parts);
+    }
+
+    private static string RenderRequestAttachmentsHtml(string attachments)
+    {
+        var items = ParseAttachmentItems(attachments);
+        if (items.Count == 0)
+            return $"<div class=\"chat-request-attachments\" data-attachments=\"{System.Net.WebUtility.HtmlEncode(attachments)}\">{System.Net.WebUtility.HtmlEncode(attachments)}</div>";
+
+        var encodedItems = items.Select(item =>
+        {
+            var iconClass = ResolveAttachmentIconClass(item);
+            return $"<span class=\"chat-request-attachment-item\"><i class=\"fa {iconClass}\" aria-hidden=\"true\"></i><span>{System.Net.WebUtility.HtmlEncode(item)}</span></span>";
+        });
+
+        return $"<div class=\"chat-request-attachments\" data-attachments=\"{System.Net.WebUtility.HtmlEncode(attachments)}\"><span class=\"chat-request-attachments-label\">Adjuntos temporales</span>{string.Join(string.Empty, encodedItems)}</div>";
+    }
+
+    private static List<string> ParseAttachmentItems(string? attachments)
+    {
+        var normalized = (attachments ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return [];
+
+        normalized = System.Text.RegularExpressions.Regex.Replace(
+            normalized,
+            @"^adjuntos?\s+temporales?:\s*",
+            string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        return normalized
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(item => item.Trim())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToList();
+    }
+
+    private static string ResolveAttachmentIconClass(string fileName)
+    {
+        var extension = System.IO.Path.GetExtension(fileName)?.ToLowerInvariant() ?? string.Empty;
+        return extension switch
+        {
+            ".pdf" => "fa-file-pdf text-danger",
+            ".jpg" or ".jpeg" or ".png" or ".webp" or ".bmp" or ".tif" or ".tiff" => "fa-file-image text-white",
+            ".xml" => "fa-file-code text-info",
+            ".html" or ".htm" => "fa-file-lines text-info",
+            _ => "fa-file-lines text-white"
+        };
     }
 
     private static string NormalizeResponseMarkdown(string markdown)

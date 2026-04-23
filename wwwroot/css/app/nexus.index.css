@@ -590,6 +590,176 @@ body.workflow-modal-open {
     overflow: hidden;
 }
 
+body.case-documents-modal-open {
+    overflow: hidden;
+}
+
+.case-documents-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.case-documents-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.42);
+    backdrop-filter: blur(10px);
+    animation: modalBackdropIn .35s ease both;
+}
+
+.case-documents-modal-dialog {
+    position: relative;
+    z-index: 1;
+    width: min(1120px, 100%);
+    max-height: calc(100vh - 48px);
+    animation: modalDialogIn .4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.case-documents-modal-card {
+    background: var(--nexus-surface);
+    border: 1px solid var(--nexus-border);
+    border-radius: var(--nexus-radius-xl);
+    box-shadow: var(--nexus-shadow);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 48px);
+}
+
+.case-documents-modal-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 20px;
+    border-bottom: 1px solid rgba(148,163,184,0.16);
+    background:
+        radial-gradient(circle at top right, rgba(37,99,235,0.14), transparent 32%),
+        linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.96));
+}
+
+.case-documents-modal-head h3 {
+    margin: 8px 0 4px;
+    font-size: 1.18rem;
+}
+
+.case-documents-modal-head p {
+    margin: 0;
+    color: var(--nexus-slate-500);
+}
+
+.case-documents-modal-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.case-documents-modal-body {
+    padding: 18px 20px 20px;
+    overflow: auto;
+}
+
+.case-documents-modal-state {
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    border: 1px dashed rgba(148,163,184,0.24);
+    border-radius: 24px;
+    color: var(--nexus-slate-500);
+    background: rgba(248,250,252,0.72);
+    font-weight: 700;
+}
+
+.case-documents-modal-state i {
+    font-size: 1.6rem;
+    color: var(--nexus-blue-700);
+}
+
+.case-documents-modal-state.is-error i {
+    color: var(--nexus-rose-500);
+}
+
+.case-documents-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+}
+
+.case-documents-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 24px;
+    border: 1px solid rgba(148,163,184,0.16);
+    background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.96));
+    box-shadow: 0 16px 32px rgba(15, 23, 42, 0.08);
+}
+
+.case-documents-card-thumb {
+    height: 150px;
+    border-radius: 20px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(241,245,249,0.94);
+    color: var(--nexus-slate-500);
+}
+
+.case-documents-card-thumb.is-pdf {
+    color: var(--nexus-rose-500);
+}
+
+.case-documents-card-thumb.is-markup {
+    color: var(--nexus-blue-700);
+}
+
+.case-documents-card-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.case-documents-card-thumb i {
+    font-size: 2.2rem;
+}
+
+.case-documents-card-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.case-documents-card-copy strong {
+    font-size: 0.95rem;
+    line-height: 1.35;
+    display: -webkit-box;
+    overflow: hidden;
+    line-clamp: 2;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.case-documents-card-copy small {
+    color: var(--nexus-slate-500);
+}
+
+.case-documents-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: auto;
+}
+
 .workflow-badge {
     display: inline-flex;
     align-items: center;
@@ -1530,5 +1700,33 @@ body.workflow-modal-open {
 
     .pagination-link {
         flex: 1 1 auto;
+    }
+}
+
+@media (max-width: 640px) {
+    .case-documents-modal {
+        padding: 12px;
+    }
+
+    .case-documents-modal-dialog,
+    .case-documents-modal-card {
+        max-height: calc(100vh - 24px);
+    }
+
+    .case-documents-modal-head {
+        flex-direction: column;
+    }
+
+    .case-documents-modal-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .case-documents-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .case-documents-card-thumb {
+        height: 132px;
     }
 }

@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.IO.Compression;
 
 #endregion
 
@@ -324,6 +325,77 @@ namespace SmartAdmin.Web.Controllers
                 contentType = GetContentTypeForExtension(extension);
 
             return File(bytes, contentType, originalName);
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> DownloadCaseDocumentsZip(Guid caseCode)
+        {
+            if (caseCode == Guid.Empty)
+                return BadRequest(new { success = false, message = "caseCode es requerido." });
+
+            var processCase = await nexusService.ObtenerProcessCase(caseCode);
+            if (processCase == null)
+                return NotFound(new { success = false, message = "Caso no encontrado." });
+
+            var files = processCase.DataFile
+                .Where(x => !string.IsNullOrWhiteSpace(x.FileUri))
+                .OrderBy(x => x.CreatedDate)
+                .ToList();
+
+            if (files.Count == 0)
+                return BadRequest(new { success = false, message = "El caso no tiene documentos para descargar." });
+
+            await using var zipStream = new MemoryStream();
+            using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
+            using (var httpClient = new HttpClient())
+            {
+                var usedEntryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var errors = new List<string>();
+                var addedFiles = 0;
+
+                foreach (var file in files)
+                {
+                    var entryName = GetUniqueZipEntryName(ResolveDocumentDownloadName(file), usedEntryNames);
+
+                    try
+                    {
+                        using var response = await httpClient.GetAsync(file.FileUri, HttpCompletionOption.ResponseHeadersRead);
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            errors.Add($"{entryName}: no se pudo descargar el archivo remoto ({(int)response.StatusCode}).");
+                            continue;
+                        }
+
+                        var entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
+                        await using var entryStream = entry.Open();
+                        await response.Content.CopyToAsync(entryStream);
+                        addedFiles++;
+                    }
+                    catch (Exception ex)
+                    {
+                        errors.Add($"{entryName}: {ex.Message}");
+                    }
+                }
+
+                if (errors.Count > 0)
+                {
+                    var errorEntry = archive.CreateEntry("errores-descarga.txt", CompressionLevel.Fastest);
+                    await using var errorStream = new StreamWriter(errorEntry.Open());
+                    await errorStream.WriteLineAsync("Algunos documentos no pudieron agregarse al ZIP:");
+                    await errorStream.WriteLineAsync();
+                    foreach (var error in errors)
+                    {
+                        await errorStream.WriteLineAsync($"- {error}");
+                    }
+                }
+
+                if (addedFiles == 0)
+                    return BadRequest(new { success = false, message = "No fue posible descargar los documentos del caso." });
+            }
+
+            zipStream.Position = 0;
+            var shortCaseCode = processCase.CaseCode.ToString().Split('-').FirstOrDefault() ?? processCase.CaseCode.ToString();
+            return File(zipStream, "application/zip", $"NE-{shortCaseCode}-documentos.zip");
         }
 
         public async Task<IActionResult> Index(
@@ -863,6 +935,44 @@ namespace SmartAdmin.Web.Controllers
                 ".txt" => "text/plain; charset=utf-8",
                 _ => "application/octet-stream"
             };
+        }
+
+        private static string ResolveDocumentDownloadName(DataFile file)
+        {
+            var candidate = !string.IsNullOrWhiteSpace(file.OriginalName)
+                ? file.OriginalName
+                : Path.GetFileName(file.FileUri);
+
+            candidate = Path.GetFileName(candidate);
+            if (string.IsNullOrWhiteSpace(candidate))
+                candidate = $"documento-{file.Id}";
+
+            foreach (var invalidChar in Path.GetInvalidFileNameChars())
+            {
+                candidate = candidate.Replace(invalidChar, '_');
+            }
+
+            return candidate;
+        }
+
+        private static string GetUniqueZipEntryName(string fileName, HashSet<string> usedEntryNames)
+        {
+            if (usedEntryNames.Add(fileName))
+                return fileName;
+
+            var baseName = Path.GetFileNameWithoutExtension(fileName);
+            var extension = Path.GetExtension(fileName);
+            var suffix = 2;
+            string candidate;
+
+            do
+            {
+                candidate = $"{baseName} ({suffix}){extension}";
+                suffix++;
+            }
+            while (!usedEntryNames.Add(candidate));
+
+            return candidate;
         }
     }
 }

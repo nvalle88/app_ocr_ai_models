@@ -6,10 +6,10 @@
     --available-panel-height: 640px;
     --footer-height: 72px;
     --chat-input-height: 72px;
-    --columns-gap: 14px;
+    --columns-gap: 9px;
     --left-panel-width: 272px;
     --right-panel-width: 286px;
-    --splitter-size: 12px;
+    --splitter-size: 8px;
 }
 
 html, body {
@@ -180,7 +180,7 @@ body {
     top: 10px;
     bottom: 10px;
     left: 50%;
-    width: 5px;
+    width: 3px;
     transform: translateX(-50%);
     border-radius: 999px;
     background: linear-gradient(180deg, rgba(59,130,246,0.14), rgba(59,130,246,0.36), rgba(148,163,184,0.12));
@@ -191,11 +191,11 @@ body {
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 4px;
-    height: 42px;
+    width: 3px;
+    height: 38px;
     transform: translate(-50%, -50%);
     border-radius: 999px;
-    background: radial-gradient(circle, rgba(37,99,235,0.58) 34%, transparent 36%) center 4px / 4px 10px repeat-y;
+    background: radial-gradient(circle, rgba(37,99,235,0.58) 34%, transparent 36%) center 3px / 3px 9px repeat-y;
     opacity: .8;
 }
 
@@ -2749,9 +2749,51 @@ aside#colRight .studio-grid {
 
 .chat-request-attachments {
     margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
     font-size: 0.78rem;
     font-weight: 500;
-    opacity: .88;
+    opacity: .95;
+}
+
+.chat-request-attachments-label {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.14);
+    border: 1px solid rgba(255,255,255,0.16);
+    color: rgba(255,255,255,0.88);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.chat-request-attachment-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    max-width: 100%;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.16);
+    color: #fff;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+.chat-request-attachment-item i {
+    opacity: 0.96;
+}
+
+.chat-request-attachment-item span:last-child {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .chat-turn-response {

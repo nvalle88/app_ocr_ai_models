@@ -41,6 +41,27 @@
         return `NE-${shortCode.replace(/^NE/i, '')}`;
     }
 
+    function buildDetailsUrl(caseCode) {
+        return (config.detailsUrlTemplate || '/Nexus/Details1?caseCode=__CASE__')
+            .replace('__CASE__', encodeURIComponent(caseCode || ''));
+    }
+
+    function buildCaseDocumentsUrl(caseCode) {
+        return (config.caseDocumentsUrlTemplate || '/Nexus/GetCaseDocuments?caseCode=__CASE__')
+            .replace('__CASE__', encodeURIComponent(caseCode || ''));
+    }
+
+    function buildCaseDocumentsZipUrl(caseCode) {
+        return (config.caseDocumentsZipUrlTemplate || '/Nexus/DownloadCaseDocumentsZip?caseCode=__CASE__')
+            .replace('__CASE__', encodeURIComponent(caseCode || ''));
+    }
+
+    function buildCaseDocumentDownloadUrl(caseCode, fileId) {
+        return (config.caseDocumentDownloadUrlTemplate || '/Nexus/DownloadCaseDocument?caseCode=__CASE__&fileId=__FILE__')
+            .replace('__CASE__', encodeURIComponent(caseCode || ''))
+            .replace('__FILE__', encodeURIComponent(fileId || ''));
+    }
+
     function formatCaseDate(value) {
         const date = value instanceof Date ? value : new Date(value);
         return date.toLocaleString('es-EC', {
@@ -150,6 +171,22 @@
                 <i class="fa-solid fa-eye"></i>
             </button>`;
 
+        const thumbsButton = `
+            <button type="button"
+                    class="btn btn-outline-info btn-sm icon-action btnShowCaseDocuments"
+                    data-casecode="${escapeHtml(caseCode)}"
+                    data-caselabel="${escapeHtml(caseLabel)}"
+                    title="Ver miniaturas">
+                <i class="fa-solid fa-images"></i>
+            </button>`;
+
+        const zipButton = `
+            <a class="btn btn-outline-secondary btn-sm icon-action"
+               href="${escapeHtml(buildCaseDocumentsZipUrl(caseCode))}"
+               title="Descargar documentos ZIP">
+                <i class="fa-solid fa-file-zipper"></i>
+            </a>`;
+
         const processButton = `
             <button type="button"
                     class="btn btn-success btn-sm icon-action btnProcessRow"
@@ -160,7 +197,58 @@
                 <i class="fa-solid ${includeDetails ? 'fa-rotate-right' : 'fa-play'}"></i>
             </button>`;
 
-        return `<div class="table-actions">${includeDetails ? `${viewButton}${processButton}` : processButton}</div>`;
+        return `<div class="table-actions">${includeDetails ? `${viewButton}${thumbsButton}${zipButton}${processButton}` : `${thumbsButton}${zipButton}${processButton}`}</div>`;
+    }
+
+    function buildCaseDocumentCardHtml(file, caseCode) {
+        const originalName = file?.originalName || file?.url || `Documento ${file?.id || ''}`;
+        const type = normalize(file?.type || getFileKind(originalName));
+        const isImage = type === 'img' || type === 'image';
+        const createdDate = file?.createdDate ? formatCaseDate(file.createdDate) : '';
+        const thumbHtml = isImage && file?.url
+            ? `<img src="${escapeHtml(file.url)}" alt="${escapeHtml(originalName)}" loading="lazy" />`
+            : (() => {
+                const iconClass = type === 'pdf'
+                    ? 'fa-file-pdf'
+                    : type === 'markup'
+                        ? 'fa-file-code'
+                        : isImage
+                            ? 'fa-file-image'
+                            : 'fa-file-lines';
+                return `<i class="fa-solid ${iconClass}" aria-hidden="true"></i>`;
+            })();
+
+        const typeLabel = isImage
+            ? 'Imagen'
+            : type === 'pdf'
+                ? 'PDF'
+                : type === 'markup'
+                    ? 'XML / HTML'
+                    : 'Archivo';
+
+        return `
+            <article class="case-documents-card">
+                <div class="case-documents-card-thumb is-${escapeHtml(isImage ? 'image' : type)}">
+                    ${thumbHtml}
+                </div>
+                <div class="case-documents-card-copy">
+                    <strong title="${escapeHtml(originalName)}">${escapeHtml(originalName)}</strong>
+                    <small>${escapeHtml(typeLabel)}${createdDate ? ` • ${escapeHtml(createdDate)}` : ''}</small>
+                </div>
+                <div class="case-documents-card-actions">
+                    ${file?.url ? `
+                        <a href="${escapeHtml(file.url)}"
+                           class="btn btn-light btn-sm"
+                           target="_blank"
+                           rel="noopener noreferrer">
+                            Abrir
+                        </a>` : ''}
+                    <a href="${escapeHtml(buildCaseDocumentDownloadUrl(caseCode, file?.id))}"
+                       class="btn btn-outline-secondary btn-sm">
+                        Descargar
+                    </a>
+                </div>
+            </article>`;
     }
 
     function buildCaseRowMarkup(caseData, options = {}) {
@@ -268,7 +356,7 @@
             window.cargando();
         }
 
-        window.location.href = (config.detailsUrlTemplate || '/Nexus/Details1?caseCode=__CASE__').replace('__CASE__', encodeURIComponent(caseCode));
+        window.location.href = buildDetailsUrl(caseCode);
     };
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -327,6 +415,13 @@
         const paginationMetaDetail = q('.table-pagination-meta span');
         const tableShell = q('.table-shell');
         const casesSection = q('#casesSection');
+        const caseDocumentsModal = q('#caseDocumentsModal');
+        const caseDocumentsModalTitle = q('#caseDocumentsModalTitle');
+        const caseDocumentsModalSubtitle = q('#caseDocumentsModalSubtitle');
+        const caseDocumentsModalState = q('#caseDocumentsModalState');
+        const caseDocumentsModalGrid = q('#caseDocumentsModalGrid');
+        const btnCloseCaseDocumentsModal = q('#btnCloseCaseDocumentsModal');
+        const btnCaseDocumentsZipModal = q('#btnCaseDocumentsZipModal');
 
         const state = {
             hasProcess: false,
@@ -363,6 +458,95 @@
         ];
 
         /* ── Claude-like smooth text transition helper ── */
+        let activeCaseDocumentsCode = '';
+
+        function setCaseDocumentsModal(open) {
+            if (!caseDocumentsModal) return;
+
+            const shouldOpen = !!open;
+            caseDocumentsModal.classList.toggle('d-none', !shouldOpen);
+            caseDocumentsModal.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
+            document.body.classList.toggle('case-documents-modal-open', shouldOpen);
+        }
+
+        function renderCaseDocumentsState(iconClass, message, isError = false) {
+            if (!caseDocumentsModalState || !caseDocumentsModalGrid) return;
+
+            caseDocumentsModalGrid.classList.add('d-none');
+            caseDocumentsModalGrid.innerHTML = '';
+            caseDocumentsModalState.classList.remove('d-none', 'is-error');
+            caseDocumentsModalState.classList.toggle('is-error', !!isError);
+            caseDocumentsModalState.innerHTML = `
+                <i class="fa-solid ${iconClass}" aria-hidden="true"></i>
+                <span>${escapeHtml(message)}</span>`;
+        }
+
+        function renderCaseDocumentsGrid(items, caseCode, caseLabel) {
+            if (!caseDocumentsModalState || !caseDocumentsModalGrid) return;
+
+            if (!Array.isArray(items) || !items.length) {
+                caseDocumentsModalTitle.textContent = `Miniaturas de ${caseLabel}`;
+                caseDocumentsModalSubtitle.textContent = 'Este caso no tiene documentos disponibles.';
+                renderCaseDocumentsState('fa-folder-open', 'Este caso no tiene documentos para mostrar.');
+                return;
+            }
+
+            caseDocumentsModalTitle.textContent = `Miniaturas de ${caseLabel}`;
+            caseDocumentsModalSubtitle.textContent = `${items.length} documento(s) disponibles para consulta rápida.`;
+            caseDocumentsModalState.classList.add('d-none');
+            caseDocumentsModalGrid.classList.remove('d-none');
+            caseDocumentsModalGrid.innerHTML = items.map(item => buildCaseDocumentCardHtml(item, caseCode)).join('');
+        }
+
+        async function openCaseDocumentsModal(caseCode, caseLabel) {
+            if (!caseCode || !caseDocumentsModal) return;
+
+            activeCaseDocumentsCode = caseCode;
+            setCaseDocumentsModal(true);
+            caseDocumentsModalTitle.textContent = `Miniaturas de ${caseLabel}`;
+            caseDocumentsModalSubtitle.textContent = 'Cargando documentos del expediente...';
+            renderCaseDocumentsState('fa-spinner fa-spin', 'Cargando documentos del caso...');
+
+            if (btnCaseDocumentsZipModal) {
+                btnCaseDocumentsZipModal.href = buildCaseDocumentsZipUrl(caseCode);
+                btnCaseDocumentsZipModal.classList.remove('d-none');
+            }
+
+            try {
+                const response = await fetch(buildCaseDocumentsUrl(caseCode), {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+
+                if (!response.ok) {
+                    const payload = await readResponsePayload(response);
+                    throw new Error(payload?.message || payload?.error || response.statusText || 'No se pudieron consultar los documentos.');
+                }
+
+                const payload = await response.json();
+                renderCaseDocumentsGrid(payload, caseCode, caseLabel);
+            } catch (error) {
+                console.error(error);
+                caseDocumentsModalTitle.textContent = `Miniaturas de ${caseLabel}`;
+                caseDocumentsModalSubtitle.textContent = 'No fue posible cargar los documentos del caso.';
+                renderCaseDocumentsState('fa-triangle-exclamation', error?.message || 'No se pudieron cargar los documentos.', true);
+            }
+        }
+
+        function closeCaseDocumentsModal() {
+            if (!caseDocumentsModal) return;
+
+            activeCaseDocumentsCode = '';
+            setCaseDocumentsModal(false);
+            caseDocumentsModalGrid?.classList.add('d-none');
+            if (caseDocumentsModalGrid) caseDocumentsModalGrid.innerHTML = '';
+            caseDocumentsModalState?.classList.remove('is-error');
+            if (btnCaseDocumentsZipModal) {
+                btnCaseDocumentsZipModal.classList.add('d-none');
+                btnCaseDocumentsZipModal.setAttribute('href', '#');
+            }
+        }
+
         function animateCardText(el, newText) {
             if (!el || el.textContent === newText) return Promise.resolve();
             return new Promise(resolve => {
@@ -1614,11 +1798,24 @@
             resetCreationWorkflow();
         });
 
+        caseDocumentsModal?.addEventListener('click', event => {
+            if (!event.target.classList.contains('case-documents-modal-backdrop')) return;
+            closeCaseDocumentsModal();
+        });
+
         window.addEventListener('keydown', event => {
             if (event.key !== 'Escape') return;
+            if (caseDocumentsModal && !caseDocumentsModal.classList.contains('d-none')) {
+                closeCaseDocumentsModal();
+                return;
+            }
             if (!workflowModal || workflowModal.classList.contains('d-none')) return;
             if (btnCloseWorkflowModal?.classList.contains('d-none')) return;
             resetCreationWorkflow();
+        });
+
+        btnCloseCaseDocumentsModal?.addEventListener('click', () => {
+            closeCaseDocumentsModal();
         });
 
         document.addEventListener('click', event => {
@@ -1630,6 +1827,15 @@
             const detailsButton = event.target.closest('.btnViewDetails');
             if (detailsButton) {
                 window.handleViewDetails(detailsButton);
+                return;
+            }
+
+            const documentsButton = event.target.closest('.btnShowCaseDocuments');
+            if (documentsButton) {
+                const row = documentsButton.closest('.case-row');
+                const caseCode = documentsButton.dataset.casecode || row?.dataset.caseCode;
+                const caseLabel = documentsButton.dataset.caselabel || row?.dataset.caseLabel || buildShortCaseCode(caseCode);
+                openCaseDocumentsModal(caseCode, caseLabel);
             }
         });
 
