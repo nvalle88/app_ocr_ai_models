@@ -7,10 +7,12 @@ using app_tramites.Models.ViewModel;
 using app_tramites.Services.NexusProcess;
 using app_tramites.Utils;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.IO.Compression;
+using Azure.Storage.Blobs;
 
 #endregion
 
@@ -221,6 +223,21 @@ namespace SmartAdmin.Web.Controllers
         }
 
         [HttpGet]
+        public async Task<IActionResult> ConversationPreview(Guid caseCode)
+        {
+            if (caseCode == Guid.Empty)
+                return BadRequest("caseCode es requerido.");
+
+            var user = await userManager.GetUserAsync(User);
+            var details = await nexusService.ObtenerDetailsProcessCase(caseCode, user);
+
+            if (details == null)
+                return NotFound();
+
+            return View(details);
+        }
+
+        [HttpGet]
         public async Task<IActionResult> GetCaseDocuments(Guid caseCode)
         {
             if (caseCode == Guid.Empty)
@@ -309,93 +326,106 @@ namespace SmartAdmin.Web.Controllers
             if (string.IsNullOrWhiteSpace(file.FileUri))
                 return BadRequest(new { success = false, message = "El documento no tiene una ubicación válida." });
 
-            using var httpClient = new HttpClient();
-            using var response = await httpClient.GetAsync(file.FileUri, HttpCompletionOption.ResponseHeadersRead);
-            if (!response.IsSuccessStatusCode)
-                return StatusCode((int)response.StatusCode, new { success = false, message = "No se pudo descargar el documento." });
+            var blobCfg = await db.AzureBlobConf.AsNoTracking().FirstOrDefaultAsync();
+            var download = await DownloadStoredDocumentAsync(file, blobCfg);
+            if (download.Bytes == null)
+                return BadRequest(new { success = false, message = $"No se pudo descargar el documento. {download.Error}" });
 
-            var bytes = await response.Content.ReadAsByteArrayAsync();
             var originalName = !string.IsNullOrWhiteSpace(file.OriginalName)
                 ? file.OriginalName
                 : Path.GetFileName(file.FileUri);
             var extension = Path.GetExtension(originalName)?.ToLowerInvariant() ?? string.Empty;
-            var contentType = response.Content.Headers.ContentType?.ToString();
+            var contentType = download.ContentType;
 
             if (string.IsNullOrWhiteSpace(contentType))
                 contentType = GetContentTypeForExtension(extension);
 
-            return File(bytes, contentType, originalName);
+            return File(download.Bytes, contentType, originalName);
         }
 
         [HttpGet]
         public async Task<IActionResult> DownloadCaseDocumentsZip(Guid caseCode)
         {
-            if (caseCode == Guid.Empty)
-                return BadRequest(new { success = false, message = "caseCode es requerido." });
-
-            var processCase = await nexusService.ObtenerProcessCase(caseCode);
-            if (processCase == null)
-                return NotFound(new { success = false, message = "Caso no encontrado." });
-
-            var files = processCase.DataFile
-                .Where(x => !string.IsNullOrWhiteSpace(x.FileUri))
-                .OrderBy(x => x.CreatedDate)
-                .ToList();
-
-            if (files.Count == 0)
-                return BadRequest(new { success = false, message = "El caso no tiene documentos para descargar." });
-
-            await using var zipStream = new MemoryStream();
-            using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
-            using (var httpClient = new HttpClient())
+            try
             {
-                var usedEntryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var errors = new List<string>();
-                var addedFiles = 0;
+                if (caseCode == Guid.Empty)
+                    return BadRequest(new { success = false, message = "caseCode es requerido." });
 
-                foreach (var file in files)
+                var processCase = await nexusService.ObtenerProcessCase(caseCode);
+                if (processCase == null)
+                    return NotFound(new { success = false, message = "Caso no encontrado." });
+
+                var files = processCase.DataFile
+                    .Where(x => !string.IsNullOrWhiteSpace(x.FileUri))
+                    .OrderBy(x => x.CreatedDate)
+                    .ToList();
+
+                if (files.Count == 0)
+                    return BadRequest(new { success = false, message = "El caso no tiene documentos para descargar." });
+
+                var blobCfg = await db.AzureBlobConf.AsNoTracking().FirstOrDefaultAsync();
+                using var zipStream = new MemoryStream();
+                using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
+                using (var httpClient = new HttpClient())
                 {
-                    var entryName = GetUniqueZipEntryName(ResolveDocumentDownloadName(file), usedEntryNames);
+                    var usedEntryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    var errors = new List<string>();
+                    var addedFiles = 0;
 
-                    try
+                    foreach (var file in files)
                     {
-                        using var response = await httpClient.GetAsync(file.FileUri, HttpCompletionOption.ResponseHeadersRead);
-                        if (!response.IsSuccessStatusCode)
+                        var entryName = GetUniqueZipEntryName(ResolveDocumentDownloadName(file), usedEntryNames);
+
+                        try
                         {
-                            errors.Add($"{entryName}: no se pudo descargar el archivo remoto ({(int)response.StatusCode}).");
-                            continue;
+                            var download = await DownloadStoredDocumentAsync(file, blobCfg, httpClient);
+                            if (download.Bytes == null)
+                            {
+                                errors.Add($"{entryName}: {download.Error}");
+                                continue;
+                            }
+
+                            var entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
+                            await using var entryStream = entry.Open();
+                            await entryStream.WriteAsync(download.Bytes, 0, download.Bytes.Length);
+                            addedFiles++;
                         }
+                        catch (Exception ex)
+                        {
+                            errors.Add($"{entryName}: {ex.Message}");
+                        }
+                    }
 
-                        var entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
-                        await using var entryStream = entry.Open();
-                        await response.Content.CopyToAsync(entryStream);
-                        addedFiles++;
-                    }
-                    catch (Exception ex)
+                    if (errors.Count > 0)
                     {
-                        errors.Add($"{entryName}: {ex.Message}");
+                        var errorEntry = archive.CreateEntry("errores-descarga.txt", CompressionLevel.Fastest);
+                        await using var errorStream = new StreamWriter(errorEntry.Open());
+                        await errorStream.WriteLineAsync("Algunos documentos no pudieron agregarse al ZIP:");
+                        await errorStream.WriteLineAsync();
+                        foreach (var error in errors)
+                        {
+                            await errorStream.WriteLineAsync($"- {error}");
+                        }
                     }
+
+                    if (addedFiles == 0)
+                        return BadRequest(new { success = false, message = "No fue posible descargar los documentos del caso." });
                 }
 
-                if (errors.Count > 0)
-                {
-                    var errorEntry = archive.CreateEntry("errores-descarga.txt", CompressionLevel.Fastest);
-                    await using var errorStream = new StreamWriter(errorEntry.Open());
-                    await errorStream.WriteLineAsync("Algunos documentos no pudieron agregarse al ZIP:");
-                    await errorStream.WriteLineAsync();
-                    foreach (var error in errors)
-                    {
-                        await errorStream.WriteLineAsync($"- {error}");
-                    }
-                }
-
-                if (addedFiles == 0)
-                    return BadRequest(new { success = false, message = "No fue posible descargar los documentos del caso." });
+                var zipBytes = zipStream.ToArray();
+                var shortCaseCode = processCase.CaseCode.ToString().Split('-').FirstOrDefault() ?? processCase.CaseCode.ToString();
+                return File(zipBytes, "application/zip", $"NE-{shortCaseCode}-documentos.zip");
             }
-
-            zipStream.Position = 0;
-            var shortCaseCode = processCase.CaseCode.ToString().Split('-').FirstOrDefault() ?? processCase.CaseCode.ToString();
-            return File(zipStream, "application/zip", $"NE-{shortCaseCode}-documentos.zip");
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, new
+                {
+                    success = false,
+                    message = string.IsNullOrWhiteSpace(ex.Message)
+                        ? "No se pudo generar el ZIP del caso."
+                        : ex.Message
+                });
+            }
         }
 
         public async Task<IActionResult> Index(
@@ -441,32 +471,55 @@ namespace SmartAdmin.Web.Controllers
 
         // POST: /Nexus/ProcessPending
         [HttpPost]
-        public async Task<IActionResult> ProcessCaseAjax([FromForm] Guid caseCode)
+        public async Task<IActionResult> ProcessCaseAjax([FromForm] Guid caseCode, [FromForm] string? processCode = null)
         {
-            PromptRequest req = new()
+            try
             {
-                CaseCode = caseCode,
-                Message = string.Empty,
-                FileUrls = [],
-                Origin = ConstanteTipoAgente.Principal
-            };
+                PromptRequest req = new()
+                {
+                    CaseCode = caseCode,
+                    Message = string.Empty,
+                    FileUrls = [],
+                    Origin = ConstanteTipoAgente.Principal,
+                    ProcessCode = processCode ?? string.Empty
+                };
 
-            //var final = await EjecutarFinalResponse(caseCode);
-            var final = await nexusService.EjecutarPrompt(req);
-            var txt = string.Join(" ", final.ResponseText.ToLower());
+                //var final = await EjecutarFinalResponse(caseCode);
+                var final = await nexusService.EjecutarPrompt(req);
+                var txt = string.Join(" ", final.ResponseText.ToLower());
 
-            // Detectar tipo de caso
-            string resumenCategoria;
-            if (txt.Contains("**hospital del día**"))
-                resumenCategoria = "Hospital del Día";
-            else if (txt.Contains("**hospitalario**"))
-                resumenCategoria = "Hospitalario";
-            else if (txt.Contains("**ambulatorio**"))
-                resumenCategoria = "Ambulatorio";
-            else
-                resumenCategoria = "No Definido";
+                // Detectar tipo de caso
+                string resumenCategoria;
+                if (txt.Contains("**hospital del día**"))
+                    resumenCategoria = "Hospital del Día";
+                else if (txt.Contains("**hospitalario**"))
+                    resumenCategoria = "Hospitalario";
+                else if (txt.Contains("**ambulatorio**"))
+                    resumenCategoria = "Ambulatorio";
+                else
+                    resumenCategoria = "No Definido";
 
-            return Json(new { caseCode, typeCase = resumenCategoria });
+                return Json(new
+                {
+                    caseCode,
+                    typeCase = resumenCategoria,
+                    processCode = req.ProcessCode
+                });
+            }
+            catch (NegocioException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, new
+                {
+                    success = false,
+                    message = string.IsNullOrWhiteSpace(ex.Message)
+                        ? "No se pudo procesar el caso."
+                        : ex.Message
+                });
+            }
         }
 
         // 3. ProcessPending: procesa todos los casos pendientes uno a uno
@@ -953,6 +1006,96 @@ namespace SmartAdmin.Web.Controllers
             }
 
             return candidate;
+        }
+
+        private async Task<(byte[]? Bytes, string? ContentType, string? Error)> DownloadStoredDocumentAsync(
+            DataFile file,
+            AzureBlobConf? blobCfg,
+            HttpClient? httpClient = null)
+        {
+            if (string.IsNullOrWhiteSpace(file.FileUri))
+                return (null, null, "El documento no tiene una ubicación válida.");
+
+            string? blobError = null;
+            var blobClient = TryCreateBlobClient(file.FileUri, blobCfg);
+            if (blobClient != null)
+            {
+                try
+                {
+                    var blobDownload = await blobClient.DownloadContentAsync();
+                    return (blobDownload.Value.Content.ToArray(), blobDownload.Value.Details.ContentType, null);
+                }
+                catch (Exception ex)
+                {
+                    blobError = ex.Message;
+                }
+            }
+
+            var ownsHttpClient = httpClient == null;
+            httpClient ??= new HttpClient();
+
+            try
+            {
+                using var response = await httpClient.GetAsync(file.FileUri, HttpCompletionOption.ResponseHeadersRead);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var httpError = $"No se pudo descargar el archivo remoto ({(int)response.StatusCode}).";
+                    var composedError = string.IsNullOrWhiteSpace(blobError)
+                        ? httpError
+                        : $"Blob: {blobError}. HTTP: {httpError}";
+                    return (null, null, composedError);
+                }
+
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                return (bytes, response.Content.Headers.ContentType?.ToString(), null);
+            }
+            catch (Exception ex)
+            {
+                var composedError = string.IsNullOrWhiteSpace(blobError)
+                    ? ex.Message
+                    : $"Blob: {blobError}. HTTP: {ex.Message}";
+                return (null, null, composedError);
+            }
+            finally
+            {
+                if (ownsHttpClient)
+                    httpClient.Dispose();
+            }
+        }
+
+        private static BlobClient? TryCreateBlobClient(string fileUrl, AzureBlobConf? blobCfg)
+        {
+            if (blobCfg == null ||
+                string.IsNullOrWhiteSpace(blobCfg.ConnectionString) ||
+                string.IsNullOrWhiteSpace(fileUrl) ||
+                !Uri.TryCreate(fileUrl, UriKind.Absolute, out var uri))
+            {
+                return null;
+            }
+
+            var path = uri.AbsolutePath.Trim('/');
+            if (string.IsNullOrWhiteSpace(path))
+                return null;
+
+            var separatorIndex = path.IndexOf('/');
+            if (separatorIndex <= 0 || separatorIndex >= path.Length - 1)
+                return null;
+
+            var containerName = path[..separatorIndex];
+            if (!string.IsNullOrWhiteSpace(blobCfg.ContainerName) &&
+                !containerName.Equals(blobCfg.ContainerName, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            var blobName = Uri.UnescapeDataString(path[(separatorIndex + 1)..]);
+            if (string.IsNullOrWhiteSpace(blobName))
+                return null;
+
+            var blobServiceClient = new BlobServiceClient(blobCfg.ConnectionString);
+            return blobServiceClient
+                .GetBlobContainerClient(containerName)
+                .GetBlobClient(blobName);
         }
 
         private static string GetUniqueZipEntryName(string fileName, HashSet<string> usedEntryNames)

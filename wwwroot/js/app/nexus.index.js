@@ -46,6 +46,29 @@
             .replace('__CASE__', encodeURIComponent(caseCode || ''));
     }
 
+    function buildCaseConversationPreviewUrl(caseCode) {
+        return (config.caseConversationPreviewUrlTemplate || '/Nexus/ConversationPreview?caseCode=__CASE__')
+            .replace('__CASE__', encodeURIComponent(caseCode || ''));
+    }
+
+    async function fetchCaseConversationPreviewHtml(caseCode, signal) {
+        const response = await fetch(buildCaseConversationPreviewUrl(caseCode), {
+            method: 'GET',
+            headers: {
+                'Accept': 'text/html',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'same-origin',
+            signal
+        });
+
+        if (!response.ok) {
+            throw new Error(`No se pudo cargar la conversacion (${response.status}).`);
+        }
+
+        return response.text();
+    }
+
     function buildCaseDocumentsUrl(caseCode) {
         return (config.caseDocumentsUrlTemplate || '/Nexus/GetCaseDocuments?caseCode=__CASE__')
             .replace('__CASE__', encodeURIComponent(caseCode || ''));
@@ -93,6 +116,69 @@
         }
 
         throw new Error('El servidor devolvio una respuesta inesperada.');
+    }
+
+    function parseDownloadFileName(contentDisposition, fallbackName) {
+        const rawHeader = (contentDisposition || '').toString();
+        const utf8Match = rawHeader.match(/filename\*=UTF-8''([^;]+)/i);
+        if (utf8Match?.[1]) {
+            return decodeURIComponent(utf8Match[1]).replace(/["]/g, '').trim() || fallbackName;
+        }
+
+        const plainMatch = rawHeader.match(/filename="?([^\";]+)"?/i);
+        if (plainMatch?.[1]) {
+            return plainMatch[1].trim() || fallbackName;
+        }
+
+        return fallbackName;
+    }
+
+    function triggerBlobDownload(blob, fileName) {
+        const downloadUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = downloadUrl;
+        anchor.download = fileName;
+        anchor.style.display = 'none';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+
+        window.setTimeout(() => {
+            try { URL.revokeObjectURL(downloadUrl); } catch (error) { /* ignore */ }
+        }, 1500);
+    }
+
+    async function downloadCaseDocumentsZip(caseCode, caseLabel, triggerButton = null) {
+        if (!caseCode) {
+            throw new Error('No se encontro el caso para descargar el ZIP.');
+        }
+
+        const fallbackName = `NE-${buildShortCaseCode(caseLabel || caseCode)}-documentos.zip`;
+        if (triggerButton) {
+            triggerButton.disabled = true;
+            triggerButton.setAttribute('aria-busy', 'true');
+        }
+
+        try {
+            const response = await fetch(buildCaseDocumentsZipUrl(caseCode), {
+                method: 'GET',
+                headers: { 'Accept': 'application/zip, application/octet-stream' }
+            });
+
+            if (!response.ok) {
+                const payload = await readResponsePayload(response);
+                throw new Error(payload?.message || payload?.error || response.statusText || 'No se pudo descargar el ZIP del caso.');
+            }
+
+            const blob = await response.blob();
+            const fileName = parseDownloadFileName(response.headers.get('content-disposition'), fallbackName);
+            triggerBlobDownload(blob, fileName);
+        } finally {
+            if (triggerButton) {
+                triggerButton.disabled = false;
+                triggerButton.setAttribute('aria-busy', 'false');
+            }
+        }
     }
 
     function getFileExtension(fileName) {
@@ -161,6 +247,15 @@
     }
 
     function getActionsHtml(caseCode, caseLabel, includeDetails) {
+        const chatButton = `
+            <button type="button"
+                    class="btn btn-outline-dark btn-sm icon-action btnShowCaseChat"
+                    data-casecode="${escapeHtml(caseCode)}"
+                    data-caselabel="${escapeHtml(caseLabel)}"
+                    title="Ver chat completo">
+                <i class="fa-solid fa-comments"></i>
+            </button>`;
+
         const viewButton = `
             <button type="button"
                     class="btn btn-outline-primary btn-sm icon-action btnViewDetails"
@@ -181,11 +276,13 @@
             </button>`;
 
         const zipButton = `
-            <a class="btn btn-outline-secondary btn-sm icon-action"
-               href="${escapeHtml(buildCaseDocumentsZipUrl(caseCode))}"
+            <button type="button"
+               class="btn btn-outline-secondary btn-sm icon-action btnDownloadCaseZip"
+               data-casecode="${escapeHtml(caseCode)}"
+               data-caselabel="${escapeHtml(caseLabel)}"
                title="Descargar documentos ZIP">
                 <i class="fa-solid fa-file-zipper"></i>
-            </a>`;
+            </button>`;
 
         const processButton = `
             <button type="button"
@@ -197,7 +294,7 @@
                 <i class="fa-solid ${includeDetails ? 'fa-rotate-right' : 'fa-play'}"></i>
             </button>`;
 
-        return `<div class="table-actions">${includeDetails ? `${viewButton}${thumbsButton}${zipButton}${processButton}` : `${thumbsButton}${zipButton}${processButton}`}</div>`;
+        return `<div class="table-actions">${includeDetails ? `${chatButton}${viewButton}${thumbsButton}${zipButton}${processButton}` : `${chatButton}${thumbsButton}${zipButton}${processButton}`}</div>`;
     }
 
     function buildCaseDocumentCardHtml(file, caseCode) {
@@ -422,6 +519,13 @@
         const caseDocumentsModalGrid = q('#caseDocumentsModalGrid');
         const btnCloseCaseDocumentsModal = q('#btnCloseCaseDocumentsModal');
         const btnCaseDocumentsZipModal = q('#btnCaseDocumentsZipModal');
+        const caseChatModal = q('#caseChatModal');
+        const caseChatModalTitle = q('#caseChatModalTitle');
+        const caseChatModalSubtitle = q('#caseChatModalSubtitle');
+        const caseChatModalState = q('#caseChatModalState');
+        const caseChatModalFrame = q('#caseChatModalFrame');
+        const btnCloseCaseChatModal = q('#btnCloseCaseChatModal');
+        const btnCaseChatOpenDetails = q('#btnCaseChatOpenDetails');
 
         const state = {
             hasProcess: false,
@@ -459,6 +563,8 @@
 
         /* ── Claude-like smooth text transition helper ── */
         let activeCaseDocumentsCode = '';
+        let activeCaseConversationCode = '';
+        let caseConversationRequestController = null;
 
         function setCaseDocumentsModal(open) {
             if (!caseDocumentsModal) return;
@@ -508,7 +614,8 @@
             renderCaseDocumentsState('fa-spinner fa-spin', 'Cargando documentos del caso...');
 
             if (btnCaseDocumentsZipModal) {
-                btnCaseDocumentsZipModal.href = buildCaseDocumentsZipUrl(caseCode);
+                btnCaseDocumentsZipModal.dataset.casecode = caseCode;
+                btnCaseDocumentsZipModal.dataset.caselabel = caseLabel;
                 btnCaseDocumentsZipModal.classList.remove('d-none');
             }
 
@@ -543,7 +650,105 @@
             caseDocumentsModalState?.classList.remove('is-error');
             if (btnCaseDocumentsZipModal) {
                 btnCaseDocumentsZipModal.classList.add('d-none');
-                btnCaseDocumentsZipModal.setAttribute('href', '#');
+                btnCaseDocumentsZipModal.dataset.casecode = '';
+                btnCaseDocumentsZipModal.dataset.caselabel = '';
+            }
+        }
+
+        function setCaseChatModal(open) {
+            if (!caseChatModal) return;
+
+            const shouldOpen = !!open;
+            caseChatModal.classList.toggle('d-none', !shouldOpen);
+            caseChatModal.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
+            document.body.classList.toggle('case-chat-modal-open', shouldOpen);
+        }
+
+        function renderCaseChatState(iconClass, message, isError = false) {
+            if (!caseChatModalState) return;
+
+            caseChatModalFrame?.classList.add('d-none');
+            caseChatModalState.classList.remove('d-none', 'is-error');
+            caseChatModalState.classList.toggle('is-error', !!isError);
+            caseChatModalState.innerHTML = `
+                <i class="fa-solid ${iconClass}" aria-hidden="true"></i>
+                <span>${escapeHtml(message)}</span>`;
+        }
+
+        async function openCaseChatModal(caseCode, caseLabel) {
+            if (!caseCode || !caseChatModal || !caseChatModalFrame) return;
+
+            activeCaseConversationCode = caseCode;
+            setCaseChatModal(true);
+            caseChatModalTitle.textContent = `Chat completo de ${caseLabel}`;
+            caseChatModalSubtitle.textContent = 'Cargando conversación del expediente...';
+            renderCaseChatState('fa-spinner fa-spin', 'Preparando el historial del caso...');
+
+            if (btnCaseChatOpenDetails) {
+                btnCaseChatOpenDetails.href = buildDetailsUrl(caseCode);
+            }
+
+            if (caseConversationRequestController) {
+                caseConversationRequestController.abort();
+            }
+
+            const requestController = new AbortController();
+            caseConversationRequestController = requestController;
+            caseChatModalFrame.removeAttribute('src');
+            caseChatModalFrame.removeAttribute('srcdoc');
+            caseChatModalFrame.classList.add('d-none');
+            caseChatModalFrame.onload = () => {
+                if (activeCaseConversationCode !== caseCode || caseConversationRequestController !== requestController) return;
+                caseChatModalSubtitle.textContent = 'Vista rápida de la conversación sin salir del índice.';
+                caseChatModalState.classList.add('d-none');
+                caseChatModalFrame.classList.remove('d-none');
+            };
+
+            try {
+                const previewHtml = await fetchCaseConversationPreviewHtml(caseCode, requestController.signal);
+                if (activeCaseConversationCode !== caseCode || caseConversationRequestController !== requestController) return;
+                caseChatModalFrame.srcdoc = previewHtml;
+                window.setTimeout(() => {
+                    if (activeCaseConversationCode !== caseCode || caseConversationRequestController !== requestController) return;
+                    if (!caseChatModalFrame.classList.contains('d-none')) return;
+                    caseChatModalState.classList.add('d-none');
+                    caseChatModalFrame.classList.remove('d-none');
+                }, 180);
+            } catch (error) {
+                if (error && error.name === 'AbortError') return;
+
+                console.error('Case chat preview error', error);
+                if (activeCaseConversationCode !== caseCode || caseConversationRequestController !== requestController) return;
+
+                caseChatModalSubtitle.textContent = 'No fue posible cargar la conversación del expediente.';
+                renderCaseChatState('fa-circle-exclamation', (error && error.message) ? error.message : 'No se pudo abrir la vista rápida del chat.', true);
+            }
+        }
+
+        function closeCaseChatModal() {
+            if (!caseChatModal) return;
+
+            activeCaseConversationCode = '';
+            if (caseConversationRequestController) {
+                caseConversationRequestController.abort();
+                caseConversationRequestController = null;
+            }
+            setCaseChatModal(false);
+            caseChatModalState?.classList.remove('is-error');
+            if (caseChatModalState) {
+                caseChatModalState.classList.remove('d-none');
+                caseChatModalState.innerHTML = `
+                    <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+                    <span>Cargando conversación del caso...</span>`;
+            }
+            if (caseChatModalFrame) {
+                caseChatModalFrame.onload = null;
+                caseChatModalFrame.classList.add('d-none');
+                caseChatModalFrame.removeAttribute('src');
+                caseChatModalFrame.removeAttribute('srcdoc');
+            }
+            if (btnCaseChatOpenDetails) {
+                btnCaseChatOpenDetails.setAttribute('href', '#');
             }
         }
 
@@ -1803,10 +2008,19 @@
             closeCaseDocumentsModal();
         });
 
+        caseChatModal?.addEventListener('click', event => {
+            if (!event.target.classList.contains('case-chat-modal-backdrop')) return;
+            closeCaseChatModal();
+        });
+
         window.addEventListener('keydown', event => {
             if (event.key !== 'Escape') return;
             if (caseDocumentsModal && !caseDocumentsModal.classList.contains('d-none')) {
                 closeCaseDocumentsModal();
+                return;
+            }
+            if (caseChatModal && !caseChatModal.classList.contains('d-none')) {
+                closeCaseChatModal();
                 return;
             }
             if (!workflowModal || workflowModal.classList.contains('d-none')) return;
@@ -1818,10 +2032,23 @@
             closeCaseDocumentsModal();
         });
 
+        btnCloseCaseChatModal?.addEventListener('click', () => {
+            closeCaseChatModal();
+        });
+
         document.addEventListener('click', event => {
             const processButton = event.target.closest('.btnProcessRow');
             if (processButton) {
                 processCase(processButton);
+            }
+
+            const chatButton = event.target.closest('.btnShowCaseChat');
+            if (chatButton) {
+                const row = chatButton.closest('.case-row');
+                const caseCode = chatButton.dataset.casecode || row?.dataset.caseCode;
+                const caseLabel = chatButton.dataset.caselabel || row?.dataset.caseLabel || buildShortCaseCode(caseCode);
+                openCaseChatModal(caseCode, caseLabel);
+                return;
             }
 
             const detailsButton = event.target.closest('.btnViewDetails');
@@ -1836,6 +2063,23 @@
                 const caseCode = documentsButton.dataset.casecode || row?.dataset.caseCode;
                 const caseLabel = documentsButton.dataset.caselabel || row?.dataset.caseLabel || buildShortCaseCode(caseCode);
                 openCaseDocumentsModal(caseCode, caseLabel);
+                return;
+            }
+
+            const zipButton = event.target.closest('.btnDownloadCaseZip');
+            if (zipButton) {
+                const row = zipButton.closest('.case-row');
+                const caseCode = zipButton.dataset.casecode || row?.dataset.caseCode;
+                const caseLabel = zipButton.dataset.caselabel || row?.dataset.caseLabel || buildShortCaseCode(caseCode);
+
+                downloadCaseDocumentsZip(caseCode, caseLabel, zipButton).catch(error => {
+                    console.error(error);
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Advertencia',
+                        text: error?.message || 'No se pudo descargar el ZIP del caso.'
+                    });
+                });
             }
         });
 

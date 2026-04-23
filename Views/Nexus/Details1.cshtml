@@ -49,8 +49,21 @@
                                            aria-hidden="true"
                                            tabindex="-1"
                                            style="display:none !important;"
-                                           multiple
-                                           accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff,.xml,.html,.htm,image/*,application/pdf,text/xml,application/xml,text/html" />
+                                            multiple
+                                            accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff,.xml,.html,.htm,image/*,application/pdf,text/xml,application/xml,text/html" />
+                                    @if (documentCount > 0)
+                                    {
+                                        <button id="btnDownloadCaseZipPanel"
+                                                type="button"
+                                                class="btn btn-sm btn-case-zip-download"
+                                                title="Descargar todos los documentos del caso en ZIP">
+                                            <span class="btn-case-zip-icon"><i class="fa-solid fa-file-zipper"></i></span>
+                                            <span class="btn-case-zip-copy">
+                                                <strong>Descargar ZIP</strong>
+                                                <small>Todo el expediente</small>
+                                            </span>
+                                        </button>
+                                    }
                                     <button id="btnRefreshSources" class="btn btn-sm btn-outline-secondary" title="Refrescar lista">
                                         <i class="fa fa-sync"></i>
                                     </button>
@@ -206,13 +219,13 @@
 
                             @if (documentCount > 0)
                             {
-                                <a href="@Url.Action("DownloadCaseDocumentsZip", "Nexus", new { caseCode = Model.ProcessCase.CaseCode })"
+                                <button type="button"
                                    class="btn btn-light btn-lg d-flex align-items-center gap-2"
                                    id="btnDownloadCaseZip"
                                    title="Descargar todos los documentos del caso en ZIP">
                                     <i class="fa-solid fa-file-zipper" aria-hidden="true"></i>
                                     <span>Documentos .zip</span>
-                                </a>
+                                </button>
                             }
                         </div>
                     </div>
@@ -1349,6 +1362,52 @@
                 }
             }
 
+            function setProcessExecuteLoading(on) {
+                const executeButton = q('#btnProcessExecute');
+                const pickerButton = q('#btnProcessPicker');
+                if (!executeButton) return;
+
+                if (!executeButton.dataset.idleHtml) {
+                    executeButton.dataset.idleHtml = executeButton.innerHTML;
+                }
+
+                executeButton.disabled = !!on;
+                executeButton.setAttribute('aria-busy', on ? 'true' : 'false');
+                executeButton.classList.toggle('loading', !!on);
+                if (pickerButton) {
+                    pickerButton.disabled = !!on;
+                    pickerButton.setAttribute('aria-busy', on ? 'true' : 'false');
+                }
+
+                if (on) {
+                    executeButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>';
+                } else {
+                    executeButton.innerHTML = executeButton.dataset.idleHtml;
+                }
+            }
+
+            function setZipButtonLoading(button, on, idleText = null) {
+                if (!button) return;
+
+                if (!button.dataset.idleHtml) {
+                    button.dataset.idleHtml = button.innerHTML;
+                }
+
+                button.disabled = !!on;
+                button.setAttribute('aria-busy', on ? 'true' : 'false');
+                if (on) {
+                    button.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span>Preparando ZIP...</span>';
+                    return;
+                }
+
+                if (idleText) {
+                    button.innerHTML = idleText;
+                    return;
+                }
+
+                button.innerHTML = button.dataset.idleHtml;
+            }
+
             function ensureThinkingOverlay() {
                 let overlay = document.getElementById('thinkingOverlay');
                 if (!overlay) {
@@ -1496,9 +1555,12 @@
                 let chatOutputEl = q('#chatOutput');
                 const caseCode = '@Model.ProcessCase.CaseCode';
                 const caseDisplayCode = 'NE-@caseShortCode';
+                const conversationScrollRestoreKey = `nexus.details1.chat-bottom.${caseCode}`;
                 const caseDateStr = '@((Model.ProcessCase.FinalResponseResults != null && Model.ProcessCase.FinalResponseResults.Any()) ? Model.ProcessCase.FinalResponseResults.OrderByDescending(r => r.CreatedDate).FirstOrDefault()?.CreatedDate.ToLocalTime().ToString("dd/MM/yyyy, HH:mm") : "")';
                 const filesCount = @(Model.ProcessCase.DataFile?.Count() ?? 0);
                 const getProcessesUrl = '@Url.Action("GetProcessesByUser", "Nexus")';
+                const processCaseUrl = '@Url.Action("ProcessCaseAjax", "Nexus")';
+                const downloadCaseZipUrl = '@Url.Action("DownloadCaseDocumentsZip", "Nexus", new { caseCode = Model.ProcessCase.CaseCode })';
                 const baseProcessCode = '@Html.Raw(System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(Model.ProcessCase.DefinitionCode ?? string.Empty))';
                 const processTitleText = '@Html.Raw(System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(processTitle ?? string.Empty))';
                 const baseProcessName = processTitleText || '@Html.Raw(System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(Model.ProcessCase.DefinitionCode ?? "Proceso del caso"))';
@@ -1522,6 +1584,8 @@
                 const persistentUploadQueueEl = q('#persistentUploadQueue');
                 const previewEmptyState = q('#previewEmptyState');
                 const colRight = q('#colRight');
+                const downloadCaseZipBtn = q('#btnDownloadCaseZip');
+                const downloadCaseZipPanelBtn = q('#btnDownloadCaseZipPanel');
                 const chatMarkdownModal = q('#chatMarkdownModal');
                 const chatMarkdownModalContent = q('#chatMarkdownModalContent');
                 const chatMarkdownModalMeta = q('#chatMarkdownModalMeta');
@@ -1538,6 +1602,12 @@
                 let composerProcessLoadPromise = null;
                 let composerProcessesLoaded = false;
                 let composerProcessLoadError = '';
+                const documentFocusLayoutState = {
+                    hasSnapshot: false,
+                    previousRightHidden: false,
+                    previousLeftWidth: null,
+                    previousRightWidth: null
+                };
 
                 qa('#chatOutput .chat-turn-request, #chatOutput .chat-turn-response-body').forEach(sanitizeRichHtml);
                 enhanceMarkdownContent(chatOutputEl);
@@ -1592,6 +1662,52 @@
                     window.setTimeout(() => {
                         try { URL.revokeObjectURL(downloadUrl); } catch (e) { /* ignore */ }
                     }, 1500);
+                }
+
+                function parseJsonSafeText(text) {
+                    try {
+                        return text ? JSON.parse(text) : null;
+                    } catch {
+                        return null;
+                    }
+                }
+
+                function parseDownloadFileName(contentDisposition, fallbackName) {
+                    const rawHeader = (contentDisposition || '').toString();
+                    const utf8Match = rawHeader.match(/filename\*=UTF-8''([^;]+)/i);
+                    if (utf8Match?.[1]) {
+                        return decodeURIComponent(utf8Match[1]).replace(/["]/g, '').trim() || fallbackName;
+                    }
+
+                    const plainMatch = rawHeader.match(/filename="?([^\";]+)"?/i);
+                    if (plainMatch?.[1]) {
+                        return plainMatch[1].trim() || fallbackName;
+                    }
+
+                    return fallbackName;
+                }
+
+                function triggerBlobDownload(blob, filename) {
+                    const downloadUrl = URL.createObjectURL(blob);
+                    const anchor = document.createElement('a');
+                    anchor.href = downloadUrl;
+                    anchor.download = filename;
+                    anchor.style.display = 'none';
+                    document.body.appendChild(anchor);
+                    anchor.click();
+                    anchor.remove();
+
+                    window.setTimeout(() => {
+                        try { URL.revokeObjectURL(downloadUrl); } catch (e) { /* ignore */ }
+                    }, 1500);
+                }
+
+                async function readErrorMessage(response, fallbackMessage) {
+                    const text = await response.text();
+                    const payload = parseJsonSafeText(text);
+                    if (payload?.message) return payload.message;
+                    if (payload?.error) return payload.error;
+                    return text || response.statusText || fallbackMessage;
                 }
 
                 function formatExportDate(date = new Date()) {
@@ -1819,8 +1935,8 @@
                             .export-pdf-body li,
                             .export-pdf-body blockquote,
                             .export-pdf-body pre {
-                                page-break-inside: avoid;
-                                break-inside: avoid;
+                                page-break-inside: auto;
+                                break-inside: auto;
                             }
                             .export-pdf-body table,
                             .export-pdf-body div,
@@ -1868,10 +1984,14 @@
                                 border-radius: 18px;
                                 background: #0f172a;
                                 color: #e2e8f0;
-                                overflow: auto;
+                                overflow: visible;
+                                white-space: pre-wrap;
+                                word-break: break-word;
+                                overflow-wrap: anywhere;
                             }
                             .export-pdf-body code {
                                 font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+                                white-space: inherit;
                             }
                             .export-pdf-body :not(pre) > code {
                                 display: inline-block;
@@ -1929,6 +2049,12 @@
                             try { await document.fonts.ready; } catch (e) { /* ignore */ }
                         }
 
+                        const pdfMargins = { top: 10, right: 10, bottom: 12, left: 10 };
+                        const mmToPx = mm => Math.round((mm * 96) / 25.4);
+                        const pageWidthPx = mmToPx(210);
+                        const contentWidthPx = Math.max(680, pageWidthPx - mmToPx(pdfMargins.left + pdfMargins.right) - 10);
+                        const stageWidthPx = Math.max(contentWidthPx + 56, 760);
+
                         const docWrap = createMarkdownExportNode({
                             title,
                             subtitle,
@@ -1940,8 +2066,8 @@
                         exportStage.style.position = 'fixed';
                         exportStage.style.top = '0';
                         exportStage.style.left = '120vw';
-                        exportStage.style.width = '920px';
-                        exportStage.style.maxWidth = '920px';
+                        exportStage.style.width = `${stageWidthPx}px`;
+                        exportStage.style.maxWidth = `${stageWidthPx}px`;
                         exportStage.style.height = '100vh';
                         exportStage.style.overflow = 'auto';
                         exportStage.style.background = '#ffffff';
@@ -1951,8 +2077,8 @@
                         docWrap.style.position = 'relative';
                         docWrap.style.left = '0';
                         docWrap.style.top = '0';
-                        docWrap.style.width = '860px';
-                        docWrap.style.maxWidth = '860px';
+                        docWrap.style.width = `${contentWidthPx}px`;
+                        docWrap.style.maxWidth = `${contentWidthPx}px`;
                         docWrap.style.margin = '0 auto';
                         docWrap.style.opacity = '1';
                         docWrap.style.background = '#ffffff';
@@ -1967,7 +2093,7 @@
                         });
 
                         const opt = {
-                            margin: [10, 10, 12, 10],
+                            margin: [pdfMargins.top, pdfMargins.right, pdfMargins.bottom, pdfMargins.left],
                             filename,
                             image: { type: 'jpeg', quality: 0.98 },
                             html2canvas: {
@@ -1978,7 +2104,7 @@
                                 backgroundColor: '#ffffff',
                                 scrollX: 0,
                                 scrollY: 0,
-                                windowWidth: Math.max(docWrap.scrollWidth || 0, 920),
+                                windowWidth: Math.max(docWrap.scrollWidth || 0, stageWidthPx),
                                 windowHeight: Math.max(docWrap.scrollHeight || 0, 1600)
                             },
                             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
@@ -2328,7 +2454,8 @@
                 }
 
                 function isComposerBusy() {
-                    return !!sendBtn?.classList.contains('loading');
+                    return !!sendBtn?.classList.contains('loading')
+                        || !!q('#btnProcessExecute')?.classList.contains('loading');
                 }
 
                 async function dispatchComposerRequest(options = {}) {
@@ -2396,8 +2523,125 @@
                     }
                 }
 
+                async function downloadCaseDocumentsZip(button = null) {
+                    const triggerButton = button || downloadCaseZipBtn || downloadCaseZipPanelBtn;
+                    const fallbackFileName = `${caseDisplayCode || 'caso'}-documentos.zip`;
+
+                    setZipButtonLoading(downloadCaseZipBtn, true);
+                    setZipButtonLoading(downloadCaseZipPanelBtn, true);
+
+                    try {
+                        const response = await fetch(downloadCaseZipUrl, {
+                            method: 'GET',
+                            headers: { 'Accept': 'application/zip, application/octet-stream' }
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(await readErrorMessage(response, 'No se pudo descargar el ZIP del caso.'));
+                        }
+
+                        const blob = await response.blob();
+                        const fileName = parseDownloadFileName(
+                            response.headers.get('content-disposition'),
+                            fallbackFileName
+                        );
+
+                        triggerBlobDownload(blob, fileName);
+                    } catch (err) {
+                        console.error(err);
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Advertencia',
+                            text: err && err.message ? err.message : 'No se pudo descargar el ZIP del caso.'
+                        });
+                    } finally {
+                        setZipButtonLoading(downloadCaseZipBtn, false);
+                        setZipButtonLoading(downloadCaseZipPanelBtn, false);
+                    }
+                }
+
+                async function completeProcessExecutionTurn(turn, processName) {
+                    if (!turn) return;
+
+                    const cleanProcessName = (processName || 'el proceso seleccionado').toString().trim();
+                    const requestPreview = buildAgentProcessPreview(cleanProcessName, '');
+                    const completionText = `Proceso ejecutado con ${cleanProcessName}. Estoy actualizando la vista del caso para mostrar el resultado mas reciente.`;
+
+                    await appendConversationTurn({
+                        request: requestPreview,
+                        requestText: requestPreview,
+                        RequestText: requestPreview,
+                        response: completionText,
+                        responseText: completionText,
+                        ResponseText: completionText
+                    }, 5, turn);
+
+                    if (turn.actionsEl) {
+                        turn.actionsEl.hidden = true;
+                    }
+                }
+
                 async function executeSelectedProcessNow() {
-                    await dispatchComposerRequest({ forceProcessExecution: true });
+                    if (isComposerBusy()) return;
+
+                    const activeProcess = getActiveComposerProcess();
+                    const processCodeToRun = (activeProcess?.code || baseProcessCode || '').toString().trim();
+                    if (!processCodeToRun) {
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Advertencia',
+                            text: 'No se encontró un proceso válido para ejecutar este caso.'
+                        });
+                        return;
+                    }
+
+                    const form = new FormData();
+                    form.append('caseCode', caseCode);
+                    form.append('processCode', processCodeToRun);
+
+                    let pendingTurn = null;
+
+                    setProcessExecuteLoading(true);
+
+                    try {
+                        setAttachMenu(false);
+                        setProcessMenu(false);
+                        pendingTurn = createPendingConversationTurn(buildAgentProcessPreview(activeProcess.name, ''));
+                        if (pendingTurn?.metaEl) {
+                            pendingTurn.metaEl.textContent = `Nexus esta ejecutando ${activeProcess.name || 'el proceso seleccionado'}...`;
+                        }
+
+                        await stabilizePositionDuringTransition(900);
+                        const response = await fetch(processCaseUrl, {
+                            method: 'POST',
+                            body: form
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(await readErrorMessage(response, 'No se pudo procesar el caso.'));
+                        }
+
+                        await response.text();
+                        await loadCaseDocuments(currentPreview.id || null);
+                        await completeProcessExecutionTurn(pendingTurn, activeProcess.name);
+                        scrollResultAreaToBottom(pendingTurn?.article?.closest('.result-area'));
+                        scheduleConversationBottomRestore('process-execution');
+
+                        window.setTimeout(() => {
+                            window.location.reload();
+                        }, 700);
+                    } catch (err) {
+                        console.error(err);
+                        setConversationTurnError(pendingTurn, err && err.message ? err.message : 'No se pudo procesar el caso.');
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Advertencia',
+                            text: err && err.message ? err.message : 'No se pudo procesar el caso.'
+                        });
+                    } finally {
+                        setProcessExecuteLoading(false);
+                        positionChatInput();
+                    }
                 }
 
                 async function runAgentProcess(trigger) {
@@ -2605,6 +2849,16 @@
                     await executeSelectedProcessNow();
                 });
 
+                downloadCaseZipBtn?.addEventListener('click', async event => {
+                    event.preventDefault();
+                    await downloadCaseDocumentsZip(downloadCaseZipBtn);
+                });
+
+                downloadCaseZipPanelBtn?.addEventListener('click', async event => {
+                    event.preventDefault();
+                    await downloadCaseDocumentsZip(downloadCaseZipPanelBtn);
+                });
+
                 document.addEventListener('click', event => {
                     const target = event.target;
 
@@ -2627,17 +2881,6 @@
                     if (chatMarkdownModal?.classList.contains('d-none')) return;
                     closeChatMarkdownModal();
                 });
-
-                function setDocumentFocus(enabled) {
-                    const applyDesktopFocus = !!enabled && !window.matchMedia('(max-width: 991px)').matches;
-                    document.documentElement.classList.toggle('document-focus', applyDesktopFocus);
-                    document.documentElement.classList.toggle('right-hidden', applyDesktopFocus);
-                    if (colRight) {
-                        colRight.setAttribute('aria-hidden', applyDesktopFocus ? 'true' : 'false');
-                    }
-                    positionChatInput();
-                    syncSplitterAccessibility();
-                }
 
                 function setSourcesStatus(text, tone = 'muted') {
                     if (!sourcesStatusEl) return;
@@ -2817,6 +3060,64 @@
                             container.scrollTop = container.scrollHeight;
                         }
                     } catch (e) { /* ignore */ }
+                }
+
+                function scheduleConversationBottomRestore(reason = 'refresh') {
+                    try {
+                        sessionStorage.setItem(conversationScrollRestoreKey, JSON.stringify({
+                            caseCode,
+                            reason,
+                            ts: Date.now()
+                        }));
+                    } catch (e) { /* ignore */ }
+                }
+
+                function restoreConversationBottomIfNeeded() {
+                    let payload = null;
+                    try {
+                        payload = parseJsonSafeText(sessionStorage.getItem(conversationScrollRestoreKey) || '');
+                    } catch (e) {
+                        payload = null;
+                    }
+
+                    if (!payload || payload.caseCode !== caseCode) return;
+                    if (payload.ts && Math.abs(Date.now() - Number(payload.ts)) > 120000) {
+                        try { sessionStorage.removeItem(conversationScrollRestoreKey); } catch (e) { /* ignore */ }
+                        return;
+                    }
+
+                    const clear = () => {
+                        try { sessionStorage.removeItem(conversationScrollRestoreKey); } catch (e) { /* ignore */ }
+                    };
+
+                    const thread = ensureChatOutput();
+                    if (!thread) {
+                        clear();
+                        return;
+                    }
+
+                    const resultArea = thread.closest('.result-area');
+                    const lastTurn = thread.lastElementChild;
+
+                    window.requestAnimationFrame(() => {
+                        window.requestAnimationFrame(() => {
+                            window.setTimeout(() => {
+                                try {
+                                    if (resultArea) {
+                                        resultArea.scrollTop = resultArea.scrollHeight;
+                                    }
+                                    if (lastTurn && typeof lastTurn.scrollIntoView === 'function') {
+                                        lastTurn.scrollIntoView({ behavior: 'auto', block: 'end' });
+                                    }
+                                    if (resultArea) {
+                                        resultArea.scrollTop = resultArea.scrollHeight;
+                                    }
+                                } finally {
+                                    clear();
+                                }
+                            }, 40);
+                        });
+                    });
                 }
 
                 function buildPendingRequestText(message) {
@@ -3607,7 +3908,7 @@
                 }
 
                 function isDesktopResizableLayout() {
-                    return window.matchMedia('(min-width: 992px)').matches && !document.documentElement.classList.contains('document-focus');
+                    return window.matchMedia('(min-width: 992px)').matches;
                 }
 
                 function getResizableMetrics() {
@@ -3615,10 +3916,15 @@
                     const rect = layoutRow.getBoundingClientRect();
                     const gap = readRootCssPx('--columns-gap', 14);
                     const splitterSize = readRootCssPx('--splitter-size', 12);
-                    const availableWidth = Math.max(0, rect.width - (gap * 4) - (splitterSize * 2));
+                    const rightHidden = document.documentElement.classList.contains('right-hidden');
+                    const visibleGapCount = rightHidden ? 2 : 4;
+                    const visibleSplitterCount = rightHidden ? 1 : 2;
+                    const availableWidth = Math.max(0, rect.width - (gap * visibleGapCount) - (splitterSize * visibleSplitterCount));
                     const leftWidth = Math.round(colLeft?.getBoundingClientRect().width || readRootCssPx('--left-panel-width', 272));
-                    const rightWidth = Math.round(colRight?.getBoundingClientRect().width || readRootCssPx('--right-panel-width', 286));
-                    return { rect, availableWidth, leftWidth, rightWidth };
+                    const rightWidth = rightHidden
+                        ? 0
+                        : Math.round(colRight?.getBoundingClientRect().width || readRootCssPx('--right-panel-width', 286));
+                    return { rect, availableWidth, leftWidth, rightWidth, rightHidden };
                 }
 
                 function applyPanelWidths(nextLeftWidth = null, nextRightWidth = null) {
@@ -3631,13 +3937,91 @@
                     positionChatInput();
                 }
 
+                function getDocumentFocusTargetLeftWidth() {
+                    const metrics = getResizableMetrics();
+                    if (!metrics) return null;
+
+                    const centerMin = 460;
+                    const minLeft = 460;
+                    const maxLeft = Math.max(minLeft, metrics.availableWidth - centerMin);
+                    const preferred = Math.round(Math.min(560, Math.max(470, metrics.rect.width * 0.38)));
+                    return {
+                        minLeft,
+                        maxLeft,
+                        targetLeft: Math.min(maxLeft, Math.max(minLeft, preferred))
+                    };
+                }
+
+                function setDocumentFocus(enabled) {
+                    const shouldEnable = !!enabled;
+                    const root = document.documentElement;
+                    const wasEnabled = root.classList.contains('document-focus');
+
+                    if (shouldEnable && !wasEnabled) {
+                        documentFocusLayoutState.hasSnapshot = true;
+                        documentFocusLayoutState.previousRightHidden = root.classList.contains('right-hidden');
+                        documentFocusLayoutState.previousLeftWidth = Math.round(colLeft?.getBoundingClientRect().width || readRootCssPx('--left-panel-width', 272));
+                        documentFocusLayoutState.previousRightWidth = Math.round(colRight?.getBoundingClientRect().width || readRootCssPx('--right-panel-width', 286));
+                    }
+
+                    root.classList.toggle('document-focus', shouldEnable);
+
+                    if (shouldEnable) {
+                        root.classList.add('right-hidden');
+                        if (colRight) {
+                            colRight.setAttribute('aria-hidden', 'true');
+                        }
+
+                        if (isDesktopResizableLayout()) {
+                            const focusWidth = getDocumentFocusTargetLeftWidth();
+                            const currentLeftWidth = Math.round(colLeft?.getBoundingClientRect().width || readRootCssPx('--left-panel-width', 272));
+                            let nextLeftWidth = null;
+
+                            if (focusWidth) {
+                                if (!wasEnabled && currentLeftWidth < focusWidth.minLeft) {
+                                    nextLeftWidth = focusWidth.targetLeft;
+                                } else if (wasEnabled && (currentLeftWidth < focusWidth.minLeft || currentLeftWidth > focusWidth.maxLeft)) {
+                                    nextLeftWidth = Math.min(focusWidth.maxLeft, Math.max(focusWidth.minLeft, currentLeftWidth));
+                                }
+                            }
+
+                            if (nextLeftWidth != null) {
+                                applyPanelWidths(nextLeftWidth, null);
+                            }
+                        }
+                    } else {
+                        if (documentFocusLayoutState.hasSnapshot) {
+                            root.classList.toggle('right-hidden', !!documentFocusLayoutState.previousRightHidden);
+
+                            if (documentFocusLayoutState.previousLeftWidth != null || documentFocusLayoutState.previousRightWidth != null) {
+                                applyPanelWidths(documentFocusLayoutState.previousLeftWidth, documentFocusLayoutState.previousRightWidth);
+                            }
+
+                            if (colRight) {
+                                colRight.setAttribute('aria-hidden', documentFocusLayoutState.previousRightHidden ? 'true' : 'false');
+                            }
+
+                            documentFocusLayoutState.hasSnapshot = false;
+                        } else {
+                            root.classList.remove('right-hidden');
+                            if (colRight) {
+                                colRight.setAttribute('aria-hidden', 'false');
+                            }
+                        }
+                    }
+
+                    positionChatInput();
+                    syncSplitterAccessibility();
+                }
+
                 function syncSplitterAccessibility() {
                     const metrics = getResizableMetrics();
                     if (!metrics) return;
                     const centerMin = 460;
                     const minLeft = 220;
                     const minRight = 240;
-                    const maxLeft = Math.max(minLeft, metrics.availableWidth - metrics.rightWidth - centerMin);
+                    const reservedRightWidth = metrics.rightHidden ? 0 : metrics.rightWidth;
+                    const maxLeft = Math.max(minLeft, metrics.availableWidth - reservedRightWidth - centerMin);
                     const maxRight = Math.max(minRight, metrics.availableWidth - metrics.leftWidth - centerMin);
 
                     if (splitterLeft) {
@@ -3647,9 +4031,10 @@
                     }
 
                     if (splitterRight) {
+                        splitterRight.setAttribute('aria-hidden', metrics.rightHidden ? 'true' : 'false');
                         splitterRight.setAttribute('aria-valuemin', String(minRight));
                         splitterRight.setAttribute('aria-valuemax', String(Math.round(maxRight)));
-                        splitterRight.setAttribute('aria-valuenow', String(Math.round(metrics.rightWidth)));
+                        splitterRight.setAttribute('aria-valuenow', String(Math.round(metrics.rightHidden ? 0 : metrics.rightWidth)));
                     }
                 }
 
@@ -3672,9 +4057,10 @@
                         if (!activeResize || !isDesktopResizableLayout()) return;
                         const metrics = getResizableMetrics();
                         if (!metrics) return;
+                        const reservedRightWidth = metrics.rightHidden ? 0 : metrics.rightWidth;
 
                         if (activeResize.side === 'left') {
-                            const maxLeft = Math.max(minLeft, metrics.availableWidth - metrics.rightWidth - centerMin);
+                            const maxLeft = Math.max(minLeft, metrics.availableWidth - reservedRightWidth - centerMin);
                             const delta = event.clientX - activeResize.startX;
                             const nextLeft = Math.min(maxLeft, Math.max(minLeft, activeResize.startWidth + delta));
                             applyPanelWidths(nextLeft, null);
@@ -4137,7 +4523,11 @@
                 const mo = new MutationObserver(() => { positionChatInput(); stabilizePositionDuringTransition(); });
                 mo.observe(document.body, { childList: true, subtree: true });
 
-                setTimeout(() => { positionChatInput(); stabilizePositionDuringTransition(); }, 160);
+                setTimeout(() => {
+                    positionChatInput();
+                    stabilizePositionDuringTransition();
+                    restoreConversationBottomIfNeeded();
+                }, 160);
             });
 
             (function () {

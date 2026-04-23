@@ -1,0 +1,398 @@
+@model app_tramites.Models.ViewModel.ViewCaseDetails
+@using Markdig
+@{
+    Layout = null;
+    var orderedResults = Model.ProcessCase.FinalResponseResults?
+        .OrderBy(r => r.CreatedDate)
+        .ToList() ?? [];
+    var caseShortCode = ((Model.ProcessCase.CaseCode.ToString() ?? string.Empty).Split('-').FirstOrDefault() ?? string.Empty);
+    var processTitle = Model.ProcessCase.DefinitionCodeNavigation?.Name?.Trim();
+}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Conversación del caso NE-@caseShortCode</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="@Url.Content("~/css/cssdetails.css")" />
+    <style>
+        html, body {
+            height: 100%;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(180deg, #eef4fb 0%, #f8fbff 100%);
+            color: #0f172a;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+        }
+
+        .conversation-preview-shell {
+            min-height: 100%;
+            padding: 18px;
+            box-sizing: border-box;
+        }
+
+        .conversation-preview-card {
+            min-height: calc(100vh - 36px);
+            background: rgba(255,255,255,0.96);
+            border: 1px solid rgba(15, 23, 42, 0.06);
+            border-radius: 24px;
+            box-shadow: 0 20px 42px rgba(15, 23, 42, 0.10);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .conversation-preview-head {
+            padding: 18px 22px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+            background:
+                radial-gradient(circle at top right, rgba(37,99,235,0.12), transparent 28%),
+                linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.95));
+        }
+
+        .conversation-preview-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(219,234,254,0.95);
+            color: #1d4ed8;
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .conversation-preview-head h1 {
+            margin: 12px 0 6px;
+            font-size: 1.24rem;
+            line-height: 1.2;
+        }
+
+        .conversation-preview-head p {
+            margin: 0;
+            color: #64748b;
+        }
+
+        .conversation-preview-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .conversation-preview-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(248,250,252,0.96);
+            border: 1px solid rgba(148,163,184,0.18);
+            color: #334155;
+            font-size: 0.84rem;
+            font-weight: 700;
+        }
+
+        .conversation-preview-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: auto;
+            padding: 18px 22px 22px;
+        }
+
+        .conversation-preview-empty {
+            min-height: 280px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            border: 1px dashed rgba(148,163,184,0.24);
+            border-radius: 24px;
+            background: rgba(248,250,252,0.78);
+            color: #64748b;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .conversation-preview-empty i {
+            font-size: 1.8rem;
+            color: #2563eb;
+        }
+
+        .conversation-preview-body .chat-turn-response-actions {
+            display: none;
+        }
+
+        .conversation-preview-body .chat-turn-response-body > *:last-child {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="conversation-preview-shell">
+        <section class="conversation-preview-card">
+            <header class="conversation-preview-head">
+                <span class="conversation-preview-kicker">
+                    <i class="fa-solid fa-comments" aria-hidden="true"></i>
+                    Chat del caso
+                </span>
+                <h1>Conversación completa de NE-@caseShortCode</h1>
+                <p>Vista rápida del historial renderizado del caso, sin salir del índice.</p>
+                <div class="conversation-preview-meta">
+                    <span class="conversation-preview-pill">
+                        <i class="fa-solid fa-diagram-project" aria-hidden="true"></i>
+                        @(string.IsNullOrWhiteSpace(processTitle) ? Model.ProcessCase.DefinitionCode : processTitle)
+                    </span>
+                    <span class="conversation-preview-pill">
+                        <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+                        @orderedResults.Count interacción(es)
+                    </span>
+                    <span class="conversation-preview-pill">
+                        <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
+                        @(Model.ProcessCase.DataFile?.Count() ?? 0) documento(s)
+                    </span>
+                </div>
+            </header>
+
+            <div class="conversation-preview-body">
+                @if (!orderedResults.Any())
+                {
+                    <div class="conversation-preview-empty">
+                        <i class="fa-solid fa-message"></i>
+                        <strong>Este caso todavía no tiene conversación registrada.</strong>
+                        <span>Cuando el expediente se procese o se use el chat, aquí aparecerá el historial completo.</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="chat-thread">
+                        @foreach (var entry in orderedResults)
+                        {
+                            var requestHtml = RenderRequestBubble(entry.RequestText);
+                            var responseHtml = string.IsNullOrWhiteSpace(entry.ResponseText) ? string.Empty : RenderMarkdown(entry.ResponseText.Trim());
+                            <article class="chat-turn">
+                                @if (!string.IsNullOrWhiteSpace(requestHtml))
+                                {
+                                    <div class="chat-turn-request">
+                                        @Html.Raw(requestHtml)
+                                    </div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(responseHtml))
+                                {
+                                    <div class="chat-turn-response">
+                                        <div class="chat-turn-response-body">
+                                            @Html.Raw(responseHtml)
+                                        </div>
+                                    </div>
+                                }
+                                <div class="chat-turn-meta">@entry.CreatedDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                            </article>
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+</body>
+</html>
+
+@functions {
+    private static (string Message, string Attachments) SplitRequestText(string? requestText)
+    {
+        if (string.IsNullOrWhiteSpace(requestText))
+            return (string.Empty, string.Empty);
+
+        var decoded = System.Net.WebUtility.HtmlDecode(requestText);
+
+        var attachmentMatches = System.Text.RegularExpressions.Regex.Matches(
+            decoded,
+            @"<div[^>]*class\s*=\s*[""'][^""']*chat-request-attachments[^""']*[""'][^>]*>(.*?)</div>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        var attachments = attachmentMatches
+            .Select(match => match.Groups[1].Value)
+            .Select(value => System.Text.RegularExpressions.Regex.Replace(value, @"<br\s*/?>", "\n", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            .Select(value => System.Text.RegularExpressions.Regex.Replace(value, @"<[^>]+>", string.Empty, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            .Select(value => System.Net.WebUtility.HtmlDecode(value).Trim())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToList();
+
+        var cleaned = System.Text.RegularExpressions.Regex.Replace(decoded, @"<br\s*/?>", "\n", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"</(div|p|li|tr|h\d)>", "\n", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"<[^>]+>", string.Empty, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        cleaned = System.Net.WebUtility.HtmlDecode(cleaned);
+
+        var lines = cleaned
+            .Replace("\r", string.Empty)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToList();
+
+        var inlineAttachmentLines = lines
+            .Where(line => System.Text.RegularExpressions.Regex.IsMatch(line, @"^adjuntos?\s+temporales?:", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            .ToList();
+
+        if (inlineAttachmentLines.Count > 0)
+            attachments.AddRange(inlineAttachmentLines);
+
+        var message = string.Join("\n", lines.Where(line =>
+            !System.Text.RegularExpressions.Regex.IsMatch(line, @"^adjuntos?\s+temporales?:", System.Text.RegularExpressions.RegexOptions.IgnoreCase)));
+
+        return (message.Trim(), string.Join(" • ", attachments.Distinct(StringComparer.OrdinalIgnoreCase)));
+    }
+
+    public static string RenderRequestBubble(string? requestText)
+    {
+        var (message, attachments) = SplitRequestText(requestText);
+        if (string.IsNullOrWhiteSpace(message) && string.IsNullOrWhiteSpace(attachments))
+            return string.Empty;
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            parts.Add($"<div>{System.Net.WebUtility.HtmlEncode(message).Replace("\n", "<br>")}</div>");
+        }
+
+        if (!string.IsNullOrWhiteSpace(attachments))
+        {
+            parts.Add(RenderRequestAttachmentsHtml(attachments));
+        }
+
+        return string.Join(string.Empty, parts);
+    }
+
+    private static string RenderRequestAttachmentsHtml(string attachments)
+    {
+        var items = ParseAttachmentItems(attachments);
+        if (items.Count == 0)
+            return $"<div class=\"chat-request-attachments\" data-attachments=\"{System.Net.WebUtility.HtmlEncode(attachments)}\">{System.Net.WebUtility.HtmlEncode(attachments)}</div>";
+
+        var encodedItems = items.Select(item =>
+        {
+            var iconClass = ResolveAttachmentIconClass(item);
+            return $"<span class=\"chat-request-attachment-item\"><i class=\"fa {iconClass}\" aria-hidden=\"true\"></i><span>{System.Net.WebUtility.HtmlEncode(item)}</span></span>";
+        });
+
+        return $"<div class=\"chat-request-attachments\" data-attachments=\"{System.Net.WebUtility.HtmlEncode(attachments)}\"><span class=\"chat-request-attachments-label\">Adjuntos temporales</span>{string.Join(string.Empty, encodedItems)}</div>";
+    }
+
+    private static List<string> ParseAttachmentItems(string? attachments)
+    {
+        var normalized = (attachments ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return [];
+
+        normalized = System.Text.RegularExpressions.Regex.Replace(
+            normalized,
+            @"^adjuntos?\s+temporales?:\s*",
+            string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        return normalized
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(item => item.Trim())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToList();
+    }
+
+    private static string ResolveAttachmentIconClass(string fileName)
+    {
+        var extension = System.IO.Path.GetExtension(fileName)?.ToLowerInvariant() ?? string.Empty;
+        return extension switch
+        {
+            ".pdf" => "fa-file-pdf text-danger",
+            ".jpg" or ".jpeg" or ".png" or ".webp" or ".bmp" or ".tif" or ".tiff" => "fa-file-image text-white",
+            ".xml" => "fa-file-code text-info",
+            ".html" or ".htm" => "fa-file-lines text-info",
+            _ => "fa-file-lines text-white"
+        };
+    }
+
+    private static string NormalizeResponseMarkdown(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
+
+        var decodedMarkdown = System.Net.WebUtility.HtmlDecode(markdown).Trim();
+        if (decodedMarkdown.Contains("```")) return decodedMarkdown;
+
+        if (TryFormatJsonMarkdown(decodedMarkdown, out var formattedJson))
+        {
+            return $"```json\n{formattedJson}\n```";
+        }
+
+        return decodedMarkdown;
+    }
+
+    private static bool TryFormatJsonMarkdown(string content, out string formattedJson)
+    {
+        formattedJson = string.Empty;
+        var trimmed = (content ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) return false;
+        if (!(trimmed.StartsWith("{") || trimmed.StartsWith("["))) return false;
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(trimmed);
+            formattedJson = System.Text.Json.JsonSerializer.Serialize(
+                document.RootElement,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public string RenderMarkdown(string markdown)
+    {
+        if (string.IsNullOrEmpty(markdown)) return string.Empty;
+        var pipeline = new MarkdownPipelineBuilder()
+            .UseAdvancedExtensions()
+            .UseSoftlineBreakAsHardlineBreak()
+            .Build();
+
+        var normalizedMarkdown = NormalizeResponseMarkdown(markdown);
+        var html = Markdig.Markdown.ToHtml(normalizedMarkdown, pipeline);
+
+        html = System.Text.RegularExpressions.Regex.Replace(
+            html,
+            @"<\s*(script|style|iframe|object|embed|textarea|button|select|form)[^>]*>.*?<\s*/\s*\1\s*>",
+            string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        html = System.Text.RegularExpressions.Regex.Replace(
+            html,
+            @"<\s*input\b[^>]*\/?>",
+            string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        html = System.Text.RegularExpressions.Regex.Replace(
+            html,
+            @"<\s*/?\s*script[^>]*>",
+            string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        html = System.Text.RegularExpressions.Regex.Replace(
+            html,
+            @"\son\w+\s*=\s*(""[^""]*""|'[^']*'|[^\s>]+)",
+            string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        html = System.Text.RegularExpressions.Regex.Replace(
+            html,
+            @"\b(href|src)\s*=\s*(""|')\s*javascript:[^""']*\2",
+            "$1=\"#\"",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        return html;
+    }
+}

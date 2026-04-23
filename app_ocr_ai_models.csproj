@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>aspnet-app_tramites-533430e7-1ad9-4822-a11a-bf51917fe88d</UserSecretsId>
     <RootNamespace>app_tramites</RootNamespace>
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**;artifacts/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

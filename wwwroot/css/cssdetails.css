@@ -216,18 +216,6 @@ html.right-hidden .right-col {
     visibility: hidden !important;
 }
 
-html.document-focus .left-col {
-    flex: 0 0 72%;
-    width: 72%;
-    max-width: 72%;
-}
-
-html.document-focus .center-col {
-    flex: 0 0 calc(28% - (var(--columns-gap) / 2));
-    width: calc(28% - (var(--columns-gap) / 2));
-    max-width: calc(28% - (var(--columns-gap) / 2));
-}
-
 html.right-hidden .splitter-right {
     display: none !important;
 }
@@ -305,7 +293,7 @@ html.right-hidden .splitter-right {
 }
 
 html.document-focus .documents-stack {
-    grid-template-columns: minmax(170px, 210px) minmax(0, 1fr);
+    grid-template-columns: minmax(180px, 220px) minmax(240px, 1fr);
     grid-template-rows: 1fr;
     gap: 10px;
 }
@@ -356,6 +344,61 @@ html.document-focus .documents-stack {
 .btn-persistent-upload:disabled {
     opacity: .7;
     transform: none;
+}
+
+.btn-case-zip-download {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 46px;
+    padding: 8px 14px 8px 10px;
+    border-radius: 16px !important;
+    border: 1px solid rgba(15,23,42,0.08) !important;
+    background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 88%) !important;
+    color: #fff !important;
+    box-shadow: 0 14px 28px rgba(29,78,216,0.24);
+}
+
+.btn-case-zip-download:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 18px 34px rgba(29,78,216,0.30);
+    color: #fff !important;
+}
+
+.btn-case-zip-download:disabled {
+    opacity: .72;
+    transform: none;
+    box-shadow: 0 10px 22px rgba(15,23,42,0.16);
+}
+
+.btn-case-zip-icon {
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.16);
+    color: #f8fafc;
+    flex-shrink: 0;
+}
+
+.btn-case-zip-copy {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.1;
+}
+
+.btn-case-zip-copy strong {
+    font-size: .78rem;
+    font-weight: 800;
+    letter-spacing: .01em;
+}
+
+.btn-case-zip-copy small {
+    color: rgba(226,232,240,0.86);
+    font-size: .64rem;
 }
 
 .btn-persistent-upload-icon {
@@ -615,11 +658,11 @@ html.document-focus .surface-toolbar {
     padding: 10px 12px 8px;
 }
 
-html.document-focus .panel-body {
+html.document-focus .left-col .panel-body {
     padding: .6rem !important;
 }
 
-html.document-focus .thumb-wrap {
+html.document-focus .left-col .thumb-wrap {
     width: 36px;
     height: 36px;
 }
