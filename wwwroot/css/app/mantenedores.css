@@ -1,0 +1,216 @@
+/* ═══════════════════════════════════════════════════
+   Mantenedores — Configuración del Sistema
+   ═══════════════════════════════════════════════════ */
+
+/* ── Barra de contexto (sub-páginas) ── */
+.mant-ctx-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    margin: -14px -14px 18px;
+    background: #f0f4f8;
+    border-bottom: 1px solid #dce3ec;
+    font-size: 0.82rem;
+}
+
+.mant-ctx-link {
+    color: #1d4ed8;
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.15s;
+}
+
+.mant-ctx-link:hover {
+    color: #1e40af;
+    text-decoration: underline;
+}
+
+.mant-ctx-sep {
+    color: #94a3b8;
+    font-size: 0.75rem;
+}
+
+.mant-ctx-current {
+    color: #475569;
+}
+
+/* ── Page header ── */
+.mant-page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 10px 0 10px;
+    border-bottom: 1px solid #e2e8f0;
+    margin-bottom: 14px;
+    gap: 12px;
+}
+
+.mant-page-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0 0 2px;
+}
+
+/* ── KPI bar ── */
+.mant-kpi-row {
+    margin-bottom: 10px;
+}
+
+.mant-kpi {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    text-align: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+}
+
+.mant-kpi-num {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 3px;
+}
+
+.mant-kpi-label {
+    display: block;
+    font-size: 0.69rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+}
+
+/* ── 3 columnas principales ── */
+.mant-columns {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+
+.mant-col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.mant-col-header {
+    color: #fff;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+
+/* ── Tile card ── */
+.mant-tile {
+    display: flex;
+    flex-direction: column;
+    text-decoration: none !important;
+    background: #fff;
+    border: 1px solid #e0e7ef;
+    border-left: 4px solid var(--a, #1d4ed8);
+    border-radius: 6px;
+    padding: 14px 16px 12px;
+    transition: box-shadow 0.18s, transform 0.13s;
+}
+
+.mant-tile:hover {
+    box-shadow: 0 4px 18px rgba(0,0,0,.11);
+    transform: translateY(-2px);
+    text-decoration: none !important;
+}
+
+/* icon + badge */
+.mant-tile-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.mant-tile-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.mant-tile-count {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #fff !important;
+    white-space: nowrap;
+    letter-spacing: 0.02em;
+}
+
+/* text */
+.mant-tile-name {
+    display: block;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #0f172a !important;
+    margin-bottom: 5px;
+}
+
+.mant-tile-desc {
+    font-size: 0.8rem;
+    color: #475569 !important;
+    line-height: 1.5;
+    margin: 0 0 10px;
+    flex: 1;
+}
+
+/* cta */
+.mant-tile-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--a, #1d4ed8) !important;
+    opacity: 0.75;
+    transition: opacity 0.15s, gap 0.15s;
+    margin-top: auto;
+}
+
+.mant-tile:hover .mant-tile-cta {
+    opacity: 1;
+    gap: 7px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+    .mant-columns {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 600px) {
+    .mant-columns {
+        grid-template-columns: 1fr;
+    }
+
+    .mant-page-header {
+        flex-direction: column;
+    }
+
+    .mant-ctx-bar {
+        margin: -14px -14px 14px;
+    }
+}

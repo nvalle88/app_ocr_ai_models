@@ -86,6 +86,59 @@
                 </ul>
             </li>
 
+            <li is-active-route asp-controller="ConfiguracionAi" asp-action="Index">
+                <a href="#" title="Mantenedores">
+                    <i class="fa fa-lg fa-fw fa-cogs"></i> <span class="menu-item-parent">Mantenedores</span>
+                </a>
+                <ul>
+                    <li is-active-route asp-controller="ConfiguracionAi" asp-action="Index">
+                        <a asp-controller="ConfiguracionAi" asp-action="Index" title="Configuraciones AI">
+                            <span class="menu-item-parent"><i class="fa fa-cog"></i> Configuraciones AI</span>
+                        </a>
+                    </li>
+                    <li is-active-route asp-controller="Agente" asp-action="Index">
+                        <a asp-controller="Agente" asp-action="Index" title="Agentes">
+                            <span class="menu-item-parent"><i class="fa fa-android"></i> Agentes</span>
+                        </a>
+                    </li>
+                    <li is-active-route asp-controller="Prompt" asp-action="Index">
+                        <a asp-controller="Prompt" asp-action="Index" title="Prompts">
+                            <span class="menu-item-parent"><i class="fa fa-file-text-o"></i> Prompts</span>
+                        </a>
+                    </li>
+                    <li is-active-route asp-controller="AsignacionPrompt" asp-action="Index">
+                        <a asp-controller="AsignacionPrompt" asp-action="Index" title="Asignación Prompts">
+                            <span class="menu-item-parent"><i class="fa fa-link"></i> Asignación Prompts</span>
+                        </a>
+                    </li>
+                    <li is-active-route asp-controller="Proceso" asp-action="Index">
+                        <a asp-controller="Proceso" asp-action="Index" title="Procesos">
+                            <span class="menu-item-parent"><i class="fa fa-random"></i> Procesos</span>
+                        </a>
+                    </li>
+                    <li is-active-route asp-controller="AgentProcess" asp-action="Index">
+                        <a asp-controller="AgentProcess" asp-action="Index" title="Agente-Proceso">
+                            <span class="menu-item-parent"><i class="fa fa-exchange"></i> Agente-Proceso</span>
+                        </a>
+                    </li>
+                    <li is-active-route asp-controller="AccessAgentPolicy" asp-action="Index">
+                        <a asp-controller="AccessAgentPolicy" asp-action="Index" title="Políticas de Acceso">
+                            <span class="menu-item-parent"><i class="fa fa-shield"></i> Políticas de Acceso</span>
+                        </a>
+                    </li>
+                    <li is-active-route asp-controller="AzureBlobConf" asp-action="Index">
+                        <a asp-controller="AzureBlobConf" asp-action="Index" title="Azure Blob">
+                            <span class="menu-item-parent"><i class="fa fa-cloud"></i> Azure Blob</span>
+                        </a>
+                    </li>
+                    <li is-active-route asp-controller="Usuarios" asp-action="Index">
+                        <a asp-controller="Usuarios" asp-action="Index" title="Usuarios">
+                            <span class="menu-item-parent"><i class="fa fa-users"></i> Usuarios</span>
+                        </a>
+                    </li>
+                </ul>
+            </li>
+
             <li is-active-route asp-controller="Home">
                 <a href="#" title="Dashboard">
                     <i class="fa fa-lg fa-fw fa-home"></i> <span class="menu-item-parent">Dashboard</span>

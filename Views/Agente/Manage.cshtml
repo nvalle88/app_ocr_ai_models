@@ -1,0 +1,102 @@
+@model app_tramites.Models.ModelAi.Agent
+
+@section Migas {
+    <li><a asp-action="Index" onclick="cargando()">Agentes</a></li>
+    <li class="active">@ViewData["accion"]</li>
+}
+
+<div class="row">
+    <div class="col-xs-12 col-sm-7 col-md-7 col-lg-9 margin-top-0">
+        <h1 class="page-title text-align-center txt-color-blueDark"><b>&nbsp;</b></h1>
+    </div>
+    <div class="col-xs-12 col-sm-5 col-md-5 col-lg-3 margin-top-0">
+        <ul id="sparks">
+            <li class="sparks-info">
+                <a class="btn btn-primary" onclick="cargando()" asp-action="Index">
+                    <i class="fa fa-arrow-left"></i> Volver
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+        <div id="content" class="well no-padding">
+            <form asp-action="Manage" method="post" novalidate="novalidate" class="smart-form client-form">
+                <header>
+                    <i class="fa fa-android"></i> &nbsp;<b>@ViewData["accion"] Agente AI</b>
+                </header>
+                <fieldset>
+                    <section>
+                        <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+                    </section>
+
+                    <legend><i class="fa fa-tag"></i> Identificación</legend>
+                    <section class="col col-sm-3">
+                        <label class="label">Código <span class="text-danger">*</span></label>
+                        <label class="input">
+                            <i class="icon-append fa fa-key"></i>
+                            <input type="text" asp-for="Code" placeholder="Ej: AGENTE-OCR" class="text-uppercase">
+                            <span asp-validation-for="Code" class="text-danger"></span>
+                        </label>
+                    </section>
+                    <section class="col col-sm-7">
+                        <label class="label">Nombre <span class="text-danger">*</span></label>
+                        <label class="input">
+                            <i class="icon-append fa fa-font"></i>
+                            <input type="text" asp-for="Name" placeholder="Nombre descriptivo del agente">
+                            <span asp-validation-for="Name" class="text-danger"></span>
+                        </label>
+                    </section>
+                    <section class="col col-sm-2">
+                        <label class="label">Versión</label>
+                        <label class="input">
+                            <i class="icon-append fa fa-code-fork"></i>
+                            <input type="number" asp-for="VersionNumber" min="1" placeholder="1">
+                        </label>
+                    </section>
+
+                    <legend><i class="fa fa-cog"></i> Configuración de IA</legend>
+                    <section class="col col-sm-6">
+                        <label class="label">Configuración AI <span class="text-danger">*</span></label>
+                        <label class="select">
+                            <select asp-for="ConfigCode" asp-items="ViewBag.Configs" class="select2">
+                                <option value="">-- Seleccionar Configuración --</option>
+                            </select>
+                            <i></i>
+                            <span asp-validation-for="ConfigCode" class="text-danger"></span>
+                        </label>
+                    </section>
+                    <section class="col col-sm-6">
+                        <br />
+                        <i class="fa fa-toggle-on"></i>&nbsp; ¿Activo?
+                        <span class="onoffswitch">
+                            <input type="checkbox" asp-for="IsActive" class="onoffswitch-checkbox" id="swIsActive">
+                            <label class="onoffswitch-label" for="swIsActive">
+                                <span class="onoffswitch-inner" data-swchon-text="Sí" data-swchoff-text="No"></span>
+                                <span class="onoffswitch-switch"></span>
+                            </label>
+                        </span>
+                    </section>
+
+                    <legend><i class="fa fa-info-circle"></i> Descripción</legend>
+                    <section class="col col-sm-12">
+                        <label class="textarea">
+                            <textarea rows="4" asp-for="Description" placeholder="Describe el propósito y capacidades de este agente..."></textarea>
+                        </label>
+                    </section>
+                </fieldset>
+                <footer>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa fa-save"></i> Guardar
+                    </button>
+                    <a asp-action="Index" onclick="cargando()" class="btn btn-default">
+                        <i class="fa fa-times"></i> Cancelar
+                    </a>
+                </footer>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    @await Html.PartialAsync("_ValidationScriptsPartial")
+}

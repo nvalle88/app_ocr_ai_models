@@ -1859,3 +1859,42 @@ body.case-chat-modal-open {
         min-height: min(66vh, 620px);
     }
 }
+
+/* ─── Config / gear button ─── */
+.nexus-topbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 18px;
+}
+
+.nexus-config-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 16px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fff;
+    color: #475569;
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: border-color 0.15s, color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.nexus-config-btn i {
+    font-size: 0.95rem;
+    transition: transform 0.4s ease;
+}
+
+.nexus-config-btn:hover {
+    border-color: #1d4ed8;
+    color: #1d4ed8;
+    background: #eff6ff;
+    box-shadow: 0 2px 8px rgba(29,78,216,.12);
+    text-decoration: none;
+}
+
+.nexus-config-btn:hover i {
+    transform: rotate(60deg);
+}

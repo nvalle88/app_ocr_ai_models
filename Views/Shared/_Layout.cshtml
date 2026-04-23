@@ -40,6 +40,7 @@
     <link  href="~/css/cssdetails.css" rel="stylesheet" />
 
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="~/css/app/mantenedores.css" />
     <style>
         /* Oculta el panel lateral si existe */
         #left-panel,
@@ -75,7 +76,23 @@
 <body class="smart-style-4">
     @{ await Html.RenderPartialAsync("_Header"); }
     <div id="main" role="main">
+        @{
+            var _ctrl = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
+            var _maint = new HashSet<string>{ "ConfiguracionAi","Agente","Prompt","AsignacionPrompt","Proceso","AgentProcess","AccessAgentPolicy","AzureBlobConf","Usuarios","Mantenedores" };
+            bool _isMaint = _maint.Contains(_ctrl);
+        }
+        <div style="display:none">@RenderSection("Migas", required: false)</div>
         <div id="content">
+            @if (_isMaint && _ctrl != "Mantenedores")
+            {
+                <div class="mant-ctx-bar">
+                    <a asp-controller="Mantenedores" asp-action="Index" onclick="cargando()" class="mant-ctx-link">
+                        <i class="fa fa-cogs"></i>&nbsp; Configuración del Sistema
+                    </a>
+                    <i class="fa fa-angle-right mant-ctx-sep"></i>
+                    <span class="mant-ctx-current">@_ctrl</span>
+                </div>
+            }
             @RenderBody()
         </div>
     </div>

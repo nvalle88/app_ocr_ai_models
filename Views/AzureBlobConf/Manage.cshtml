@@ -1,0 +1,85 @@
+@model app_tramites.Models.ModelAi.AzureBlobConf
+
+@section Migas {
+    <li><a asp-action="Index" onclick="cargando()">Azure Blob</a></li>
+    <li class="active">@ViewData["accion"]</li>
+}
+
+<div class="row">
+    <div class="col-xs-12 col-sm-7 col-md-7 col-lg-9 margin-top-0">
+        <h1 class="page-title text-align-center txt-color-blueDark"><b>&nbsp;</b></h1>
+    </div>
+    <div class="col-xs-12 col-sm-5 col-md-5 col-lg-3 margin-top-0">
+        <ul id="sparks">
+            <li class="sparks-info">
+                <a class="btn btn-primary" onclick="cargando()" asp-action="Index">
+                    <i class="fa fa-arrow-left"></i> Volver
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+        <div id="content" class="well no-padding">
+            <form asp-action="Manage" method="post" novalidate="novalidate" class="smart-form client-form">
+                <header>
+                    <i class="fa fa-cloud"></i> &nbsp;<b>@ViewData["accion"] Azure Blob Storage</b>
+                </header>
+                <fieldset>
+                    <section>
+                        <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+                    </section>
+
+                    <section class="col col-sm-3">
+                        <label class="label">Código <span class="text-danger">*</span></label>
+                        <label class="input">
+                            <i class="icon-append fa fa-key"></i>
+                            <input type="text" asp-for="Codigo" placeholder="Ej: BLOB-PRINCIPAL" class="text-uppercase">
+                            <span asp-validation-for="Codigo" class="text-danger"></span>
+                        </label>
+                    </section>
+                    <section class="col col-sm-4">
+                        <label class="label">Nombre del Contenedor <span class="text-danger">*</span></label>
+                        <label class="input">
+                            <i class="icon-append fa fa-folder-open"></i>
+                            <input type="text" asp-for="ContainerName" placeholder="nombre-container">
+                            <span asp-validation-for="ContainerName" class="text-danger"></span>
+                        </label>
+                    </section>
+                    <section class="col col-sm-5">
+                        <label class="label">Connection String <span class="text-danger">*</span></label>
+                        <label class="input">
+                            <i class="icon-append fa fa-lock" id="toggleConn" style="cursor:pointer;" title="Mostrar/Ocultar"></i>
+                            <input type="password" asp-for="ConnectionString" id="connInput" placeholder="DefaultEndpointsProtocol=https;...">
+                            <span asp-validation-for="ConnectionString" class="text-danger"></span>
+                        </label>
+                        <small class="text-muted"><i class="fa fa-info-circle"></i> La connection string se almacena de forma segura.</small>
+                    </section>
+                </fieldset>
+                <footer>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa fa-save"></i> Guardar
+                    </button>
+                    <a asp-action="Index" onclick="cargando()" class="btn btn-default">
+                        <i class="fa fa-times"></i> Cancelar
+                    </a>
+                </footer>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    @await Html.PartialAsync("_ValidationScriptsPartial")
+    <script>
+        document.getElementById('toggleConn').addEventListener('click', function () {
+            var input = document.getElementById('connInput');
+            if (input.type === 'password') {
+                input.type = 'text';
+                this.classList.replace('fa-lock', 'fa-unlock');
+            } else {
+                input.type = 'password';
+                this.classList.replace('fa-unlock', 'fa-lock');
+            }
+        });
+    </script>
+}

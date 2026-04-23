@@ -1,0 +1,61 @@
+@model app_tramites.Models.ModelAi.AgentProcess
+
+@section Migas {
+    <li><a asp-action="Index" onclick="cargando()">Agente-Proceso</a></li>
+    <li class="active">@ViewData["accion"]</li>
+}
+
+<div class="row">
+    <div class="col-xs-12 col-sm-5 col-md-5 col-lg-3 margin-top-0">
+        <ul id="sparks">
+            <li class="sparks-info">
+                <a class="btn btn-primary" onclick="cargando()" asp-action="Index">
+                    <i class="fa fa-arrow-left"></i> Volver
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="col-xs-12">
+        <div id="content" class="well no-padding">
+            <form asp-action="Manage" method="post" novalidate="novalidate" class="smart-form client-form">
+                <input type="hidden" asp-for="Id" />
+                <header>
+                    <i class="fa fa-exchange"></i> &nbsp;<b>@ViewData["accion"] Relación Agente-Proceso</b>
+                </header>
+                <fieldset>
+                    <section>
+                        <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+                    </section>
+                    <section class="col col-sm-6">
+                        <label class="label">Agente <span class="text-danger">*</span></label>
+                        <label class="select">
+                            <select asp-for="AgentCode" asp-items="ViewBag.Agentes" class="select2">
+                                <option value="">-- Seleccionar Agente --</option>
+                            </select>
+                            <i></i>
+                            <span asp-validation-for="AgentCode" class="text-danger"></span>
+                        </label>
+                    </section>
+                    <section class="col col-sm-6">
+                        <label class="label">Proceso <span class="text-danger">*</span></label>
+                        <label class="select">
+                            <select asp-for="DefinitionCode" asp-items="ViewBag.Procesos" class="select2">
+                                <option value="">-- Seleccionar Proceso --</option>
+                            </select>
+                            <i></i>
+                            <span asp-validation-for="DefinitionCode" class="text-danger"></span>
+                        </label>
+                    </section>
+                </fieldset>
+                <footer>
+                    <button type="submit" class="btn btn-primary"><i class="fa fa-save"></i> Guardar</button>
+                    <a asp-action="Index" onclick="cargando()" class="btn btn-default"><i class="fa fa-times"></i> Cancelar</a>
+                </footer>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    @await Html.PartialAsync("_ValidationScriptsPartial")
+}

@@ -1,0 +1,111 @@
+@model Microsoft.AspNetCore.Identity.IdentityUser
+@{
+    var rolesDisponibles = ViewBag.RolesDisponibles as List<Microsoft.AspNetCore.Identity.IdentityRole> ?? new();
+    var rolesUsuario = ViewBag.RolesUsuario as IList<string> ?? new List<string>();
+    bool esEdicion = ViewData["accion"]?.ToString() == "Edit";
+}
+
+@section Migas {
+    <li><a asp-action="Index" onclick="cargando()">Usuarios</a></li>
+    <li class="active">@ViewData["accion"]</li>
+}
+
+<div class="row">
+    <div class="col-xs-12 col-sm-7 col-md-7 col-lg-9 margin-top-0">
+        <h1 class="page-title text-align-center txt-color-blueDark"><b>&nbsp;</b></h1>
+    </div>
+    <div class="col-xs-12 col-sm-5 col-md-5 col-lg-3 margin-top-0">
+        <ul id="sparks">
+            <li class="sparks-info">
+                <a class="btn btn-primary" onclick="cargando()" asp-action="Index">
+                    <i class="fa fa-arrow-left"></i> Volver
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+        <div id="content" class="well no-padding">
+            <form method="post" asp-action="Manage" novalidate="novalidate" class="smart-form client-form">
+                <input type="hidden" name="id" value="@Model.Id" />
+                <header>
+                    <i class="fa fa-user"></i> &nbsp;<b>@ViewData["accion"] Usuario</b>
+                </header>
+                <fieldset>
+                    <div asp-validation-summary="All" class="alert alert-danger" style="display:@(ViewData.ModelState.IsValid ? "none" : "block")"></div>
+
+                    <legend><i class="fa fa-envelope"></i> Credenciales</legend>
+                    <section class="col col-sm-6">
+                        <label class="label">Email <span class="text-danger">*</span></label>
+                        <label class="input">
+                            <i class="icon-append fa fa-envelope"></i>
+                            <input type="email" name="email" value="@Model.Email" placeholder="usuario@dominio.com" required>
+                        </label>
+                    </section>
+                    <section class="col col-sm-4">
+                        <label class="label">
+                            Contraseña @(esEdicion ? "(dejar vacío para no cambiar)" : "<span class='text-danger'>*</span>")
+                        </label>
+                        <label class="input">
+                            <i class="icon-append fa fa-lock" id="togglePwd" style="cursor:pointer;" title="Mostrar/Ocultar"></i>
+                            <input type="password" name="password" id="pwdInput" placeholder="••••••••">
+                        </label>
+                    </section>
+                    <section class="col col-sm-2">
+                        <br />
+                        <i class="fa fa-check-circle"></i> Email Confirmado
+                        <span class="onoffswitch">
+                            <input type="checkbox" name="emailConfirmed" value="true" class="onoffswitch-checkbox" id="swEmailConf"
+                                   @(Model.EmailConfirmed ? "checked" : "")>
+                            <label class="onoffswitch-label" for="swEmailConf">
+                                <span class="onoffswitch-inner" data-swchon-text="Sí" data-swchoff-text="No"></span>
+                                <span class="onoffswitch-switch"></span>
+                            </label>
+                        </span>
+                    </section>
+
+                    @if (rolesDisponibles.Count > 0)
+                    {
+                        <legend><i class="fa fa-tags"></i> Roles Asignados</legend>
+                        <section class="col col-sm-12">
+                            <div class="row">
+                                @foreach (var rol in rolesDisponibles)
+                                {
+                                    bool tieneRol = rolesUsuario.Contains(rol.Name ?? "");
+                                    <div class="col-sm-3">
+                                        <label class="checkbox">
+                                            <input type="checkbox" name="roles" value="@rol.Name" @(tieneRol ? "checked" : "")>
+                                            <i></i> @rol.Name
+                                        </label>
+                                    </div>
+                                }
+                            </div>
+                        </section>
+                    }
+                </fieldset>
+                <footer>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa fa-save"></i> Guardar
+                    </button>
+                    <a asp-action="Index" onclick="cargando()" class="btn btn-default">
+                        <i class="fa fa-times"></i> Cancelar
+                    </a>
+                </footer>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        document.getElementById('togglePwd').addEventListener('click', function () {
+            var input = document.getElementById('pwdInput');
+            if (input.type === 'password') {
+                input.type = 'text';
+                this.classList.replace('fa-lock', 'fa-unlock');
+            } else {
+                input.type = 'password';
+                this.classList.replace('fa-unlock', 'fa-lock');
+            }
+        });
+    </script>
+}

@@ -1,0 +1,94 @@
+@model app_tramites.Models.ModelAi.OPAIModelPrompt
+
+@section Migas {
+    <li><a asp-action="Index" onclick="cargando()">Asignación Prompts</a></li>
+    <li class="active">@ViewData["accion"]</li>
+}
+
+<div class="row">
+    <div class="col-xs-12 col-sm-7 col-md-7 col-lg-9 margin-top-0">
+        <h1 class="page-title text-align-center txt-color-blueDark"><b>&nbsp;</b></h1>
+    </div>
+    <div class="col-xs-12 col-sm-5 col-md-5 col-lg-3 margin-top-0">
+        <ul id="sparks">
+            <li class="sparks-info">
+                <a class="btn btn-primary" onclick="cargando()" asp-action="Index">
+                    <i class="fa fa-arrow-left"></i> Volver
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+        <div id="content" class="well no-padding">
+            <form asp-action="Manage" method="post" novalidate="novalidate" class="smart-form client-form">
+                <input type="hidden" name="originalModelCode" value="@Model.ModelCode" />
+                <input type="hidden" name="originalPromptCode" value="@Model.PromptCode" />
+                <header>
+                    <i class="fa fa-link"></i> &nbsp;<b>@ViewData["accion"] Asignación Prompt</b>
+                </header>
+                <fieldset>
+                    <section>
+                        <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+                    </section>
+
+                    <section class="col col-sm-5">
+                        <label class="label">Agente <span class="text-danger">*</span></label>
+                        <label class="select">
+                            @if (ViewData["accion"]?.ToString() == "Edit")
+                            {
+                                <select class="select2" disabled><option selected>@Model.ModelCode</option></select>
+                                <input type="hidden" asp-for="ModelCode" />
+                            }
+                            else
+                            {
+                                <select asp-for="ModelCode" asp-items="ViewBag.Agentes" class="select2">
+                                    <option value="">-- Seleccionar Agente --</option>
+                                </select>
+                            }
+                            <i></i>
+                            <span asp-validation-for="ModelCode" class="text-danger"></span>
+                        </label>
+                    </section>
+                    <section class="col col-sm-5">
+                        <label class="label">Prompt <span class="text-danger">*</span></label>
+                        <label class="select">
+                            @if (ViewData["accion"]?.ToString() == "Edit")
+                            {
+                                <select class="select2" disabled><option selected>@Model.PromptCode</option></select>
+                                <input type="hidden" asp-for="PromptCode" />
+                            }
+                            else
+                            {
+                                <select asp-for="PromptCode" asp-items="ViewBag.Prompts" class="select2">
+                                    <option value="">-- Seleccionar Prompt --</option>
+                                </select>
+                            }
+                            <i></i>
+                            <span asp-validation-for="PromptCode" class="text-danger"></span>
+                        </label>
+                    </section>
+                    <section class="col col-sm-2">
+                        <label class="label">Orden <span class="text-danger">*</span></label>
+                        <label class="input">
+                            <i class="icon-append fa fa-sort-numeric-asc"></i>
+                            <input type="number" asp-for="Order" min="1" placeholder="1">
+                            <span asp-validation-for="Order" class="text-danger"></span>
+                        </label>
+                    </section>
+                </fieldset>
+                <footer>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa fa-save"></i> Guardar
+                    </button>
+                    <a asp-action="Index" onclick="cargando()" class="btn btn-default">
+                        <i class="fa fa-times"></i> Cancelar
+                    </a>
+                </footer>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    @await Html.PartialAsync("_ValidationScriptsPartial")
+}

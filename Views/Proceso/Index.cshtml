@@ -1,0 +1,99 @@
+@model List<app_tramites.Models.ModelAi.Process>
+@section Migas {
+    <li><a asp-action="Index" onclick="cargando()">Procesos</a></li>
+    <li class="active">Lista</li>
+}
+
+<div class="row">
+    <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+        <a asp-action="Manage" onclick="cargando()" class="btn btn-primary"><strong><i class="fa fa-plus"></i> Nuevo Proceso</strong></a>
+    </div>
+    <div class="col-xs-12 col-sm-5 col-md-5 col-lg-12"><br /></div>
+</div>
+
+<section id="widget-grid" class="">
+    <div class="row">
+        <article class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+            <div class="jarviswidget jarviswidget-color-darken" id="wid-id-0" data-widget-editbutton="false">
+                <header>
+                    <span class="widget-icon"><i class="fa fa-random"></i></span>
+                    <h2>Procesos</h2>
+                </header>
+                <div>
+                    <div class="widget-body no-padding">
+                        <table id="dt_basic" class="table table-striped table-bordered table-hover" width="100%">
+                            <thead>
+                                <tr>
+                                    <th>Código</th>
+                                    <th data-class="expand">Nombre</th>
+                                    <th data-hide="phone">Descripción</th>
+                                    <th data-hide="phone,tablet">Opciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Model)
+                                {
+                                    <tr>
+                                        <td><strong>@item.Code</strong></td>
+                                        <td>@item.Name</td>
+                                        <td>
+                                            <small class="text-muted">
+                                                @(item.Description?.Length > 80 ? item.Description.Substring(0, 80) + "..." : item.Description)
+                                            </small>
+                                        </td>
+                                        <td align="center">
+                                            <a asp-action="Manage" onclick="cargando()" class="fa fa-edit txt-color-blue" asp-route-id="@item.Code" title="Editar"></a> &nbsp;|&nbsp;
+                                            <a href="javascript:void(0);" class="fa fa-trash-o txt-color-red" onclick="Delete(this)" id="@item.Code" data-descripcion="¿Desea eliminar el proceso '@item.Name'?"></a>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </article>
+    </div>
+</section>
+
+@section Scripts {
+    @{ await Html.RenderPartialAsync("_BootboxPartial"); }
+    @{ await Html.RenderPartialAsync("_DateTablePartial"); }
+    <script>
+        function Delete(e) {
+            var btn = $(e);
+            bootbox.confirm({
+                title: "¿ Eliminar ?",
+                message: btn.data("descripcion"),
+                buttons: {
+                    cancel: { label: '<i class="fa fa-times"></i> Cancelar' },
+                    confirm: { label: '<i class="fa fa-check"></i> OK' }
+                },
+                callback: function (result) {
+                    if (result) {
+                        mostrarLoadingPanel("content", "");
+                        $.ajax({
+                            type: "GET",
+                            url: '@Url.Action("Delete", "Proceso")' + '?id=' + btn.prop("id"),
+                            contentType: "application/json; charset=utf-8",
+                            datatype: "json",
+                            timeout: 500000,
+                            success: function (data) {
+                                if (data.estado == 'Error') {
+                                    mostrarNotificacion("Error", data.mensaje);
+                                    $("#content").waitMe("hide");
+                                } else {
+                                    window.location = '@Url.Action("Index", "Proceso")';
+                                }
+                            },
+                            error: function () {
+                                $("#content").waitMe("hide");
+                                mostrarNotificacion("Error", "No se pudo eliminar el registro.");
+                            }
+                        });
+                    }
+                }
+            });
+        }
+    </script>
+}

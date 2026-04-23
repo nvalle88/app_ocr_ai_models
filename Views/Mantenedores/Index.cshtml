@@ -1,0 +1,163 @@
+@section Migas {
+    <li><a asp-controller="Nexus" asp-action="Index" onclick="cargando()">Nexus</a></li>
+    <li class="active">Configuración del Sistema</li>
+}
+
+<!-- Page header -->
+<div class="mant-page-header">
+    <div>
+        <h2 class="mant-page-title">
+            <i class="fa fa-cogs txt-color-blueDark"></i>&nbsp; Configuración del Sistema
+        </h2>
+        <p class="text-muted" style="margin:2px 0 0;font-size:0.82rem">
+            Administra los componentes core de la plataforma de auditoría inteligente
+        </p>
+    </div>
+    <a asp-controller="Nexus" asp-action="Index" onclick="cargando()" class="btn btn-default btn-sm">
+        <i class="fa fa-arrow-left"></i>&nbsp; Volver a Nexus
+    </a>
+</div>
+
+<!-- KPI bar -->
+<div class="row mant-kpi-row">
+    <div class="col-xs-6 col-sm-3">
+        <div class="mant-kpi">
+            <span class="mant-kpi-num txt-color-blue">@(ViewBag.AgentCount ?? 0)</span>
+            <span class="mant-kpi-label">Agentes</span>
+        </div>
+    </div>
+    <div class="col-xs-6 col-sm-3">
+        <div class="mant-kpi">
+            <span class="mant-kpi-num txt-color-greenDark">@(ViewBag.PromptCount ?? 0)</span>
+            <span class="mant-kpi-label">Prompts</span>
+        </div>
+    </div>
+    <div class="col-xs-6 col-sm-3">
+        <div class="mant-kpi">
+            <span class="mant-kpi-num txt-color-purple">@(ViewBag.ProcesoCount ?? 0)</span>
+            <span class="mant-kpi-label">Procesos</span>
+        </div>
+    </div>
+    <div class="col-xs-6 col-sm-3">
+        <div class="mant-kpi">
+            <span class="mant-kpi-num txt-color-orange">@(ViewBag.UserCount ?? 0)</span>
+            <span class="mant-kpi-label">Usuarios</span>
+        </div>
+    </div>
+</div>
+
+<!-- 3 columnas principales -->
+<div class="mant-columns">
+
+    <!-- ══ COLUMNA 1: IA ══ -->
+    <div class="mant-col">
+        <div class="mant-col-header" style="--a:#1d4ed8; background:#1d4ed8">
+            <i class="fa fa-microchip"></i>&nbsp; Inteligencia Artificial y Modelos
+        </div>
+
+        <a asp-controller="ConfiguracionAi" asp-action="Index" onclick="cargando()" class="mant-tile" style="--a:#1d4ed8">
+            <div class="mant-tile-top">
+                <span class="mant-tile-ico" style="background:rgba(29,78,216,.1);color:#1d4ed8"><i class="fa fa-sliders"></i></span>
+                <span class="mant-tile-count" style="background:#1d4ed8">@(ViewBag.ConfigCount ?? 0) activas</span>
+            </div>
+            <strong class="mant-tile-name">Configuraciones AI</strong>
+            <p class="mant-tile-desc">Endpoints, API keys y parámetros de conexión a modelos de lenguaje.</p>
+            <span class="mant-tile-cta">Administrar &nbsp;<i class="fa fa-arrow-right"></i></span>
+        </a>
+
+        <a asp-controller="Agente" asp-action="Index" onclick="cargando()" class="mant-tile" style="--a:#0369a1">
+            <div class="mant-tile-top">
+                <span class="mant-tile-ico" style="background:rgba(3,105,161,.1);color:#0369a1"><i class="fa fa-android"></i></span>
+                <span class="mant-tile-count" style="background:#0369a1">@(ViewBag.AgentCount ?? 0) activos</span>
+            </div>
+            <strong class="mant-tile-name">Agentes</strong>
+            <p class="mant-tile-desc">Define y gestiona los agentes de IA con sus versiones y configuraciones asociadas.</p>
+            <span class="mant-tile-cta">Administrar &nbsp;<i class="fa fa-arrow-right"></i></span>
+        </a>
+
+        <a asp-controller="Prompt" asp-action="Index" onclick="cargando()" class="mant-tile" style="--a:#7c3aed">
+            <div class="mant-tile-top">
+                <span class="mant-tile-ico" style="background:rgba(124,58,237,.1);color:#7c3aed"><i class="fa fa-file-text-o"></i></span>
+                <span class="mant-tile-count" style="background:#7c3aed">@(ViewBag.PromptCount ?? 0) activos</span>
+            </div>
+            <strong class="mant-tile-name">Prompts</strong>
+            <p class="mant-tile-desc">Administra los prompts del sistema con control de versiones y estado activo.</p>
+            <span class="mant-tile-cta">Administrar &nbsp;<i class="fa fa-arrow-right"></i></span>
+        </a>
+
+        <a asp-controller="AsignacionPrompt" asp-action="Index" onclick="cargando()" class="mant-tile" style="--a:#a21caf">
+            <div class="mant-tile-top">
+                <span class="mant-tile-ico" style="background:rgba(162,28,175,.1);color:#a21caf"><i class="fa fa-link"></i></span>
+                <span class="mant-tile-count" style="background:#a21caf">@(ViewBag.AsignacionCount ?? 0) asignaciones</span>
+            </div>
+            <strong class="mant-tile-name">Asignación de Prompts</strong>
+            <p class="mant-tile-desc">Vincula prompts a agentes y define el orden de ejecución en el pipeline.</p>
+            <span class="mant-tile-cta">Administrar &nbsp;<i class="fa fa-arrow-right"></i></span>
+        </a>
+    </div>
+
+    <!-- ══ COLUMNA 2: PROCESOS ══ -->
+    <div class="mant-col">
+        <div class="mant-col-header" style="background:#0f766e">
+            <i class="fa fa-random"></i>&nbsp; Procesos y Flujos de Trabajo
+        </div>
+
+        <a asp-controller="Proceso" asp-action="Index" onclick="cargando()" class="mant-tile" style="--a:#0f766e">
+            <div class="mant-tile-top">
+                <span class="mant-tile-ico" style="background:rgba(15,118,110,.1);color:#0f766e"><i class="fa fa-random"></i></span>
+                <span class="mant-tile-count" style="background:#0f766e">@(ViewBag.ProcesoCount ?? 0) procesos</span>
+            </div>
+            <strong class="mant-tile-name">Procesos</strong>
+            <p class="mant-tile-desc">Catálogo de procesos de auditoría disponibles en la plataforma Nexus.</p>
+            <span class="mant-tile-cta">Administrar &nbsp;<i class="fa fa-arrow-right"></i></span>
+        </a>
+
+        <a asp-controller="AgentProcess" asp-action="Index" onclick="cargando()" class="mant-tile" style="--a:#0e7490">
+            <div class="mant-tile-top">
+                <span class="mant-tile-ico" style="background:rgba(14,116,144,.1);color:#0e7490"><i class="fa fa-exchange"></i></span>
+                <span class="mant-tile-count" style="background:#0e7490">@(ViewBag.AgentProcessCount ?? 0) relaciones</span>
+            </div>
+            <strong class="mant-tile-name">Agente — Proceso</strong>
+            <p class="mant-tile-desc">Relaciona cada agente con los procesos que está autorizado a ejecutar.</p>
+            <span class="mant-tile-cta">Administrar &nbsp;<i class="fa fa-arrow-right"></i></span>
+        </a>
+    </div>
+
+    <!-- ══ COLUMNA 3: SEGURIDAD ══ -->
+    <div class="mant-col">
+        <div class="mant-col-header" style="background:#b91c1c">
+            <i class="fa fa-shield"></i>&nbsp; Seguridad, Acceso e Infraestructura
+        </div>
+
+        <a asp-controller="AccessAgentPolicy" asp-action="Index" onclick="cargando()" class="mant-tile" style="--a:#b91c1c">
+            <div class="mant-tile-top">
+                <span class="mant-tile-ico" style="background:rgba(185,28,28,.1);color:#b91c1c"><i class="fa fa-shield"></i></span>
+                <span class="mant-tile-count" style="background:#b91c1c">@(ViewBag.PolicyCount ?? 0) activas</span>
+            </div>
+            <strong class="mant-tile-name">Políticas de Acceso</strong>
+            <p class="mant-tile-desc">Controla qué agentes y procesos están disponibles por política de autorización.</p>
+            <span class="mant-tile-cta">Administrar &nbsp;<i class="fa fa-arrow-right"></i></span>
+        </a>
+
+        <a asp-controller="AzureBlobConf" asp-action="Index" onclick="cargando()" class="mant-tile" style="--a:#0369a1">
+            <div class="mant-tile-top">
+                <span class="mant-tile-ico" style="background:rgba(3,105,161,.1);color:#0369a1"><i class="fa fa-cloud"></i></span>
+                <span class="mant-tile-count" style="background:#0369a1">@(ViewBag.BlobCount ?? 0) configuraciones</span>
+            </div>
+            <strong class="mant-tile-name">Azure Blob Storage</strong>
+            <p class="mant-tile-desc">Configura las credenciales y contenedores de almacenamiento en la nube.</p>
+            <span class="mant-tile-cta">Administrar &nbsp;<i class="fa fa-arrow-right"></i></span>
+        </a>
+
+        <a asp-controller="Usuarios" asp-action="Index" onclick="cargando()" class="mant-tile" style="--a:#1e293b">
+            <div class="mant-tile-top">
+                <span class="mant-tile-ico" style="background:rgba(30,41,59,.1);color:#1e293b"><i class="fa fa-users"></i></span>
+                <span class="mant-tile-count" style="background:#1e293b">@(ViewBag.UserCount ?? 0) usuarios</span>
+            </div>
+            <strong class="mant-tile-name">Usuarios</strong>
+            <p class="mant-tile-desc">Gestiona cuentas, roles, bloqueos y confirmaciones de acceso al sistema.</p>
+            <span class="mant-tile-cta">Administrar &nbsp;<i class="fa fa-arrow-right"></i></span>
+        </a>
+    </div>
+
+</div>
