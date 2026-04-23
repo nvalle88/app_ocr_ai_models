@@ -220,6 +220,12 @@ html.right-hidden .splitter-right {
     display: none !important;
 }
 
+html.document-focus .left-col {
+    flex: 0 0 70vw !important;
+    width: 70vw !important;
+    max-width: 70vw !important;
+}
+
 .panel-body {
     padding: .9rem !important;
     box-sizing: border-box;
