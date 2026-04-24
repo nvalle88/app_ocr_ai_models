@@ -13,9 +13,14 @@
             Administra los componentes core de la plataforma de auditoría inteligente
         </p>
     </div>
-    <a asp-controller="Nexus" asp-action="Index" onclick="cargando()" class="btn btn-default btn-sm">
-        <i class="fa fa-arrow-left"></i>&nbsp; Volver a Nexus
-    </a>
+    <div style="display:flex;gap:8px">
+        <a asp-controller="Mantenedores" asp-action="Config" onclick="cargando()" class="btn btn-primary btn-sm">
+            <i class="fa fa-cogs"></i>&nbsp; Vista Unificada
+        </a>
+        <a asp-controller="Nexus" asp-action="Index" onclick="cargando()" class="btn btn-default btn-sm">
+            <i class="fa fa-arrow-left"></i>&nbsp; Volver a Nexus
+        </a>
+    </div>
 </div>
 
 <!-- KPI bar -->
