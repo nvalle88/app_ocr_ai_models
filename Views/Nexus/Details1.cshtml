@@ -817,6 +817,12 @@
 
                 root.querySelectorAll('table').forEach(table => {
                     table.classList.add('table', 'table-sm', 'table-striped', 'markdown-table');
+                    if (!table.parentElement.classList.contains('table-scroll-wrap')) {
+                        const wrap = document.createElement('div');
+                        wrap.className = 'table-scroll-wrap';
+                        table.parentNode.insertBefore(wrap, table);
+                        wrap.appendChild(table);
+                    }
                 });
 
                 root.querySelectorAll('a[href]').forEach(link => {
@@ -4343,7 +4349,7 @@
                             const isQuarterTurn = previewRotation === 90 || previewRotation === 270;
                             const rotatedWidth = isQuarterTurn ? naturalHeight : naturalWidth;
                             const rotatedHeight = isQuarterTurn ? naturalWidth : naturalHeight;
-                            const fitScale = Math.min(availableWidth / rotatedWidth, availableHeight / rotatedHeight, 1);
+                            const fitScale = Math.min(availableWidth / rotatedWidth, 1);
                             const baseWidth = Math.max(140, Math.round(rotatedWidth * fitScale));
                             const baseHeight = Math.max(140, Math.round(rotatedHeight * fitScale));
                             const innerBaseWidth = Math.max(140, Math.round(naturalWidth * fitScale));
@@ -4616,22 +4622,16 @@
                             body.style.overflow = 'hidden';
                         });
 
-                        const previewContent = document.querySelector('#previewContent');
-                        if (previewContent) {
-                            const panel = previewContent.closest('.panel-height') || previewContent.closest('.card-body.panel-body');
-                            if (panel) {
-                                const panelRect = panel.getBoundingClientRect();
-                                const previewHeader = panel.querySelector('.d-flex.align-items-center') || panel.querySelector('.card-header');
-                                const headerInnerH = previewHeader ? Math.ceil(previewHeader.getBoundingClientRect().height) : 48;
-                                const footerCompact = panel.querySelector('.mt-2.d-flex') || panel.querySelector('.card-footer');
-                                const footerInnerH = footerCompact ? Math.ceil(footerCompact.getBoundingClientRect().height) : 40;
-                                const innerAvailable = Math.max(120, Math.floor(panelRect.height - headerInnerH - footerInnerH - 16));
-                                previewContent.style.height = innerAvailable + 'px';
-                                previewContent.style.maxHeight = innerAvailable + 'px';
-                                previewContent.style.minHeight = '0';
-                                previewContent.style.overflowY = 'auto';
-                                previewContent.style.boxSizing = 'border-box';
-                            }
+                        const previewWrapper = document.getElementById('previewWrapper');
+                        const previewContent = document.getElementById('previewContent');
+                        if (previewWrapper && previewContent) {
+                            const wrapperRect = previewWrapper.getBoundingClientRect();
+                            const wrapperH = Math.max(120, Math.floor(wrapperRect.height) - 8);
+                            previewContent.style.height = wrapperH + 'px';
+                            previewContent.style.maxHeight = wrapperH + 'px';
+                            previewContent.style.minHeight = '0';
+                            previewContent.style.overflowY = 'auto';
+                            previewContent.style.boxSizing = 'border-box';
                         }
 
                         qa('.pdf-pages-container, .pdf-page-box').forEach(el => { el.style.overflow = 'visible'; });

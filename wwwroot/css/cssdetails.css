@@ -302,6 +302,19 @@ html.document-focus .documents-stack {
     grid-template-columns: minmax(180px, 220px) minmax(240px, 1fr);
     grid-template-rows: 1fr;
     gap: 10px;
+    height: 100%;
+    align-items: stretch;
+}
+
+html.document-focus .documents-surface {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+html.document-focus .preview-surface .preview-wrapper {
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 .documents-surface {
@@ -3368,6 +3381,13 @@ body.chat-markdown-modal-open {
 .chat-turn-response ul,
 .chat-turn-response ol {
     padding-left: 1.25rem;
+}
+
+.table-scroll-wrap {
+    overflow-x: auto;
+    max-width: 100%;
+    margin-bottom: 8px;
+    -webkit-overflow-scrolling: touch;
 }
 
 .chat-turn-response .markdown-table {
