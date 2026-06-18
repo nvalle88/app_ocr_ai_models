@@ -1,0 +1,239 @@
+@using app_ocr_ai_models.Areas.Studio.Models
+@model ChatIndexViewModel
+@{
+    ViewData["Title"] = "Chat IA — Motor Streaming";
+}
+
+@* ====================================================
+   REQ-019 T7 — Vista de chat SSE para el Área Studio.
+   Consume POST /Studio/Chat/Stream via fetch+ReadableStream.
+   UI mínima funcional; estilos reutilizan clases de Studio.
+
+   TODO T5: cuando se implemente function-calling, renderizar
+   chips de herramienta (tool_use) en el bloque de mensajes
+   usando el evento SSE "event: tool_use".
+   ==================================================== *@
+
+<div class="studio-breadcrumb">
+    Studio / <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> / Chat IA
+</div>
+
+<div class="studio-card">
+    <h4>Chat con el modelo IA</h4>
+    <p style="font-size:0.9em; color:#555;">
+        Consulta sobre un Caso importado. El modelo responde en streaming; el bloque de
+        razonamiento interno (<em>thinking</em>) se muestra colapsado antes del texto final.
+    </p>
+
+    <div style="margin-bottom:10px;">
+        <label style="font-weight:600; display:block; margin-bottom:4px;">CaseCode:</label>
+        <input id="caseCodeInput" type="text"
+               value="@Model.CaseCode"
+               style="width:360px; padding:6px 8px; font-family:monospace;"
+               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert-error" style="margin-top:8px;">
+        <strong>Error:</strong> @Model.Error
+    </div>
+}
+
+@* ── Historial de mensajes ── *@
+<div id="chatHistory" style="max-height:520px; overflow-y:auto; margin-bottom:12px;">
+    <div id="messages" style="display:flex; flex-direction:column; gap:12px; padding:4px 0;"></div>
+</div>
+
+@* ── Input + botón enviar ── *@
+<div class="studio-card" style="margin-top:0;">
+    <div style="display:flex; gap:8px; align-items:flex-end;">
+        <textarea id="userInput" rows="3"
+                  style="flex:1; padding:8px; font-size:0.95em; resize:vertical;"
+                  placeholder="Escribe tu pregunta sobre el caso..."></textarea>
+        <button id="sendBtn" class="btn-studio btn-primary-studio"
+                style="height:56px; white-space:nowrap;"
+                onclick="sendMessage()">
+            Enviar
+        </button>
+    </div>
+    <div id="statusBar" style="font-size:0.82em; color:#888; margin-top:6px; min-height:18px;"></div>
+</div>
+
+<script>
+// ====================================================================
+// REQ-019 T7 — Chat SSE: transmisión en tiempo real con fetch + ReadableStream.
+// ====================================================================
+
+let isStreaming = false;
+
+/**
+ * Crea y agrega un elemento de burbuja de mensaje al historial.
+ * role: 'user' | 'assistant'
+ * returns: { bubble, thinkingBlock, textBlock }
+ */
+function createMessageBubble(role) {
+    const container = document.getElementById('messages');
+
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = role === 'user'
+        ? 'align-self:flex-end; max-width:80%;'
+        : 'align-self:flex-start; max-width:90%; width:100%;';
+
+    if (role === 'user') {
+        const bubble = document.createElement('div');
+        bubble.style.cssText =
+            'background:#003366; color:#fff; padding:10px 14px; border-radius:12px 12px 2px 12px; font-size:0.95em; white-space:pre-wrap;';
+        wrapper.appendChild(bubble);
+        container.appendChild(wrapper);
+        return { bubble, thinkingBlock: null, textBlock: bubble };
+    }
+
+    // Bloque thinking (colapsable) — se muestra solo si llegan deltas thinking
+    const thinkingDetails = document.createElement('details');
+    thinkingDetails.style.cssText =
+        'background:#f0f4ff; border:1px solid #c5d2e8; border-radius:6px; padding:8px 12px; margin-bottom:6px; display:none;';
+    const thinkingSummary = document.createElement('summary');
+    thinkingSummary.style.cssText = 'cursor:pointer; font-size:0.85em; color:#4b5e82; font-weight:600;';
+    thinkingSummary.textContent = '🧠 Pensando…';  // 🧠 Pensando…
+    const thinkingContent = document.createElement('pre');
+    thinkingContent.style.cssText =
+        'font-size:0.8em; color:#445; white-space:pre-wrap; margin:8px 0 0; max-height:200px; overflow-y:auto;';
+    thinkingDetails.appendChild(thinkingSummary);
+    thinkingDetails.appendChild(thinkingContent);
+
+    // Bloque de texto de la respuesta
+    const textBubble = document.createElement('div');
+    textBubble.className = 'studio-card';
+    textBubble.style.cssText =
+        'margin:0; padding:10px 14px; font-size:0.95em; white-space:pre-wrap; background:#f8faff; border-left:3px solid #4285f4;';
+
+    wrapper.appendChild(thinkingDetails);
+    wrapper.appendChild(textBubble);
+    container.appendChild(wrapper);
+
+    return { bubble: wrapper, thinkingBlock: { details: thinkingDetails, content: thinkingContent }, textBlock: textBubble };
+}
+
+function scrollToBottom() {
+    const h = document.getElementById('chatHistory');
+    h.scrollTop = h.scrollHeight;
+}
+
+function setStatus(msg, color) {
+    const bar = document.getElementById('statusBar');
+    bar.textContent = msg;
+    bar.style.color = color || '#888';
+}
+
+async function sendMessage() {
+    if (isStreaming) return;
+
+    const caseCodeVal = document.getElementById('caseCodeInput').value.trim();
+    const msgVal      = document.getElementById('userInput').value.trim();
+
+    if (!caseCodeVal || caseCodeVal === '00000000-0000-0000-0000-000000000000') {
+        setStatus('Introduce un CaseCode válido.', '#c5221f');
+        return;
+    }
+    if (!msgVal) {
+        setStatus('Escribe un mensaje antes de enviar.', '#c5221f');
+        return;
+    }
+
+    // Mostrar mensaje del usuario
+    const { textBlock: userText } = createMessageBubble('user');
+    userText.textContent = msgVal;
+    document.getElementById('userInput').value = '';
+    scrollToBottom();
+
+    // Crear burbuja de respuesta del asistente
+    const { thinkingBlock, textBlock: assistantText } = createMessageBubble('assistant');
+    assistantText.textContent = '';
+    scrollToBottom();
+
+    isStreaming = true;
+    document.getElementById('sendBtn').disabled = true;
+    setStatus('Conectando con el modelo…', '#888');
+
+    try {
+        const resp = await fetch('/Studio/Chat/Stream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ caseCode: caseCodeVal, message: msgVal })
+        });
+
+        if (!resp.ok) {
+            setStatus(`Error HTTP ${resp.status}`, '#c5221f');
+            return;
+        }
+
+        const reader  = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer    = '';
+
+        setStatus('Recibiendo respuesta…', '#1a73e8');
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Procesar frames SSE completos (terminan en \n\n)
+            let boundary;
+            while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+                const frame = buffer.slice(0, boundary);
+                buffer = buffer.slice(boundary + 2);
+
+                let eventType = 'message';
+                let dataLine  = '';
+
+                for (const line of frame.split('\n')) {
+                    if (line.startsWith('event: ')) eventType = line.slice(7).trim();
+                    else if (line.startsWith('data: '))  dataLine  = line.slice(6).trim();
+                }
+
+                if (!dataLine) continue;
+
+                try {
+                    const payload = JSON.parse(dataLine);
+
+                    if (eventType === 'thinking' && thinkingBlock) {
+                        thinkingBlock.details.style.display = '';   // hacer visible
+                        thinkingBlock.content.textContent   += payload.delta || '';
+                        scrollToBottom();
+                    } else if (eventType === 'text') {
+                        assistantText.textContent += payload.delta || '';
+                        scrollToBottom();
+                    } else if (eventType === 'done') {
+                        const pt  = payload.promptTokens     ?? 0;
+                        const ct  = payload.completionTokens ?? 0;
+                        const tt  = payload.thinkingTokens;
+                        const tkInfo = tt != null
+                            ? `Tokens: ${pt} entrada / ${ct} salida / ${tt} thinking`
+                            : `Tokens: ${pt} entrada / ${ct} salida`;
+                        setStatus(tkInfo, '#137333');
+                    } else if (eventType === 'error') {
+                        setStatus(`Error del modelo: ${payload.message}`, '#c5221f');
+                    }
+                } catch (_) {
+                    // frame malformado — ignorar
+                }
+            }
+        }
+    } catch (err) {
+        setStatus(`Error de red: ${err.message}`, '#c5221f');
+    } finally {
+        isStreaming = false;
+        document.getElementById('sendBtn').disabled = false;
+        scrollToBottom();
+    }
+}
+
+// Enviar con Ctrl+Enter
+document.getElementById('userInput').addEventListener('keydown', function (e) {
+    if (e.ctrlKey && e.key === 'Enter') sendMessage();
+});
+</script>

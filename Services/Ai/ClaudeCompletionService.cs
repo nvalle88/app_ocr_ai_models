@@ -1,6 +1,7 @@
 using Anthropic;
 using Anthropic.Models.Messages;
 using app_tramites.Models.ModelAi;
+using System.Runtime.CompilerServices;
 
 namespace app_tramites.Services.Ai;
 
@@ -115,6 +116,82 @@ public sealed class ClaudeCompletionService : IAiCompletionService
             CacheReadTokens     = cacheReadTokens,
             CacheCreationTokens = cacheCreationTokens
         };
+    }
+
+    // ── Streaming (REQ-019 T7) ────────────────────────────────────────────
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Mapeo de chunks del SDK Anthropic v10.4.0:
+    /// <list type="bullet">
+    ///   <item>
+    ///     <c>RawMessageStreamEvent.TryPickContentBlockDelta</c> devuelve un
+    ///     <see cref="RawContentBlockDeltaEvent"/> cuyo campo <c>Delta</c>
+    ///     (<see cref="RawContentBlockDelta"/>) admite <c>TryPickText</c>
+    ///     (<see cref="TextDelta"/>) y <c>TryPickThinking</c> (<see cref="ThinkingDelta"/>).
+    ///   </item>
+    ///   <item>
+    ///     <c>RawMessageStreamEvent.TryPickDelta</c> devuelve un
+    ///     <see cref="RawMessageDeltaEvent"/> con <c>Usage</c>
+    ///     (<see cref="MessageDeltaUsage"/>): contiene <c>OutputTokens</c> (long)
+    ///     e <c>InputTokens</c> (long?).
+    ///   </item>
+    /// </list>
+    /// El chunk <see cref="AiStreamChunkType.Done"/> se emite tras el <c>message_stop</c>
+    /// o al agotar el <c>await foreach</c>, usando los últimos tokens capturados.
+    /// </remarks>
+    public async IAsyncEnumerable<AiStreamChunk> StreamAsync(
+        AiCompletionRequest request,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var client = BuildClient();
+
+        var parameters = new MessageCreateParams
+        {
+            Model     = "claude-opus-4-8",
+            MaxTokens = request.MaxTokens,
+            System    = request.SystemPrompt,
+            Messages  =
+            [
+                new() { Role = Role.User, Content = request.UserMessage }
+            ]
+        };
+
+        // Acumuladores de tokens para el chunk Done
+        long outputTokens = 0;
+        long inputTokens  = 0;
+
+        await foreach (var ev in client.Messages.CreateStreaming(parameters, ct).ConfigureAwait(false))
+        {
+            // ── content_block_delta: text o thinking ─────────────────────────
+            if (ev.TryPickContentBlockDelta(out var blockDeltaEvent))
+            {
+                var delta = blockDeltaEvent.Delta;
+
+                if (delta.TryPickText(out var textDelta) && !string.IsNullOrEmpty(textDelta.Text))
+                {
+                    yield return AiStreamChunk.TextChunk(textDelta.Text);
+                }
+                else if (delta.TryPickThinking(out var thinkingDelta) && !string.IsNullOrEmpty(thinkingDelta.Thinking))
+                {
+                    yield return AiStreamChunk.ThinkingChunk(thinkingDelta.Thinking);
+                }
+            }
+
+            // ── message_delta: tokens de salida ──────────────────────────────
+            else if (ev.TryPickDelta(out var msgDelta) && msgDelta.Usage is { } usage)
+            {
+                outputTokens = usage.OutputTokens;
+                if (usage.InputTokens.HasValue)
+                    inputTokens = usage.InputTokens.Value;
+            }
+        }
+
+        yield return AiStreamChunk.DoneChunk(
+            promptTokens:     (int)inputTokens,
+            completionTokens: (int)outputTokens);
     }
 
     // ── Construcción del cliente ──────────────────────────────────────────

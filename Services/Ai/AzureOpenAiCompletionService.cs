@@ -1,4 +1,5 @@
 using app_tramites.Models.ModelAi;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -67,6 +68,28 @@ public sealed class AzureOpenAiCompletionService : IAiCompletionService
             PromptTokens     = ai?.Usage?.PromptTokens     ?? 0,
             CompletionTokens = ai?.Usage?.CompletionTokens ?? 0
         };
+    }
+
+    // ── Streaming (REQ-019 T7): fallback no-stream para AzureOpenAI ──────
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// AzureOpenAI no tiene streaming implementado en este servicio.
+    /// Se realiza una llamada completa y se emite un único chunk Text + Done.
+    /// El streaming real de AOAI puede incorporarse en una tarea futura.
+    /// </remarks>
+    public async IAsyncEnumerable<AiStreamChunk> StreamAsync(
+        AiCompletionRequest request,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var result = await CompleteAsync(request, ct).ConfigureAwait(false);
+
+        if (!string.IsNullOrEmpty(result.Text))
+            yield return AiStreamChunk.TextChunk(result.Text);
+
+        yield return AiStreamChunk.DoneChunk(result.PromptTokens, result.CompletionTokens);
     }
 
     // ── DTOs internos para deserializar la respuesta de Azure OpenAI ──
