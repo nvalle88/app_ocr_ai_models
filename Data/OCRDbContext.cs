@@ -65,6 +65,10 @@ public partial class OCRDbContext : DbContext
     public virtual DbSet<PolicyUser> PolicyUsers { get; set; }
     public virtual DbSet<RolProcess> RolProcesses { get; set; }
     public DbSet<Catalog> Catalog { get; set; }
+
+    // REQ-019 T3: configuración multi-cuenta Zendesk
+    public virtual DbSet<ZendeskConf> ZendeskConf { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Agent>(entity =>
@@ -762,6 +766,31 @@ public partial class OCRDbContext : DbContext
                 .HasConstraintName("FK_ToolInvocation_Execution");
 
             entity.HasIndex(e => e.ExecutionId, "IX_ToolInvocation_ExecutionId");
+        });
+
+        // REQ-019 T3: configuración multi-cuenta Zendesk
+        modelBuilder.Entity<ZendeskConf>(entity =>
+        {
+            entity.HasKey(e => e.Code).HasName("PK_ZendeskConf");
+
+            entity.Property(e => e.Code)
+                .HasMaxLength(50)
+                .IsUnicode(false);
+            entity.Property(e => e.Cuenta)
+                .HasMaxLength(30)
+                .IsUnicode(false)
+                .IsRequired();
+            entity.Property(e => e.Subdomain)
+                .HasMaxLength(100)
+                .IsUnicode(false)
+                .IsRequired();
+            entity.Property(e => e.SecretRef)
+                .HasMaxLength(250)
+                .IsUnicode(false);
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true);
+
+            entity.HasIndex(e => e.IsActive, "IX_ZendeskConf_IsActive");
         });
 
         OnModelCreatingPartial(modelBuilder);

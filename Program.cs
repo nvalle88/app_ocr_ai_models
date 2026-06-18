@@ -1,5 +1,6 @@
 using app_ocr_ai_models.Data;
 using app_ocr_ai_models.Services;
+using app_ocr_ai_models.Services.Zendesk;
 using app_tramites.Data;
 using app_tramites.Services.NexusProcess;
 using app_tramites.Utils;
@@ -53,6 +54,7 @@ namespace app_ocr_ai_models
             builder.Services.AddTransient<IEmailSender, EmailSender>();
             builder.Services.AddTransient<INexusService, NexusService>();
             builder.Services.AddScoped<IOcrIngestService, OcrIngestService>();
+            builder.Services.AddScoped<IZendeskClient, ZendeskClient>(); // REQ-019 T3
 
             // opcional: CORS para permitir llamadas desde Postman/otros clientes
             builder.Services.AddCors(options =>
