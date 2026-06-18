@@ -5,6 +5,7 @@ namespace app_ocr_ai_models.Areas.Studio.Models
 {
     // ============================================================
     // REQ-019 T4 — ViewModels del Área Studio para importar sobres.
+    // REQ-019 T22 — ViewModels adicionales para origen Armonix.
     // ============================================================
 
     /// <summary>
@@ -139,6 +140,70 @@ namespace app_ocr_ai_models.Areas.Studio.Models
         public IReadOnlyList<string> Advertencias { get; set; } = Array.Empty<string>();
 
         /// <summary>Mensaje de error global, si aplica.</summary>
+        public string? Error { get; set; }
+    }
+
+    // ----------------------------------------------------------------
+    // REQ-019 T22 — ViewModels para la fuente documental Armonix
+    // ----------------------------------------------------------------
+
+    /// <summary>
+    /// Formulario para buscar documentos de un sobre en Armonix.
+    /// Requiere el número de sobre más los cuatro identificadores de contrato.
+    /// Si el operador solo dispone de la cédula, debe resolver el contrato
+    /// antes de continuar.
+    /// </summary>
+    public class ImportarSobreArmonixViewModel
+    {
+        /// <summary>Número del sobre en MFiles (campo principal de Armonix).</summary>
+        public string? NumeroSobre { get; set; }
+
+        /// <summary>Número de contrato del afiliado.</summary>
+        public string? NumeroContrato { get; set; }
+
+        /// <summary>Código de producto del contrato.</summary>
+        public string? CodigoProducto { get; set; }
+
+        /// <summary>Código de región del contrato.</summary>
+        public string? CodigoRegion { get; set; }
+
+        /// <summary>Número de persona/paciente dentro del contrato.</summary>
+        public string? NumeroPersonaPaciente { get; set; }
+
+        /// <summary>Código del Process (definición de caso) al que se asignará el caso importado.</summary>
+        public string ProcessCode { get; set; } = string.Empty;
+
+        /// <summary>Lista de procesos disponibles para el selector.</summary>
+        public IReadOnlyList<Process> ProcesosDisponibles { get; set; } = Array.Empty<Process>();
+    }
+
+    /// <summary>
+    /// Resultado de la previsualización de documentos Armonix antes de confirmar la importación.
+    /// </summary>
+    public class VistaDocumentosArmonixViewModel
+    {
+        /// <summary>Número de sobre consultado.</summary>
+        public string NumeroSobre { get; set; } = string.Empty;
+
+        /// <summary>Número de contrato.</summary>
+        public string? NumeroContrato { get; set; }
+
+        /// <summary>Código de producto.</summary>
+        public string? CodigoProducto { get; set; }
+
+        /// <summary>Código de región.</summary>
+        public string? CodigoRegion { get; set; }
+
+        /// <summary>Número de persona/paciente.</summary>
+        public string? NumeroPersonaPaciente { get; set; }
+
+        /// <summary>Nombres/IDs de los documentos disponibles en MFiles.</summary>
+        public IReadOnlyList<string> DocumentosDisponibles { get; set; } = Array.Empty<string>();
+
+        /// <summary>Código del Process destino.</summary>
+        public string ProcessCode { get; set; } = string.Empty;
+
+        /// <summary>Mensaje de error, si aplica.</summary>
         public string? Error { get; set; }
     }
 }

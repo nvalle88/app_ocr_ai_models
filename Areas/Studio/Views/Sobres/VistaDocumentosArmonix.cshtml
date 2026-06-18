@@ -1,0 +1,84 @@
+@model VistaDocumentosArmonixViewModel
+@{
+    ViewData["Title"] = $"Documentos Armonix — Sobre {Model.NumeroSobre}";
+}
+
+<div class="studio-breadcrumb">
+    Studio /
+    <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> /
+    <a asp-area="Studio" asp-controller="Sobres" asp-action="ImportarArmonix">Armonix</a> /
+    Documentos
+</div>
+
+<div class="studio-card">
+    <h4>Documentos disponibles — Sobre <em>@Model.NumeroSobre</em></h4>
+
+    <table style="font-size:0.88em; margin-bottom:14px;">
+        <tr>
+            <td style="padding:3px 12px 3px 0; font-weight:600;">Contrato</td>
+            <td>@(Model.NumeroContrato ?? "(no especificado)")</td>
+        </tr>
+        <tr>
+            <td style="padding:3px 12px 3px 0; font-weight:600;">Producto</td>
+            <td>@(Model.CodigoProducto ?? "(no especificado)")</td>
+        </tr>
+        <tr>
+            <td style="padding:3px 12px 3px 0; font-weight:600;">Región</td>
+            <td>@(Model.CodigoRegion ?? "(no especificado)")</td>
+        </tr>
+        <tr>
+            <td style="padding:3px 12px 3px 0; font-weight:600;">Persona/Paciente</td>
+            <td>@(Model.NumeroPersonaPaciente ?? "(no especificado)")</td>
+        </tr>
+        <tr>
+            <td style="padding:3px 12px 3px 0; font-weight:600;">Proceso destino</td>
+            <td><code>@Model.ProcessCode</code></td>
+        </tr>
+    </table>
+
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="alert-error">@Model.Error</div>
+    }
+    else if (Model.DocumentosDisponibles.Count == 0)
+    {
+        <div class="alert-warn">
+            Armonix no devolvió documentos para el sobre <strong>@Model.NumeroSobre</strong>.
+            Verifique los identificadores del contrato.
+        </div>
+    }
+    else
+    {
+        <p style="font-size:0.9em; color:#333;">
+            Se encontraron <strong>@Model.DocumentosDisponibles.Count</strong> documento(s) en MFiles.
+            Al confirmar, se descargarán, procesarán con OCR y quedarán disponibles en el Caso.
+        </p>
+        <ul style="padding-left:20px; margin-bottom:16px;">
+            @foreach (var nombre in Model.DocumentosDisponibles)
+            {
+                <li style="font-size:0.88em; padding:2px 0;">@nombre</li>
+            }
+        </ul>
+
+        <form asp-area="Studio" asp-controller="Sobres" asp-action="ImportarDesdeArmonix" method="post">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="numeroSobre"           value="@Model.NumeroSobre" />
+            <input type="hidden" name="numeroContrato"        value="@Model.NumeroContrato" />
+            <input type="hidden" name="codigoProducto"        value="@Model.CodigoProducto" />
+            <input type="hidden" name="codigoRegion"          value="@Model.CodigoRegion" />
+            <input type="hidden" name="numeroPersonaPaciente" value="@Model.NumeroPersonaPaciente" />
+            <input type="hidden" name="processCode"           value="@Model.ProcessCode" />
+
+            <button type="submit" class="btn-studio btn-success-studio">
+                Importar @Model.DocumentosDisponibles.Count documento(s) como Caso OCR
+            </button>
+        </form>
+    }
+
+    <div style="margin-top:14px;">
+        <a asp-area="Studio" asp-controller="Sobres" asp-action="ImportarArmonix"
+           class="btn-studio btn-secondary-studio">
+            Nueva búsqueda
+        </a>
+    </div>
+</div>

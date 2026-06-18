@@ -1,0 +1,108 @@
+@model ImportarSobreArmonixViewModel
+@{
+    ViewData["Title"] = "Importar Sobre desde Armonix";
+}
+
+<div class="studio-breadcrumb">
+    Studio / <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> / Armonix
+</div>
+
+<div class="studio-card">
+    <h4>Importar documentos desde Armonix</h4>
+    <p style="color:#555; font-size:0.9em;">
+        Introduce el número de sobre y los identificadores del contrato para obtener
+        los documentos almacenados en MFiles por Armonix.
+        Los documentos se procesarán con OCR y quedarán disponibles en el Caso.
+    </p>
+    <div class="alert-warn" style="margin-bottom:14px; font-size:0.88em;">
+        <strong>Nota:</strong> Armonix identifica los documentos por sobre de reembolso,
+        no por cédula. Si solo dispone de la cédula, resuelva primero el contrato
+        con el agente de análisis (tool <em>resolver_contrato_por_cedula</em>).
+    </div>
+
+    <form asp-area="Studio" asp-controller="Sobres" asp-action="BuscarArmonix" method="post">
+        @Html.AntiForgeryToken()
+
+        <div style="margin-bottom: 14px;">
+            <label style="font-weight:600; display:block; margin-bottom:4px;">
+                Número de sobre <span style="color:#c00;">*</span>
+            </label>
+            <input asp-for="NumeroSobre"
+                   type="text"
+                   class="form-control"
+                   style="max-width:320px;"
+                   placeholder="Ej: 20240001234"
+                   required />
+            <span asp-validation-for="NumeroSobre" class="text-danger"></span>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+            <label style="font-weight:600; display:block; margin-bottom:4px;">
+                Número de contrato <span style="color:#c00;">*</span>
+            </label>
+            <input asp-for="NumeroContrato"
+                   type="text"
+                   class="form-control"
+                   style="max-width:320px;"
+                   placeholder="Ej: 000001234"
+                   required />
+        </div>
+
+        <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px;">
+            <div>
+                <label style="font-weight:600; display:block; margin-bottom:4px;">
+                    Código de producto <span style="color:#c00;">*</span>
+                </label>
+                <input asp-for="CodigoProducto"
+                       type="text"
+                       class="form-control"
+                       style="max-width:150px;"
+                       placeholder="Ej: 01"
+                       required />
+            </div>
+            <div>
+                <label style="font-weight:600; display:block; margin-bottom:4px;">
+                    Código de región <span style="color:#c00;">*</span>
+                </label>
+                <input asp-for="CodigoRegion"
+                       type="text"
+                       class="form-control"
+                       style="max-width:150px;"
+                       placeholder="Ej: 01"
+                       required />
+            </div>
+            <div>
+                <label style="font-weight:600; display:block; margin-bottom:4px;">
+                    Número de persona/paciente <span style="color:#c00;">*</span>
+                </label>
+                <input asp-for="NumeroPersonaPaciente"
+                       type="text"
+                       class="form-control"
+                       style="max-width:150px;"
+                       placeholder="Ej: 01"
+                       required />
+            </div>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+            <label style="font-weight:600; display:block; margin-bottom:4px;">
+                Proceso de destino <span style="color:#c00;">*</span>
+            </label>
+            <select asp-for="ProcessCode"
+                    class="form-control"
+                    style="max-width:320px;">
+                @foreach (var p in Model.ProcesosDisponibles)
+                {
+                    <option value="@p.Code">@p.Name (@p.Code)</option>
+                }
+            </select>
+            <small style="color:#888;">Define la plantilla de pasos y agentes que usará el caso.</small>
+        </div>
+
+        <button type="submit" class="btn-studio btn-primary-studio">Buscar documentos en Armonix</button>
+        <a asp-area="Studio" asp-controller="Sobres" asp-action="Index"
+           class="btn-studio btn-secondary-studio" style="margin-left:8px;">
+            Volver a Zendesk
+        </a>
+    </form>
+</div>

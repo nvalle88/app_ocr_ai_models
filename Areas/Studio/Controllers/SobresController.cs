@@ -1,6 +1,7 @@
 using app_ocr_ai_models.Areas.Studio.Models;
 using app_ocr_ai_models.Data;
 using app_ocr_ai_models.Services;
+using app_ocr_ai_models.Services.Documents;
 using app_ocr_ai_models.Services.Zendesk;
 using app_tramites.Models.ModelAi;
 using app_tramites.Models.ViewModel;
@@ -12,13 +13,16 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
 {
     // ============================================================
     // REQ-019 T4 — Área Studio: flujo Importar sobre → Caso OCR.
+    // REQ-019 T22 — Origen Armonix añadido como tercera fuente.
     // Aislado: no toca NexusController/OcrTestController/HomeController
-    // ni sus vistas.  Reutiliza IZendeskClient (T3) e IOcrIngestService (T2).
+    // ni sus vistas.  Reutiliza IZendeskClient (T3), IOcrIngestService (T2)
+    // y ArmonixDocumentProvider (T22).
     // ============================================================
 
     /// <summary>
-    /// Controller del Área Studio para gestionar la importación de sobres Zendesk
+    /// Controller del Área Studio para gestionar la importación de sobres
     /// como Casos OCR (<see cref="ProcessCase"/> + <see cref="DataFile"/>).
+    /// Soporta tres fuentes: archivo cargado, Zendesk y Armonix.
     /// </summary>
     [Area("Studio")]
     [Authorize]
@@ -26,6 +30,7 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
     {
         private readonly IZendeskClient _zendesk;
         private readonly IOcrIngestService _ingest;
+        private readonly ArmonixDocumentProvider _armonix;
         private readonly OCRDbContext _db;
         private readonly ILogger<SobresController> _logger;
 
@@ -34,18 +39,21 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
         /// </summary>
         /// <param name="zendesk">Cliente Zendesk multi-cuenta.</param>
         /// <param name="ingest">Servicio de ingesta OCR/Blob.</param>
+        /// <param name="armonix">Proveedor documental Armonix (T22).</param>
         /// <param name="db">Contexto EF de la base de datos OCR.</param>
         /// <param name="logger">Logger de la aplicación.</param>
         public SobresController(
             IZendeskClient zendesk,
             IOcrIngestService ingest,
+            ArmonixDocumentProvider armonix,
             OCRDbContext db,
             ILogger<SobresController> logger)
         {
             _zendesk = zendesk;
-            _ingest = ingest;
-            _db = db;
-            _logger = logger;
+            _ingest  = ingest;
+            _armonix = armonix;
+            _db      = db;
+            _logger  = logger;
         }
 
         // ----------------------------------------------------------------
@@ -428,6 +436,174 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
                 DataFileIds = dataFileIds,
                 Advertencias = advertencias
             });
+        }
+
+        // ----------------------------------------------------------------
+        // REQ-019 T22 — Acciones para el origen Armonix
+        // ----------------------------------------------------------------
+
+        // GET /Studio/Sobres/ImportarArmonix
+
+        /// <summary>
+        /// Muestra el formulario para buscar documentos de un sobre en Armonix.
+        /// Requiere NumeroSobre + identificadores de contrato (NumeroContrato,
+        /// CodigoProducto, CodigoRegion, NumeroPersonaPaciente).
+        /// Si el operador solo dispone de la cédula, debe resolver el contrato
+        /// previamente con la tool <c>resolver_contrato_por_cedula</c>.
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> ImportarArmonix()
+        {
+            var procesos = await _db.Process
+                .Where(p => p.IsActive == true)
+                .OrderBy(p => p.Name)
+                .ToListAsync();
+
+            var vm = new ImportarSobreArmonixViewModel
+            {
+                ProcessCode       = procesos.FirstOrDefault()?.Code ?? string.Empty,
+                ProcesosDisponibles = procesos
+            };
+            return View(vm);
+        }
+
+        // POST /Studio/Sobres/BuscarArmonix
+
+        /// <summary>
+        /// Llama a Armonix para listar los documentos disponibles del sobre y
+        /// los muestra al usuario antes de confirmar la importación.
+        /// </summary>
+        /// <param name="vm">Datos del formulario con identificadores del sobre.</param>
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> BuscarArmonix(ImportarSobreArmonixViewModel vm)
+        {
+            var resultado = new VistaDocumentosArmonixViewModel
+            {
+                NumeroSobre           = vm.NumeroSobre ?? string.Empty,
+                NumeroContrato        = vm.NumeroContrato,
+                CodigoProducto        = vm.CodigoProducto,
+                CodigoRegion          = vm.CodigoRegion,
+                NumeroPersonaPaciente = vm.NumeroPersonaPaciente,
+                ProcessCode           = vm.ProcessCode
+            };
+
+            if (string.IsNullOrWhiteSpace(vm.NumeroSobre))
+            {
+                resultado.Error = "El número de sobre es obligatorio.";
+                return View("VistaDocumentosArmonix", resultado);
+            }
+
+            if (string.IsNullOrWhiteSpace(vm.NumeroContrato)
+                || string.IsNullOrWhiteSpace(vm.CodigoProducto)
+                || string.IsNullOrWhiteSpace(vm.CodigoRegion)
+                || string.IsNullOrWhiteSpace(vm.NumeroPersonaPaciente))
+            {
+                resultado.Error =
+                    "Armonix requiere NumeroContrato, CodigoProducto, CodigoRegion y NumeroPersonaPaciente. " +
+                    "Si solo dispone de la cédula, resuelva primero el contrato con la herramienta del agente.";
+                return View("VistaDocumentosArmonix", resultado);
+            }
+
+            try
+            {
+                var filter = new SobreDocumentosFilter
+                {
+                    NumeroSobre           = vm.NumeroSobre.Trim(),
+                    NumeroContrato        = vm.NumeroContrato?.Trim(),
+                    CodigoProducto        = vm.CodigoProducto?.Trim(),
+                    CodigoRegion          = vm.CodigoRegion?.Trim(),
+                    NumeroPersonaPaciente = vm.NumeroPersonaPaciente?.Trim()
+                };
+
+                var documentos = await _armonix.ListarDocumentosAsync(filter);
+                resultado.DocumentosDisponibles = documentos;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[T22] Error al listar documentos Armonix para sobre {NumeroSobre}.", vm.NumeroSobre);
+                resultado.Error = $"Error al consultar Armonix: {ex.Message}";
+            }
+
+            return View("VistaDocumentosArmonix", resultado);
+        }
+
+        // POST /Studio/Sobres/ImportarDesdeArmonix
+
+        /// <summary>
+        /// Importa los documentos del sobre desde Armonix como un <see cref="ProcessCase"/> nuevo.
+        /// Descarga el binario base64, ejecuta OCR con <see cref="IOcrIngestService"/>
+        /// y crea los <see cref="DataFile"/> correspondientes.
+        /// </summary>
+        /// <param name="numeroSobre">Número del sobre de reembolso.</param>
+        /// <param name="numeroContrato">Número de contrato del afiliado.</param>
+        /// <param name="codigoProducto">Código de producto del contrato.</param>
+        /// <param name="codigoRegion">Código de región del contrato.</param>
+        /// <param name="numeroPersonaPaciente">Número de persona/paciente.</param>
+        /// <param name="processCode">Código del Process destino.</param>
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ImportarDesdeArmonix(
+            string numeroSobre,
+            string numeroContrato,
+            string codigoProducto,
+            string codigoRegion,
+            string numeroPersonaPaciente,
+            string processCode)
+        {
+            // ── 1. Validar el Process
+            var process = await _db.Process.FindAsync(processCode);
+            if (process == null)
+            {
+                TempData["Error"] = $"El proceso '{processCode}' no existe.";
+                return RedirectToAction(nameof(ImportarArmonix));
+            }
+
+            // ── 2. Crear el ProcessCase
+            var newCase = new ProcessCase
+            {
+                CaseCode       = Guid.NewGuid(),
+                DefinitionCode = processCode,
+                StartDate      = DateTime.UtcNow,
+                State          = "Started"
+            };
+            _db.ProcessCase.Add(newCase);
+            await _db.SaveChangesAsync();
+
+            // ── 3. Importar documentos desde Armonix → OCR → DataFile
+            var filter = new SobreDocumentosFilter
+            {
+                NumeroSobre           = numeroSobre?.Trim()           ?? string.Empty,
+                NumeroContrato        = numeroContrato?.Trim(),
+                CodigoProducto        = codigoProducto?.Trim(),
+                CodigoRegion          = codigoRegion?.Trim(),
+                NumeroPersonaPaciente = numeroPersonaPaciente?.Trim()
+            };
+
+            ImportarDocumentosResult importResult;
+            try
+            {
+                importResult = await _armonix.ImportarDocumentosAsync(filter, newCase, _db);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[T22] Error al importar documentos Armonix para sobre {NumeroSobre}.", numeroSobre);
+                newCase.State = "ImportError";
+                await _db.SaveChangesAsync();
+                TempData["Error"] = $"Error al importar desde Armonix: {ex.Message}";
+                return RedirectToAction(nameof(ImportarArmonix));
+            }
+
+            // ── 4. Actualizar estado del caso según resultado
+            if (importResult.DataFileIds.Count == 0)
+            {
+                newCase.State = importResult.Advertencias.Count > 0
+                    ? "ImportedWithWarnings"
+                    : "ImportedEmpty";
+                await _db.SaveChangesAsync();
+            }
+
+            return RedirectToAction(nameof(Caso), new { caseCode = newCase.CaseCode });
         }
 
         // ----------------------------------------------------------------
