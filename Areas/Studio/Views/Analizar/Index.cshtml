@@ -1,0 +1,156 @@
+@using app_ocr_ai_models.Areas.Studio.Models
+@using app_tramites.Services.Ai
+@model AnalizarResultadoViewModel
+@{
+    ViewData["Title"] = "Analizar Caso — Motor IA";
+}
+
+<div class="studio-breadcrumb">
+    Studio / <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> / Analizar
+</div>
+
+<div class="studio-card">
+    <h4>Disparar análisis IA</h4>
+    <p style="font-size:0.9em; color:#555;">
+        Ejecuta el motor Claude multi-paso sobre un Caso ya importado.
+        El clasificador determina el proceso; luego se ejecutan los pasos en orden.
+    </p>
+
+    <form asp-area="Studio" asp-controller="Analizar" asp-action="Ejecutar" method="post">
+        @Html.AntiForgeryToken()
+
+        <div style="margin-bottom:10px;">
+            <label style="font-weight:600; display:block; margin-bottom:4px;">CaseCode:</label>
+            <input type="text" name="CaseCode" value="@Model.Request.CaseCode"
+                   style="width:360px; padding:6px 8px; font-family:monospace;"
+                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+        </div>
+
+        <div style="margin-bottom:14px;">
+            <label style="font-weight:600; display:block; margin-bottom:4px;">
+                Proceso (override — dejar vacío para clasificador automático):
+            </label>
+            <input type="text" name="ProcessCodeOverride" value="@Model.Request.ProcessCodeOverride"
+                   style="width:240px; padding:6px 8px;" placeholder="Ej: PROCESO_001" />
+        </div>
+
+        <button type="submit" class="btn-studio btn-primary-studio">
+            Ejecutar análisis IA
+        </button>
+    </form>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert-error" style="margin-top:12px;">
+        <strong>Error:</strong> @Model.Error
+    </div>
+}
+
+@if (Model.Resultado != null)
+{
+    var r = Model.Resultado;
+
+    <div class="studio-card" style="margin-top:16px;">
+        <h4>Resultado de la orquestación</h4>
+        <table style="font-size:0.9em; margin-bottom:10px;">
+            <tr>
+                <td style="padding:4px 12px 4px 0; font-weight:600;">CaseCode</td>
+                <td><code>@r.CaseCode</code></td>
+            </tr>
+            <tr>
+                <td style="padding:4px 12px 4px 0; font-weight:600;">Proceso aplicado</td>
+                <td><code>@r.ProcessCode</code></td>
+            </tr>
+            <tr>
+                <td style="padding:4px 12px 4px 0; font-weight:600;">Estado</td>
+                <td>
+                    @if (r.Success)
+                    {
+                        <span class="badge-estado" style="background:#e6f4ea; color:#137333;">OK</span>
+                    }
+                    else
+                    {
+                        <span class="badge-estado" style="background:#fce8e6; color:#c5221f;">Error</span>
+                    }
+                </td>
+            </tr>
+            <tr>
+                <td style="padding:4px 12px 4px 0; font-weight:600;">Pasos ejecutados</td>
+                <td>@r.Steps.Count</td>
+            </tr>
+        </table>
+
+        @if (!string.IsNullOrWhiteSpace(r.ErrorMessage))
+        {
+            <div class="alert-error">@r.ErrorMessage</div>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(r.ClassificationText))
+    {
+        <div class="studio-card">
+            <h4>Clasificador</h4>
+            <div style="font-size:0.9em; color:#333; white-space:pre-line; background:#f8faff;
+                        padding:10px; border-left:3px solid #003366;">
+                @r.ClassificationText
+            </div>
+        </div>
+    }
+
+    @if (r.Steps.Count > 0)
+    {
+        <div class="studio-card">
+            <h4>Pasos (@r.Steps.Count)</h4>
+
+            @foreach (var step in r.Steps)
+            {
+                <div style="border:1px solid #dde3ea; border-radius:6px; padding:12px;
+                            margin-bottom:12px; background:#fff;">
+                    <div style="font-weight:600; margin-bottom:6px;">
+                        Paso @step.StepOrder
+                        @if (!string.IsNullOrWhiteSpace(step.StepName))
+                        {
+                            <span style="font-weight:400; color:#555;"> — @step.StepName</span>
+                        }
+                        <span style="font-size:0.8em; color:#888; margin-left:8px;">
+                            Agente: <code>@step.ModelCode</code> |
+                            ExecutionId: <code>@step.ExecutionId</code> |
+                            Estado: <strong>@step.Status</strong>
+                        </span>
+                    </div>
+
+                    <div style="font-size:0.8em; color:#666; margin-bottom:6px;">
+                        Prompt tokens: @step.PromptTokens &nbsp;|&nbsp;
+                        Completion tokens: @step.CompletionTokens
+                    </div>
+
+                    <details style="margin-top:4px;">
+                        <summary style="cursor:pointer; color:#003366; font-size:0.88em;">
+                            Ver petición enviada
+                        </summary>
+                        <pre style="font-size:0.8em; background:#f3f4f6; padding:8px;
+                                    overflow-x:auto; max-height:200px; white-space:pre-wrap;">@step.RequestText</pre>
+                    </details>
+
+                    <div style="margin-top:8px; font-size:0.9em; color:#222;
+                                background:#f8faff; padding:10px;
+                                border-left:3px solid #4285f4; white-space:pre-line;">
+                        @step.ResponseText
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(r.FinalText) && r.Steps.Count > 0)
+    {
+        <div class="studio-card">
+            <h4>Resultado final</h4>
+            <div style="font-size:0.95em; color:#111; white-space:pre-line; background:#f8faff;
+                        padding:12px; border-left:4px solid #003366;">
+                @r.FinalText
+            </div>
+        </div>
+    }
+}

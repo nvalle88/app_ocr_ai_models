@@ -2,6 +2,7 @@ using app_ocr_ai_models.Data;
 using app_ocr_ai_models.Services;
 using app_ocr_ai_models.Services.Zendesk;
 using app_tramites.Data;
+using app_tramites.Services.Ai;
 using app_tramites.Services.NexusProcess;
 using app_tramites.Utils;
 using Core;
@@ -55,6 +56,10 @@ namespace app_ocr_ai_models
             builder.Services.AddTransient<INexusService, NexusService>();
             builder.Services.AddScoped<IOcrIngestService, OcrIngestService>();
             builder.Services.AddScoped<IZendeskClient, ZendeskClient>(); // REQ-019 T3
+
+            // REQ-019 T6: motor Claude — factory de proveedor IA + orquestador multi-paso
+            builder.Services.AddSingleton<AiCompletionServiceFactory>();
+            builder.Services.AddScoped<IProcessOrchestrator, ProcessOrchestrator>();
 
             // opcional: CORS para permitir llamadas desde Postman/otros clientes
             builder.Services.AddCors(options =>

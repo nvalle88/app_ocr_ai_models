@@ -10,6 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- REQ-019 T6: SDK Anthropic oficial para Claude. Si el restore falla por red/feed privado,
+         el build aisla el uso detrás de ClaudeCompletionService; el resto sigue compilando.
+         Verificación de compilación con el SDK completo queda para CI con acceso a nuget.org. -->
+    <PackageReference Include="Anthropic" Version="10.*" />
     <PackageReference Include="Azure.AI.Agents.Persistent" Version="1.2.0-beta.2" />
     <PackageReference Include="Azure.AI.DocumentIntelligence" Version="1.0.0" />
     <PackageReference Include="Azure.AI.Projects" Version="1.0.0-beta.11" />
