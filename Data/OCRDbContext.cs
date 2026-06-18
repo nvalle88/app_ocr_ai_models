@@ -38,15 +38,26 @@ public partial class OCRDbContext : DbContext
 
     public virtual DbSet<Note> Note { get; set; }
 
-    //public virtual DbSet<ProcessStep> ProcessStep { get; set; }
+    public virtual DbSet<ProcessStep> ProcessStep { get; set; }
 
-    //public virtual DbSet<StepExecution> StepExecution { get; set; }
+    public virtual DbSet<StepExecution> StepExecution { get; set; }
 
     public virtual DbSet<Usage> Usage { get; set; }
 
-    //public virtual DbSet<FinalResponseConfig> FinalResponseConfig { get; set; }
+    public virtual DbSet<FinalResponseConfig> FinalResponseConfig { get; set; }
 
     public virtual DbSet<FinalResponseResult> FinalResponseResult { get; set; }
+
+    // REQ-019 T1: entidades nuevas del motor Claude
+    public virtual DbSet<OPAITool> OPAITool { get; set; }
+
+    public virtual DbSet<OPAIModelTool> OPAIModelTool { get; set; }
+
+    public virtual DbSet<OPAISkill> OPAISkill { get; set; }
+
+    public virtual DbSet<OPAIModelSkill> OPAIModelSkill { get; set; }
+
+    public virtual DbSet<ToolInvocation> ToolInvocation { get; set; }
 
     public virtual DbSet<AgentProcess> AgentProcesses { get; set; }
     public virtual DbSet<Policys> Policies { get; set; }
@@ -87,6 +98,37 @@ public partial class OCRDbContext : DbContext
                 .HasForeignKey(d => d.ConfigCode)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_OPAIModel_Configuration");
+
+            // REQ-019 T1: columnas Claude AI
+            entity.Property(e => e.ModelId).HasMaxLength(100).IsUnicode(false);
+            entity.Property(e => e.SystemPrompt).IsUnicode(true);
+            entity.Property(e => e.ThinkingMode).HasMaxLength(20).IsUnicode(false);
+            entity.Property(e => e.Effort).HasMaxLength(10).IsUnicode(false);
+            entity.Property(e => e.Temperature).HasColumnType("decimal(4,2)");
+            entity.Property(e => e.ToolChoice)
+                .HasMaxLength(20)
+                .IsUnicode(false)
+                .HasDefaultValue("auto");
+
+            entity.HasMany(e => e.OPAIModelTool).WithOne(e => e.ModelCodeNavigation)
+                .HasForeignKey(e => e.ModelCode)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_OPAIModelTool_Agent");
+
+            entity.HasMany(e => e.OPAIModelSkill).WithOne(e => e.ModelCodeNavigation)
+                .HasForeignKey(e => e.ModelCode)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_OPAIModelSkill_Agent");
+
+            entity.HasMany(e => e.ProcessStep).WithOne(e => e.ModelCodeNavigation)
+                .HasForeignKey(e => e.ModelCode)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_ProcessStep_Agent");
+
+            entity.HasMany(e => e.StepExecution).WithOne(e => e.ModelCodeNavigation)
+                .HasForeignKey(e => e.ModelCode)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_StepExecution_Agent");
         });
 
         modelBuilder.Entity<AzureBlobConf>(entity =>
@@ -139,6 +181,11 @@ public partial class OCRDbContext : DbContext
                 .HasForeignKey(d => d.CaseCode)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_DataFile_ProcessCase");
+
+            // REQ-019 T1/T19: Files API de Claude
+            entity.Property(e => e.ClaudeFileId)
+                .HasMaxLength(100)
+                .IsUnicode(false);
         });
 
         modelBuilder.Entity<OCRPlatform>(entity =>
@@ -230,6 +277,15 @@ public partial class OCRDbContext : DbContext
             entity.Property(e => e.Notes)
                 .HasMaxLength(1500)
                 .IsUnicode(false);
+
+            // REQ-019 T1: proveedor y referencia a secreto
+            entity.Property(e => e.Provider)
+                .HasMaxLength(30)
+                .IsUnicode(false)
+                .HasDefaultValue("AzureOpenAI");
+            entity.Property(e => e.SecretRef)
+                .HasMaxLength(250)
+                .IsUnicode(false);
         });
 
         modelBuilder.Entity<OPAIModelPrompt>(entity =>
@@ -285,6 +341,21 @@ public partial class OCRDbContext : DbContext
             entity.Property(e => e.Name)
                 .HasMaxLength(200)
                 .IsUnicode(false);
+
+            // REQ-019 T1: versionado y clonado
+            entity.Property(e => e.ClonedFromCode).HasMaxLength(30).IsUnicode(false);
+            entity.Property(e => e.VersionNumber).HasDefaultValue(1);
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
+
+            entity.HasOne(e => e.ClonedFrom).WithMany(e => e.ClonedProcesses)
+                .HasForeignKey(e => e.ClonedFromCode)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_Process_ClonedFrom");
+
+            entity.HasMany(e => e.ProcessStep).WithOne(e => e.ProcessCodeNavigation)
+                .HasForeignKey(e => e.ProcessCode)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_ProcessStep_Process");
         });
 
 
@@ -348,7 +419,8 @@ public partial class OCRDbContext : DbContext
                     .HasConstraintName("FK_Notes_ProcessCase");
         });
 
-        /*modelBuilder.Entity<ProcessStep>(entity =>
+        // REQ-019 T1: reactivado — el motor nuevo necesita ProcessStep
+        modelBuilder.Entity<ProcessStep>(entity =>
         {
             entity.HasKey(e => new { e.ProcessCode, e.StepOrder }).HasName("PK__ProcessS__6E33D9169CD4811E");
 
@@ -361,19 +433,11 @@ public partial class OCRDbContext : DbContext
             entity.Property(e => e.StepName)
                 .HasMaxLength(200)
                 .IsUnicode(false);
+            // SourceType se almacena como int (enum)
+        });
 
-            entity.HasOne(d => d.ModelCodeNavigation).WithMany(p => p.ProcessStep)
-                .HasForeignKey(d => d.ModelCode)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK_ProcessStep_Agent");
-
-            entity.HasOne(d => d.ProcessCodeNavigation).WithMany(p => p.ProcessStep)
-                .HasForeignKey(d => d.ProcessCode)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK_ProcessStep_Process");
-        });*/
-
-        /*modelBuilder.Entity<StepExecution>(entity =>
+        // REQ-019 T1: reactivado — StepExecution registra la ejecución de cada paso
+        modelBuilder.Entity<StepExecution>(entity =>
         {
             entity.HasKey(e => e.ExecutionId).HasName("PK__StepExec__473088C52A0DECD5");
 
@@ -391,12 +455,7 @@ public partial class OCRDbContext : DbContext
                 .HasMaxLength(50)
                 .IsUnicode(false)
                 .HasDefaultValue("Pending");
-
-            entity.HasOne(d => d.ModelCodeNavigation).WithMany(p => p.StepExecution)
-                .HasForeignKey(d => d.ModelCode)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK_StepExecution_Agent");
-        });*/
+        });
 
         modelBuilder.Entity<Usage>(entity =>
         {
@@ -404,13 +463,17 @@ public partial class OCRDbContext : DbContext
                 .HasDefaultValueSql("(getdate())")
                 .HasColumnType("datetime");
 
-            /*entity.HasOne(d => d.Execution).WithMany(p => p.Usage)
+            // REQ-019 T1: FK al motor nuevo (nullable — régimen doble D1/D5)
+            entity.HasOne(d => d.Execution).WithMany(p => p.Usage)
                 .HasForeignKey(d => d.ExecutionId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK_Usage_StepExecution");*/
+                .HasConstraintName("FK_Usage_StepExecution");
+
+            // FK legacy a FinalResponseResult se mantiene vía DataAnnotations en Usage.cs
         });
 
-        /*modelBuilder.Entity<FinalResponseConfig>(entity =>
+        // REQ-019 T1: reactivado — FinalResponseConfig controla el paso de síntesis final
+        modelBuilder.Entity<FinalResponseConfig>(entity =>
         {
             entity.ToTable("FinalResponseConfig");
             entity.HasKey(e => e.ConfigCode);
@@ -437,13 +500,12 @@ public partial class OCRDbContext : DbContext
                   .HasDefaultValue(true);
             entity.Property(e => e.IsEnabled)
                   .HasDefaultValue(true);
-            // MetadataJson mapping
             entity.Property(e => e.MetadataJson)
                   .HasColumnType("NVARCHAR(MAX)")
                   .IsRequired(false);
             entity.HasIndex(e => e.ProcessCode);
             entity.HasIndex(e => e.AgentCode);
-        });*/
+        });
 
         // FinalResponseResult
         modelBuilder.Entity<FinalResponseResult>(entity =>
@@ -613,6 +675,93 @@ public partial class OCRDbContext : DbContext
         modelBuilder.Entity<AspNetRole>(entity =>
         {
             entity.ToTable("AspNetRoles"); // Mapea a la tabla AspNetRoles
+        });
+
+        // REQ-019 T1: nuevas entidades del motor Claude ----------------------------------------
+
+        modelBuilder.Entity<OPAITool>(entity =>
+        {
+            entity.HasKey(e => e.Code).HasName("PK_OPAITool");
+            entity.Property(e => e.Code).HasMaxLength(50).IsUnicode(false);
+            entity.Property(e => e.Name).HasMaxLength(250).IsUnicode(false);
+            entity.Property(e => e.Description).HasMaxLength(500); // nvarchar(500)
+            entity.Property(e => e.BindingType).HasMaxLength(20).IsUnicode(false);
+            entity.Property(e => e.Strict).HasDefaultValue(true);
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
+            entity.Property(e => e.VersionNumber).HasDefaultValue(1);
+            entity.Property(e => e.CreatedDate)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnType("datetime");
+            entity.HasIndex(e => e.IsActive, "IX_OPAITool_IsActive");
+        });
+
+        modelBuilder.Entity<OPAIModelTool>(entity =>
+        {
+            entity.HasKey(e => new { e.ModelCode, e.ToolCode });
+            entity.Property(e => e.ModelCode).HasMaxLength(50).IsUnicode(false);
+            entity.Property(e => e.ToolCode).HasMaxLength(50).IsUnicode(false);
+            // SortOrder en C# → columna [Order] en SQL (palabra reservada en T-SQL)
+            entity.Property(e => e.SortOrder).HasColumnName("Order").HasDefaultValue(0);
+            entity.Property(e => e.IsEnabled).HasDefaultValue(true);
+
+            entity.HasOne(e => e.ToolCodeNavigation).WithMany(e => e.OPAIModelTool)
+                .HasForeignKey(e => e.ToolCode)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_OPAIModelTool_Tool");
+
+            entity.HasIndex(e => e.ToolCode, "IX_OPAIModelTool_ToolCode");
+        });
+
+        modelBuilder.Entity<OPAISkill>(entity =>
+        {
+            entity.HasKey(e => e.Code).HasName("PK_OPAISkill");
+            entity.Property(e => e.Code).HasMaxLength(50).IsUnicode(false);
+            entity.Property(e => e.SkillType).HasMaxLength(20).IsUnicode(false);
+            entity.Property(e => e.SkillId).HasMaxLength(100).IsUnicode(false);
+            entity.Property(e => e.SkillVersion).HasMaxLength(20).IsUnicode(false);
+            entity.Property(e => e.Name).HasMaxLength(250).IsUnicode(false);
+            entity.Property(e => e.Description).HasMaxLength(500); // nvarchar(500)
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
+            entity.Property(e => e.VersionNumber).HasDefaultValue(1);
+            entity.Property(e => e.CreatedDate)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnType("datetime");
+        });
+
+        modelBuilder.Entity<OPAIModelSkill>(entity =>
+        {
+            entity.HasKey(e => new { e.ModelCode, e.SkillCode });
+            entity.Property(e => e.ModelCode).HasMaxLength(50).IsUnicode(false);
+            entity.Property(e => e.SkillCode).HasMaxLength(50).IsUnicode(false);
+            // SortOrder en C# → columna [Order] en SQL (palabra reservada en T-SQL)
+            entity.Property(e => e.SortOrder).HasColumnName("Order").HasDefaultValue(0);
+            entity.Property(e => e.IsEnabled).HasDefaultValue(true);
+
+            entity.HasOne(e => e.SkillCodeNavigation).WithMany(e => e.OPAIModelSkill)
+                .HasForeignKey(e => e.SkillCode)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_OPAIModelSkill_Skill");
+
+            entity.HasIndex(e => e.SkillCode, "IX_OPAIModelSkill_SkillCode");
+        });
+
+        modelBuilder.Entity<ToolInvocation>(entity =>
+        {
+            entity.HasKey(e => e.InvocationId).HasName("PK_ToolInvocation");
+            entity.Property(e => e.InvocationId).UseIdentityColumn();
+            entity.Property(e => e.ToolCode).HasMaxLength(50).IsUnicode(false);
+            entity.Property(e => e.IsError).HasDefaultValue(false);
+            entity.Property(e => e.StartDate)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnType("datetime");
+            entity.Property(e => e.EndDate).HasColumnType("datetime");
+
+            entity.HasOne(e => e.Execution).WithMany(p => p.ToolInvocation)
+                .HasForeignKey(e => e.ExecutionId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_ToolInvocation_Execution");
+
+            entity.HasIndex(e => e.ExecutionId, "IX_ToolInvocation_ExecutionId");
         });
 
         OnModelCreatingPartial(modelBuilder);

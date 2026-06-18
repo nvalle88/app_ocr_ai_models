@@ -21,4 +21,11 @@ public partial class OPAIConfiguration
     public string? Notes { get; set; }
 
     public virtual ICollection<Agent> Agent { get; set; } = new List<Agent>();
+
+    // REQ-019 T1: proveedor controlado y referencia a secreto en Key Vault
+    /// <summary>Proveedor del modelo: 'AzureOpenAI' | 'Anthropic'. DEFAULT 'AzureOpenAI'.</summary>
+    public string Provider { get; set; } = "AzureOpenAI";
+
+    /// <summary>Nombre del secreto en Azure Key Vault que almacena la ApiKey real (nullable).</summary>
+    public string? SecretRef { get; set; }
 }

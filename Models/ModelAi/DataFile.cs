@@ -17,4 +17,7 @@ public partial class DataFile
     public string OriginalName { get; set; } = string.Empty;
 
     public virtual ProcessCase CaseCodeNavigation { get; set; } = null!;
+
+    // REQ-019 T1/T19: ID de archivo en la Files API de Claude (nullable — solo para archivos subidos a Anthropic)
+    public string? ClaudeFileId { get; set; }
 }
