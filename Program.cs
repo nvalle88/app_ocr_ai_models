@@ -5,6 +5,7 @@ using app_ocr_ai_models.Services.Zendesk;
 using app_tramites.Data;
 using app_tramites.Services.Ai;
 using app_tramites.Services.Ai.Tools;
+using app_tramites.Services.Graph;
 using app_tramites.Services.NexusProcess;
 using app_tramites.Utils;
 using Core;
@@ -82,6 +83,13 @@ namespace app_ocr_ai_models
             builder.Services.AddSingleton<ISaludsaTokenProvider, SaludsaTokenProvider>();
             builder.Services.AddSingleton<IToolAuthorizationGuard, ToolAuthorizationGuard>();
             builder.Services.AddScoped<IToolExecutor, InternalApiToolExecutor>();
+
+            // REQ-019 T19/T20/T21: grafo de conocimiento Neo4j (bloqueo B6)
+            // Neo4jGraphService falla en runtime si Neo4j:Uri/User/Password no están configurados;
+            // no falla en startup. IAsyncDisposable se gestiona por el contenedor DI.
+            builder.Services.AddSingleton<IGraphService, Neo4jGraphService>();
+            builder.Services.AddScoped<IGraphExtractionService, GraphExtractionService>();
+            builder.Services.AddScoped<GraphToolExecutor>();
 
             // opcional: CORS para permitir llamadas desde Postman/otros clientes
             builder.Services.AddCors(options =>

@@ -14,6 +14,10 @@
          el build aisla el uso detrás de ClaudeCompletionService; el resto sigue compilando.
          Verificación de compilación con el SDK completo queda para CI con acceso a nuget.org. -->
     <PackageReference Include="Anthropic" Version="10.*" />
+    <!-- REQ-019 T19: Driver Neo4j para AuraDB (bloqueo B6 — no conecta en startup).
+         Si el restore falla por red, el código compila porque el uso está aislado en
+         Neo4jGraphService / GraphToolExecutor; declinar y documentar si no restaura. -->
+    <PackageReference Include="Neo4j.Driver" Version="5.*" />
     <PackageReference Include="Azure.AI.Agents.Persistent" Version="1.2.0-beta.2" />
     <PackageReference Include="Azure.AI.DocumentIntelligence" Version="1.0.0" />
     <PackageReference Include="Azure.AI.Projects" Version="1.0.0-beta.11" />
