@@ -1,0 +1,188 @@
+@model CasoImportadoViewModel
+@{
+    ViewData["Title"] = $"Caso importado — {Model.Caso.CaseCode}";
+}
+
+<div class="studio-breadcrumb">
+    Studio / <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> / Caso
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Mensaje))
+{
+    <div class="alert-warn">@Model.Mensaje</div>
+}
+
+@if (Model.AdvertenciasOcr.Count > 0)
+{
+    <div class="alert-warn">
+        <strong>Advertencias OCR:</strong>
+        <ul style="margin:4px 0 0 0; padding-left:18px;">
+            @foreach (var adv in Model.AdvertenciasOcr)
+            {
+                <li>@adv</li>
+            }
+        </ul>
+    </div>
+}
+
+<div class="studio-card">
+    <h4>Caso OCR</h4>
+    <table style="font-size:0.9em; margin-bottom:12px;">
+        <tr>
+            <td style="padding:4px 12px 4px 0; font-weight:600;">CaseCode</td>
+            <td><code>@Model.Caso.CaseCode</code></td>
+        </tr>
+        <tr>
+            <td style="padding:4px 12px 4px 0; font-weight:600;">Proceso</td>
+            <td><code>@Model.ProcessCode</code></td>
+        </tr>
+        <tr>
+            <td style="padding:4px 12px 4px 0; font-weight:600;">Estado</td>
+            <td><span class="badge-estado">@Model.Caso.State</span></td>
+        </tr>
+        <tr>
+            <td style="padding:4px 12px 4px 0; font-weight:600;">Inicio</td>
+            <td>@Model.Caso.StartDate.ToString("dd/MM/yyyy HH:mm")</td>
+        </tr>
+        <tr>
+            <td style="padding:4px 12px 4px 0; font-weight:600;">Archivos OCR</td>
+            <td><strong>@Model.Archivos.Count</strong></td>
+        </tr>
+        <tr>
+            <td style="padding:4px 12px 4px 0; font-weight:600;">Notas</td>
+            <td>@Model.Notas.Count</td>
+        </tr>
+    </table>
+</div>
+
+@if (Model.Archivos.Count > 0)
+{
+    <div class="studio-card">
+        <h4>Documentos OCR (@Model.Archivos.Count)</h4>
+        <table class="table-studio">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Nombre original</th>
+                    <th>URI del blob</th>
+                    <th>Texto OCR (vista previa)</th>
+                    <th>Creado</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{ var idx = 1; }
+                @foreach (var archivo in Model.Archivos)
+                {
+                    <tr>
+                        <td>@(idx++)</td>
+                        <td style="font-size:0.85em;">@archivo.OriginalName</td>
+                        <td>
+                            <a href="@archivo.FileUri" target="_blank" rel="noopener"
+                               style="font-size:0.82em; word-break:break-all;">
+                                @archivo.FileUri
+                            </a>
+                        </td>
+                        <td>
+                            <div class="ocr-preview">
+                                @(string.IsNullOrWhiteSpace(archivo.Text)
+                                    ? "(sin texto OCR)"
+                                    : archivo.Text.Length > 300
+                                        ? archivo.Text[..300] + "…"
+                                        : archivo.Text)
+                            </div>
+                        </td>
+                        <td>@archivo.CreatedDate.ToString("dd/MM/yyyy HH:mm")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (Model.Notas.Count > 0)
+{
+    <div class="studio-card">
+        <h4>Notas del ticket (@Model.Notas.Count comentarios importados)</h4>
+        @foreach (var nota in Model.Notas)
+        {
+            <div style="border-left:3px solid #003366; padding:8px 12px; margin-bottom:10px; background:#f8faff;">
+                <div style="font-size:0.82em; color:#888; margin-bottom:4px;">
+                    @nota.Title — @nota.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+                </div>
+                <div style="font-size:0.9em; color:#333; white-space: pre-line;">@nota.Detail</div>
+            </div>
+        }
+    </div>
+}
+
+<div class="studio-card">
+    <h4>Adjuntar documentos adicionales</h4>
+    <p style="font-size:0.9em; color:#555;">
+        Sube documentos adicionales al caso. Cada archivo se procesa con OCR
+        y queda disponible en el contexto del análisis IA.
+    </p>
+
+    <div id="adjuntarZona">
+        <input type="file" id="archivosInput" multiple accept=".pdf,.jpg,.jpeg,.png,.tiff,.docx,.doc"
+               style="margin-bottom:10px;" />
+        <br />
+        <button type="button" onclick="adjuntarDocumentos()"
+                class="btn-studio btn-primary-studio">
+            Adjuntar y procesar OCR
+        </button>
+        <div id="adjuntarResultado" style="margin-top:10px;"></div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        async function adjuntarDocumentos() {
+            const input = document.getElementById('archivosInput');
+            if (!input.files.length) {
+                alert('Selecciona al menos un archivo.');
+                return;
+            }
+
+            const archivos = [];
+            for (const file of input.files) {
+                const base64 = await toBase64(file);
+                const ext = '.' + file.name.split('.').pop().toLowerCase();
+                archivos.push({
+                    fileName: file.name,
+                    contentBase64: base64,
+                    extension: ext
+                });
+            }
+
+            const res = await fetch('@Url.Action("AdjuntarDocumentos", "Sobres", new { area = "Studio" })', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    caseCode: '@Model.Caso.CaseCode',
+                    archivos: archivos
+                })
+            });
+
+            const data = await res.json();
+            const zona = document.getElementById('adjuntarResultado');
+            if (data.ok) {
+                zona.innerHTML = '<div class="alert-warn" style="background:#e6f4ea; border-color:#34a853; color:#137333;">' +
+                    'Adjuntados: ' + data.dataFileIds.length + ' archivo(s).' +
+                    (data.advertencias.length ? '<br/>Advertencias: ' + data.advertencias.join(', ') : '') +
+                    '</div>';
+                setTimeout(() => location.reload(), 1800);
+            } else {
+                zona.innerHTML = '<div class="alert-error">Error: ' + (data.error || 'Sin detalle') + '</div>';
+            }
+        }
+
+        function toBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+    </script>
+}

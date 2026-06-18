@@ -1,0 +1,48 @@
+@model ImportarSobreViewModel
+@{
+    ViewData["Title"] = "Importar Sobre";
+}
+
+<div class="studio-breadcrumb">Studio / Sobres</div>
+
+<div class="studio-card">
+    <h4>Importar sobre Zendesk como Caso OCR</h4>
+    <p style="color:#555; font-size:0.9em;">
+        Busca un sobre por su número para importarlo como un Caso OCR.
+        Los adjuntos del ticket serán procesados por OCR automáticamente.
+    </p>
+
+    <form asp-area="Studio" asp-controller="Sobres" asp-action="Buscar" method="post">
+        @Html.AntiForgeryToken()
+
+        <div style="margin-bottom: 14px;">
+            <label style="font-weight:600; display:block; margin-bottom:4px;">
+                Número de sobre <span style="color:#c00;">*</span>
+            </label>
+            <input asp-for="NumeroSobre"
+                   type="text"
+                   class="form-control"
+                   style="max-width:320px;"
+                   placeholder="Ej: 20240001234"
+                   required />
+            <span asp-validation-for="NumeroSobre" class="text-danger"></span>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+            <label style="font-weight:600; display:block; margin-bottom:4px;">
+                Proceso de destino <span style="color:#c00;">*</span>
+            </label>
+            <select asp-for="ProcessCode"
+                    class="form-control"
+                    style="max-width:320px;">
+                @foreach (var p in Model.ProcesosDisponibles)
+                {
+                    <option value="@p.Code">@p.Name (@p.Code)</option>
+                }
+            </select>
+            <small style="color:#888;">Define la plantilla de pasos y agentes que usará el caso.</small>
+        </div>
+
+        <button type="submit" class="btn-studio btn-primary-studio">Buscar sobre</button>
+    </form>
+</div>

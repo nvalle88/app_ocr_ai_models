@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <title>Studio — @ViewData["Title"]</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="shortcut icon" href="~/img/logo_saludsa_home.svg" type="image/x-icon" />
+    @{ await Html.RenderPartialAsync("~/Views/Shared/_StylesheetsPartial.cshtml"); }
+    <style>
+        .studio-header { background: #003366; color: #fff; padding: 12px 24px; }
+        .studio-header a { color: #fff; text-decoration: none; font-weight: 600; }
+        .studio-content { padding: 24px; }
+        .studio-breadcrumb { font-size: 0.9em; color: #666; margin-bottom: 16px; }
+        .studio-card { background: #fff; border: 1px solid #dde; border-radius: 6px; padding: 20px; margin-bottom: 20px; }
+        .studio-card h4 { margin-top: 0; color: #003366; }
+        .badge-cuenta { display: inline-block; padding: 2px 8px; border-radius: 10px;
+                        background: #e8f0fe; color: #174ea6; font-size: 0.8em; font-weight: 600; }
+        .badge-estado { display: inline-block; padding: 2px 8px; border-radius: 10px;
+                        background: #e6f4ea; color: #137333; font-size: 0.8em; font-weight: 600; }
+        .table-studio { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        .table-studio th { background: #f0f4f8; padding: 8px 12px; text-align: left; border-bottom: 2px solid #ccc; }
+        .table-studio td { padding: 8px 12px; border-bottom: 1px solid #eee; vertical-align: top; }
+        .ocr-preview { max-height: 120px; overflow: hidden; color: #555; font-size: 0.85em;
+                       background: #fafafa; padding: 6px; border-left: 3px solid #ccc; }
+        .alert-warn { background: #fff3cd; border: 1px solid #ffc107; color: #856404;
+                      padding: 10px 16px; border-radius: 4px; margin-bottom: 12px; }
+        .alert-error { background: #f8d7da; border: 1px solid #f5c2c7; color: #842029;
+                       padding: 10px 16px; border-radius: 4px; margin-bottom: 12px; }
+        .btn-studio { display: inline-block; padding: 8px 18px; border-radius: 4px;
+                      font-size: 0.9em; cursor: pointer; border: none; text-decoration: none; }
+        .btn-primary-studio { background: #003366; color: #fff; }
+        .btn-primary-studio:hover { background: #004a99; color: #fff; }
+        .btn-secondary-studio { background: #e0e4ea; color: #333; }
+        .btn-secondary-studio:hover { background: #c8cdd6; color: #333; }
+        .btn-success-studio { background: #137333; color: #fff; }
+        .btn-success-studio:hover { background: #1a9146; color: #fff; }
+    </style>
+</head>
+<body class="fixed-navigation">
+    <header class="studio-header">
+        <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Studio — Nexus IA</a>
+        <span style="margin: 0 8px; opacity: 0.5;">|</span>
+        <a asp-controller="Home" asp-action="Index" asp-area="">Inicio</a>
+        <span style="float:right; font-size: 0.85em; opacity: 0.8;">REQ-019</span>
+    </header>
+
+    <div class="studio-content">
+        @if (TempData["Error"] != null)
+        {
+            <div class="alert-error">@TempData["Error"]</div>
+        }
+        @RenderBody()
+    </div>
+
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

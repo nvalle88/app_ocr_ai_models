@@ -1,0 +1,74 @@
+@model BusquedaSobreResultViewModel
+@{
+    ViewData["Title"] = "Resultados de búsqueda";
+}
+
+<div class="studio-breadcrumb">
+    Studio / <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> / Resultados
+</div>
+
+<div class="studio-card">
+    <h4>Resultados para: <em>@Model.NumeroSobreBuscado</em></h4>
+
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="alert-error">@Model.Error</div>
+    }
+    else if (Model.Resultados.Count == 0 || Model.Resultados.All(r => r.Items.Count == 0))
+    {
+        <div class="alert-warn">
+            No se encontraron tickets con el número de sobre <strong>@Model.NumeroSobreBuscado</strong>.
+        </div>
+    }
+    else
+    {
+        foreach (var grupo in Model.Resultados.Where(r => r.Items.Count > 0))
+        {
+            <h5 style="margin-top:16px;">Cuenta: <span class="badge-cuenta">@grupo.Cuenta</span>
+                <small>(@grupo.TotalCount resultados)</small>
+            </h5>
+            <table class="table-studio">
+                <thead>
+                    <tr>
+                        <th>Ticket #</th>
+                        <th>Asunto</th>
+                        <th>Estado</th>
+                        <th>Nro. Sobre</th>
+                        <th>Cédula</th>
+                        <th>Creado</th>
+                        <th>Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in grupo.Items)
+                    {
+                        <tr>
+                            <td><strong>#@item.Id</strong></td>
+                            <td>@item.Subject</td>
+                            <td><span class="badge-estado">@item.Status</span></td>
+                            <td>@item.NumeroSobre</td>
+                            <td>@item.CedulaBeneficiario</td>
+                            <td>@item.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>
+                                <a asp-area="Studio"
+                                   asp-controller="Sobres"
+                                   asp-action="Confirmar"
+                                   asp-route-ticketId="@item.Id"
+                                   asp-route-cuenta="@item.Cuenta"
+                                   asp-route-processCode="@Model.ProcessCode"
+                                   class="btn-studio btn-primary-studio">
+                                    Ver / Importar
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+
+    <div style="margin-top:16px;">
+        <a asp-area="Studio" asp-controller="Sobres" asp-action="Index"
+           class="btn-studio btn-secondary-studio">Nueva búsqueda</a>
+    </div>
+</div>

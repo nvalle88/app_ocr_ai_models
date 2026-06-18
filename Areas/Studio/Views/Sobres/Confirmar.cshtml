@@ -1,0 +1,91 @@
+@model ConfirmarImportViewModel
+@{
+    ViewData["Title"] = $"Confirmar importación — Ticket #{Model.Ticket.Id}";
+}
+
+<div class="studio-breadcrumb">
+    Studio / <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> / Confirmar importación
+</div>
+
+<div class="studio-card">
+    <h4>Ticket #@Model.Ticket.Id — @Model.Ticket.Subject</h4>
+
+    <table style="font-size:0.9em; margin-bottom:12px;">
+        <tr>
+            <td style="padding:4px 12px 4px 0; font-weight:600;">Cuenta</td>
+            <td><span class="badge-cuenta">@Model.Cuenta</span></td>
+        </tr>
+        <tr>
+            <td style="padding:4px 12px 4px 0; font-weight:600;">Estado</td>
+            <td><span class="badge-estado">@Model.Ticket.Status</span></td>
+        </tr>
+        <tr>
+            <td style="padding:4px 12px 4px 0; font-weight:600;">Número de sobre</td>
+            <td>@(Model.Ticket.NumeroSobre ?? "(no disponible)")</td>
+        </tr>
+        <tr>
+            <td style="padding:4px 12px 4px 0; font-weight:600;">Cédula</td>
+            <td>@(Model.Ticket.CedulaBeneficiario ?? "(no disponible)")</td>
+        </tr>
+        <tr>
+            <td style="padding:4px 12px 4px 0; font-weight:600;">Proceso destino</td>
+            <td><code>@Model.ProcessCode</code></td>
+        </tr>
+        <tr>
+            <td style="padding:4px 12px 4px 0; font-weight:600;">Total adjuntos</td>
+            <td><strong>@Model.TotalAdjuntos</strong></td>
+        </tr>
+        <tr>
+            <td style="padding:4px 12px 4px 0; font-weight:600;">Creado</td>
+            <td>@Model.Ticket.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+        </tr>
+    </table>
+
+    @if (Model.TotalAdjuntos == 0)
+    {
+        <div class="alert-warn">
+            Este ticket no tiene adjuntos. Se creará un Caso vacío con las notas del ticket.
+        </div>
+    }
+
+    <h5>Comentarios y adjuntos (@Model.Comentarios.Count)</h5>
+    @foreach (var comentario in Model.Comentarios)
+    {
+        <div style="border:1px solid #dde; border-radius:4px; padding:10px; margin-bottom:8px;">
+            <div style="font-size:0.8em; color:#888; margin-bottom:4px;">
+                Comentario #@comentario.Id — @comentario.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+                <span style="margin-left:8px;">@(comentario.IsPublic ? "Público" : "Privado")</span>
+            </div>
+            <div style="font-size:0.9em; max-height:80px; overflow:hidden; color:#333;">
+                @comentario.Body
+            </div>
+            @if (comentario.Attachments.Count > 0)
+            {
+                <div style="margin-top:6px;">
+                    @foreach (var adj in comentario.Attachments)
+                    {
+                        <span style="display:inline-block; background:#e8f0fe; color:#174ea6;
+                                     padding:2px 8px; border-radius:10px; font-size:0.78em; margin:2px;">
+                            @adj.FileName (@adj.ContentType, @((adj.Size / 1024))KB)
+                        </span>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    <form asp-area="Studio" asp-controller="Sobres" asp-action="Importar" method="post" style="margin-top:20px;">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="ticketId" value="@Model.Ticket.Id" />
+        <input type="hidden" name="cuenta" value="@Model.Cuenta" />
+        <input type="hidden" name="processCode" value="@Model.ProcessCode" />
+
+        <button type="submit" class="btn-studio btn-success-studio">
+            Importar como Caso OCR
+        </button>
+        <a asp-area="Studio" asp-controller="Sobres" asp-action="Index"
+           class="btn-studio btn-secondary-studio" style="margin-left:8px;">
+            Cancelar
+        </a>
+    </form>
+</div>

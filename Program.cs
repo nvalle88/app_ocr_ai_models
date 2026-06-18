@@ -107,6 +107,10 @@ namespace app_ocr_ai_models
 
             });
 
+            // REQ-019 T4: routing de áreas (aditivo; agrega Studio sin tocar el default)
+            app.MapControllerRoute(
+                name: "areas",
+                pattern: "{area:exists}/{controller=Sobres}/{action=Index}/{id?}");
             app.MapControllerRoute(
                 name: "default",
                 pattern: "{controller=Home}/{action=Index}/{id?}");
