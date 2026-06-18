@@ -38,7 +38,7 @@ namespace app_ocr_ai_models
 
             builder.Services.ConfigureApplicationCookie(options =>
             {
-                // Especifica la ruta personalizada de inicio de sesión
+                // Especifica la ruta personalizada de inicio de sesiï¿½n
                 options.LoginPath = "/Account/Login";
             });
 
@@ -52,6 +52,7 @@ namespace app_ocr_ai_models
 
             builder.Services.AddTransient<IEmailSender, EmailSender>();
             builder.Services.AddTransient<INexusService, NexusService>();
+            builder.Services.AddScoped<IOcrIngestService, OcrIngestService>();
 
             // opcional: CORS para permitir llamadas desde Postman/otros clientes
             builder.Services.AddCors(options =>
@@ -111,30 +112,30 @@ namespace app_ocr_ai_models
             app.MapControllers(); // <-- mapear rutas de API/Controllers
 
             // =======================================================
-            // === BLOQUE DE INICIALIZACIÓN DE DATOS (SEEDING) =======
+            // === BLOQUE DE INICIALIZACIï¿½N DE DATOS (SEEDING) =======
             // =======================================================
 
-            // Utilizamos un bloque try-catch para manejar errores durante la inicialización
+            // Utilizamos un bloque try-catch para manejar errores durante la inicializaciï¿½n
             try
             {
                 var scope = app.Services.CreateScope();
                 var services = scope.ServiceProvider;
 
-                // Ejecutar la inicialización de roles y usuarios de forma asíncrona
+                // Ejecutar la inicializaciï¿½n de roles y usuarios de forma asï¿½ncrona
                 //await DataSeeder.SeedRolesAsync(services);
                 //await DataSeeder.SeedAdminUserAsync(services);
 
                 // Opcional: Registrar que el Seeding fue exitoso
-                LoggerService.LogInformation("Seeding de datos y roles completado con éxito.");
+                LoggerService.LogInformation("Seeding de datos y roles completado con ï¿½xito.");
             }
             catch (Exception ex)
             {
-                // Capturar y registrar cualquier error de inicialización
-                LoggerService.LogErrorMensaje("Ocurrió un error durante el Seeding de datos.");
+                // Capturar y registrar cualquier error de inicializaciï¿½n
+                LoggerService.LogErrorMensaje("Ocurriï¿½ un error durante el Seeding de datos.");
             }
 
             // =======================================================
-            // === FIN DEL BLOQUE DE INICIALIZACIÓN ==================
+            // === FIN DEL BLOQUE DE INICIALIZACIï¿½N ==================
             // =======================================================
 
 
