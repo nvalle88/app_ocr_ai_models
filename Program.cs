@@ -92,6 +92,7 @@ namespace app_ocr_ai_models
             builder.Services.AddScoped<GraphToolExecutor>();
 
             // opcional: CORS para permitir llamadas desde Postman/otros clientes
+            // REQ-019: CORS AllowAnyOrigin es deuda preexistente — restringir a orígenes conocidos (fuera de alcance)
             builder.Services.AddCors(options =>
             {
                 options.AddDefaultPolicy(policy => policy

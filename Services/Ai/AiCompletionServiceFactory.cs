@@ -9,15 +9,20 @@ namespace app_tramites.Services.Ai;
 public sealed class AiCompletionServiceFactory
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILoggerFactory _loggerFactory;
 
     /// <summary>
-    /// Crea el factory con el <see cref="IHttpClientFactory"/> necesario para AzureOpenAI.
+    /// Crea el factory con el <see cref="IHttpClientFactory"/> necesario para AzureOpenAI
+    /// y el <see cref="ILoggerFactory"/> para crear loggers tipados.
     /// </summary>
     /// <param name="httpClientFactory">Factory de HttpClient registrado en DI.</param>
-    public AiCompletionServiceFactory(IHttpClientFactory httpClientFactory)
+    /// <param name="loggerFactory">Factory de loggers registrado en DI.</param>
+    public AiCompletionServiceFactory(IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory)
     {
         _httpClientFactory = httpClientFactory
             ?? throw new ArgumentNullException(nameof(httpClientFactory));
+        _loggerFactory = loggerFactory
+            ?? throw new ArgumentNullException(nameof(loggerFactory));
     }
 
     /// <summary>
@@ -33,7 +38,10 @@ public sealed class AiCompletionServiceFactory
         ArgumentNullException.ThrowIfNull(config);
 
         if (string.Equals(config.Provider, "Anthropic", StringComparison.OrdinalIgnoreCase))
-            return new ClaudeCompletionService(config);
+        {
+            var logger = _loggerFactory.CreateLogger<ClaudeCompletionService>();
+            return new ClaudeCompletionService(config, logger);
+        }
 
         return new AzureOpenAiCompletionService(config, _httpClientFactory);
     }

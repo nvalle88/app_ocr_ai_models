@@ -228,24 +228,24 @@ Extrae solo lo que el texto mencione explícitamente. No inferas ni inventes dat
             }
         }
 
-        // Diagnósticos
-        foreach (var diag in extraction.Diagnosticos)
+        // Diagnósticos — REQ-019: ?? [] blinda contra null si Claude devuelve "diagnosticos": null
+        foreach (var diag in extraction.Diagnosticos ?? [])
         {
             if (!string.IsNullOrWhiteSpace(diag.Codigo))
                 await _graph.MergeDiagnosticoAsync(diag.Codigo, diag.Descripcion, dataFileId, ct)
                     .ConfigureAwait(false);
         }
 
-        // Procedimientos
-        foreach (var proc in extraction.Procedimientos)
+        // Procedimientos — REQ-019: ?? [] blinda contra null si Claude devuelve "procedimientos": null
+        foreach (var proc in extraction.Procedimientos ?? [])
         {
             if (!string.IsNullOrWhiteSpace(proc.Codigo))
                 await _graph.MergeProcedimientoAsync(proc.Codigo, proc.Descripcion, dataFileId, ct)
                     .ConfigureAwait(false);
         }
 
-        // Preexistencias
-        foreach (var px in extraction.Preexistencias)
+        // Preexistencias — REQ-019: ?? [] blinda contra null si Claude devuelve "preexistencias": null
+        foreach (var px in extraction.Preexistencias ?? [])
         {
             if (!string.IsNullOrWhiteSpace(px.Codigo))
                 await _graph.MergePreexistenciaAsync(
@@ -257,8 +257,8 @@ Extrae solo lo que el texto mencione explícitamente. No inferas ni inventes dat
                     .ConfigureAwait(false);
         }
 
-        // Hallazgos
-        foreach (var h in extraction.Hallazgos)
+        // Hallazgos — REQ-019: ?? [] blinda contra null si Claude devuelve "hallazgos": null
+        foreach (var h in extraction.Hallazgos ?? [])
         {
             if (!string.IsNullOrWhiteSpace(h.Texto))
                 await _graph.MergeHallazgoAsync(h.Texto, h.Origen ?? "documento", dataFileId, ct)

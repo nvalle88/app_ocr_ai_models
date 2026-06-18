@@ -373,6 +373,7 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
         /// </summary>
         /// <param name="request">Solicitud con CaseCode y lista de archivos base64.</param>
         [HttpPost]
+        [ValidateAntiForgeryToken] // REQ-019: CSRF fix — alineado con los demás POST del controller
         public async Task<IActionResult> AdjuntarDocumentos([FromBody] AdjuntarDocumentosRequest request)
         {
             if (request.Archivos.Count == 0)

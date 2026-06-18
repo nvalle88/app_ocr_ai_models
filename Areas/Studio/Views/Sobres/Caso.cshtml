@@ -134,6 +134,8 @@
     </div>
 </div>
 
+@Html.AntiForgeryToken()
+
 @section Scripts {
     <script>
         async function adjuntarDocumentos() {
@@ -154,9 +156,15 @@
                 });
             }
 
+            // REQ-019: enviar token antiforgery para [ValidateAntiForgeryToken] en AdjuntarDocumentos
+            const antiforgeryToken = document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '';
+
             const res = await fetch('@Url.Action("AdjuntarDocumentos", "Sobres", new { area = "Studio" })', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'RequestVerificationToken': antiforgeryToken
+                },
                 body: JSON.stringify({
                     caseCode: '@Model.Caso.CaseCode',
                     archivos: archivos

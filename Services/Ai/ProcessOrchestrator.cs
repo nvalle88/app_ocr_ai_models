@@ -309,33 +309,13 @@ public sealed class ProcessOrchestrator : IProcessOrchestrator
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
+    // REQ-019: BuildOcrContext y ResolveSystemPrompt(Agent, ProcessStep) delegados a OcrPromptHelper
+    // para eliminar la duplicación con ChatController (DRY). Comportamiento idéntico al original.
     private static string BuildOcrContext(IEnumerable<DataFile> files)
-    {
-        var sb = new StringBuilder();
-        foreach (var f in files)
-        {
-            if (!string.IsNullOrWhiteSpace(f.Text))
-                sb.AppendLine($"--- Documento: {f.OriginalName} ---").AppendLine(f.Text);
-        }
-        return sb.ToString();
-    }
+        => OcrPromptHelper.BuildOcrContext(files);
 
     private static string ResolveSystemPrompt(Agent agent, ProcessStep step)
-    {
-        // Prioridad: SystemPrompt del Agent (campo nuevo T1) → primer OPAIPrompt activo del agente
-        if (!string.IsNullOrWhiteSpace(agent.SystemPrompt))
-            return agent.SystemPrompt;
-
-        var promptContent = agent.OPAIModelPrompt
-            ?.OrderBy(p => p.Order)
-            .Select(p => p.PromptCodeNavigation?.Content)
-            .FirstOrDefault(c => !string.IsNullOrWhiteSpace(c));
-
-        if (!string.IsNullOrWhiteSpace(promptContent))
-            return promptContent;
-
-        return $"Eres un asistente IA especializado en análisis OCR. Ejecuta el paso: {step.StepName ?? step.StepOrder.ToString()}.";
-    }
+        => OcrPromptHelper.ResolveSystemPrompt(agent, step);
 
     private static string ResolveSystemPromptForClassifier(Agent agent, string processCode)
     {

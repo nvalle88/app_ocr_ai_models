@@ -38,14 +38,22 @@ namespace app_tramites.Services.Ai;
 public sealed class ClaudeCompletionService : IAiCompletionService
 {
     private readonly OPAIConfiguration _config;
+    private readonly ILogger<ClaudeCompletionService> _logger;
+
+    // REQ-019: cachear el AnthropicClient para evitar socket-churn.
+    // La clave de caché distingue el origen de la API key (env vs BD) para no mezclar credenciales.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, AnthropicClient>
+        _clientCache = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Crea el servicio con la configuración del agente.
     /// </summary>
     /// <param name="config">Configuración del modelo (ApiKey / SecretRef).</param>
-    public ClaudeCompletionService(OPAIConfiguration config)
+    /// <param name="logger">Logger para advertencias de schema de tools.</param>
+    public ClaudeCompletionService(OPAIConfiguration config, ILogger<ClaudeCompletionService> logger)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <inheritdoc />
@@ -373,12 +381,12 @@ public sealed class ClaudeCompletionService : IAiCompletionService
     /// <summary>
     /// Mapea las <see cref="OPAITool"/> del catálogo a los tipos del SDK Anthropic.
     /// </summary>
-    private static List<ToolUnion> MapToSdkTools(IReadOnlyList<OPAITool> tools)
+    private List<ToolUnion> MapToSdkTools(IReadOnlyList<OPAITool> tools)
     {
         var result = new List<ToolUnion>(tools.Count);
         foreach (var tool in tools)
         {
-            var inputSchema = BuildInputSchema(tool.InputSchema);
+            var inputSchema = BuildInputSchema(tool.InputSchema, tool.Name);
             ToolUnion tu = new Tool
             {
                 Name        = tool.Name,
@@ -392,8 +400,11 @@ public sealed class ClaudeCompletionService : IAiCompletionService
 
     /// <summary>
     /// Construye un <see cref="InputSchema"/> a partir del JSON Schema de la tool.
+    /// Si el schema es inválido, degrada a schema vacío y emite una advertencia en el log.
     /// </summary>
-    private static InputSchema BuildInputSchema(string? inputSchemaJson)
+    /// <param name="inputSchemaJson">JSON Schema de entrada de la tool.</param>
+    /// <param name="toolName">Nombre de la tool, para identificarla en el log.</param>
+    private InputSchema BuildInputSchema(string? inputSchemaJson, string? toolName)
     {
         if (string.IsNullOrWhiteSpace(inputSchemaJson))
         {
@@ -430,9 +441,10 @@ public sealed class ClaudeCompletionService : IAiCompletionService
                 Required   = required
             };
         }
-        catch
+        catch (Exception ex)
         {
-            // JSON Schema malformado — devolver schema vacío válido
+            // REQ-019: JSON Schema malformado — loguear advertencia y devolver schema vacío válido
+            _logger.LogWarning(ex, "Tool '{ToolName}' tiene un InputSchema JSON inválido; se usará schema vacío.", toolName ?? "(desconocido)");
             return new InputSchema
             {
                 Type       = JsonSerializer.SerializeToElement("object"),
@@ -489,6 +501,10 @@ public sealed class ClaudeCompletionService : IAiCompletionService
         // 1. SecretRef → Key Vault (no implementado hasta T0a/B-serie)
         // 2. ANTHROPIC_API_KEY del entorno → el AnthropicClient lo resuelve solo si ApiKey vacío
         // 3. ApiKey de la BD (fallback dev/test únicamente)
+        //
+        // REQ-019: el cliente se cachea por clave resuelta para evitar socket-churn.
+        // La clave de caché usa "__env__" cuando se toma del entorno, o el valor ofuscado
+        // (no en claro) cuando viene de la BD, para aislar correctamente las instancias.
 
         var envKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
         var hasEnvKey = !string.IsNullOrWhiteSpace(envKey);
@@ -497,19 +513,20 @@ public sealed class ClaudeCompletionService : IAiCompletionService
 
         if (hasEnvKey)
         {
-            // El SDK leyó ANTHROPIC_API_KEY automáticamente
-            return new AnthropicClient();
+            return _clientCache.GetOrAdd("__env__", _ => new AnthropicClient());
         }
 
         if (hasConfigKey)
         {
-            // Fallback: key de la BD (solo db-nexus-test).
-            // La propiedad del SDK v10+ es APIKey (mayúsculas).
-            return new AnthropicClient { APIKey = _config.ApiKey };
+            // La clave de caché es el hash SHA256 de la API key para no almacenarla en texto claro.
+            var cacheKey = "bd__" + Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(_config.ApiKey!)));
+            return _clientCache.GetOrAdd(cacheKey, _ => new AnthropicClient { APIKey = _config.ApiKey });
         }
 
         // Sin ninguna key: dejar al SDK que intente desde entorno y falle en runtime
         // (AnthropicUnauthorizedException) con mensaje claro, no en startup.
-        return new AnthropicClient();
+        return _clientCache.GetOrAdd("__env__", _ => new AnthropicClient());
     }
 }

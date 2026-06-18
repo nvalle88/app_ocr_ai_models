@@ -345,31 +345,13 @@ public sealed class ChatController : Controller
 
     // ── Helpers privados ──────────────────────────────────────────────────
 
+    // REQ-019: ResolveSystemPrompt(Agent) y BuildOcrContext delegados a OcrPromptHelper
+    // para eliminar la duplicación con ProcessOrchestrator (DRY). Comportamiento idéntico.
     private static string ResolveSystemPrompt(Agent agent)
-    {
-        if (!string.IsNullOrWhiteSpace(agent.SystemPrompt))
-            return agent.SystemPrompt;
-
-        var promptContent = agent.OPAIModelPrompt
-            ?.OrderBy(p => p.Order)
-            .Select(p => p.PromptCodeNavigation?.Content)
-            .FirstOrDefault(c => !string.IsNullOrWhiteSpace(c));
-
-        return !string.IsNullOrWhiteSpace(promptContent)
-            ? promptContent
-            : "Eres un asistente IA especializado en análisis de documentos OCR. Responde con claridad y precisión.";
-    }
+        => OcrPromptHelper.ResolveSystemPrompt(agent);
 
     private static string BuildOcrContext(IEnumerable<DataFile> files)
-    {
-        var sb = new StringBuilder();
-        foreach (var f in files)
-        {
-            if (!string.IsNullOrWhiteSpace(f.Text))
-                sb.AppendLine($"--- Documento: {f.OriginalName} ---").AppendLine(f.Text);
-        }
-        return sb.ToString();
-    }
+        => OcrPromptHelper.BuildOcrContext(files);
 
     private static string BuildUserMessage(string ocrContext, string userQuestion)
     {
