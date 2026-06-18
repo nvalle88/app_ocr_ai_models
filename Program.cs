@@ -3,6 +3,7 @@ using app_ocr_ai_models.Services;
 using app_ocr_ai_models.Services.Zendesk;
 using app_tramites.Data;
 using app_tramites.Services.Ai;
+using app_tramites.Services.Ai.Tools;
 using app_tramites.Services.NexusProcess;
 using app_tramites.Utils;
 using Core;
@@ -60,6 +61,21 @@ namespace app_ocr_ai_models
             // REQ-019 T6: motor Claude — factory de proveedor IA + orquestador multi-paso
             builder.Services.AddSingleton<AiCompletionServiceFactory>();
             builder.Services.AddScoped<IProcessOrchestrator, ProcessOrchestrator>();
+
+            // REQ-019 T5: capa de tools (function calling directo)
+            // B2/T0b: SaludsaTokenProvider falla en runtime si no hay credenciales (no en startup)
+            // B1/T0a: InternalApiToolExecutor falla en runtime si las baseUrl no están configuradas
+            builder.Services.AddHttpClient("SaludsaOAuth2", client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
+            builder.Services.AddHttpClient("SaludsaInternalApi", client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(60);
+            });
+            builder.Services.AddSingleton<ISaludsaTokenProvider, SaludsaTokenProvider>();
+            builder.Services.AddSingleton<IToolAuthorizationGuard, ToolAuthorizationGuard>();
+            builder.Services.AddScoped<IToolExecutor, InternalApiToolExecutor>();
 
             // opcional: CORS para permitir llamadas desde Postman/otros clientes
             builder.Services.AddCors(options =>

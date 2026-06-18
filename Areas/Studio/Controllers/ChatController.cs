@@ -2,6 +2,7 @@ using app_ocr_ai_models.Areas.Studio.Models;
 using app_ocr_ai_models.Data;
 using app_tramites.Models.ModelAi;
 using app_tramites.Services.Ai;
+using app_tramites.Services.Ai.Tools;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -27,6 +28,7 @@ public sealed class ChatController : Controller
 {
     private readonly OCRDbContext _db;
     private readonly AiCompletionServiceFactory _factory;
+    private readonly IToolExecutor? _toolExecutor;
     private readonly UserManager<IdentityUser> _userManager;
     private readonly ILogger<ChatController> _logger;
 
@@ -37,16 +39,22 @@ public sealed class ChatController : Controller
     /// <param name="factory">Factory de servicios de completado IA.</param>
     /// <param name="userManager">Gestor de identidad ASP.NET Core.</param>
     /// <param name="logger">Logger.</param>
+    /// <param name="toolExecutor">
+    /// Executor de tools (REQ-019 T5). Opcional: si es nulo, el chat opera sin tools.
+    /// Se inyecta cuando el servidor tiene acceso a las APIs internas (B1/B2 desbloqueados).
+    /// </param>
     public ChatController(
         OCRDbContext db,
         AiCompletionServiceFactory factory,
         UserManager<IdentityUser> userManager,
-        ILogger<ChatController> logger)
+        ILogger<ChatController> logger,
+        IToolExecutor? toolExecutor = null)
     {
-        _db          = db          ?? throw new ArgumentNullException(nameof(db));
-        _factory     = factory     ?? throw new ArgumentNullException(nameof(factory));
-        _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
-        _logger      = logger      ?? throw new ArgumentNullException(nameof(logger));
+        _db           = db           ?? throw new ArgumentNullException(nameof(db));
+        _factory      = factory      ?? throw new ArgumentNullException(nameof(factory));
+        _userManager  = userManager  ?? throw new ArgumentNullException(nameof(userManager));
+        _logger       = logger       ?? throw new ArgumentNullException(nameof(logger));
+        _toolExecutor = toolExecutor; // null si B1/B2 no disponibles
     }
 
     // ----------------------------------------------------------------
@@ -80,15 +88,17 @@ public sealed class ChatController : Controller
     /// como Server-Sent Events con <c>Content-Type: text/event-stream</c>.
     /// </summary>
     /// <remarks>
-    /// Protocolo de eventos:
+    /// Protocolo de eventos (REQ-019 T5/T7):
     /// <list type="bullet">
-    ///   <item><c>event: thinking</c> — delta de razonamiento interno (Claude extended thinking).</item>
-    ///   <item><c>event: text</c>    — delta de texto visible.</item>
-    ///   <item><c>event: done</c>    — fin del stream, payload JSON con tokens.</item>
-    ///   <item><c>event: error</c>   — error fatal durante el stream.</item>
+    ///   <item><c>event: thinking</c>     — delta de razonamiento interno (Claude extended thinking).</item>
+    ///   <item><c>event: text</c>         — delta de texto visible.</item>
+    ///   <item><c>event: tool_use</c>     — chip: el modelo invocó una tool (nombre + input resumido).</item>
+    ///   <item><c>event: tool_result</c>  — chip: resultado de la tool (ok/error).</item>
+    ///   <item><c>event: done</c>         — fin del stream, payload JSON con tokens.</item>
+    ///   <item><c>event: error</c>        — error fatal durante el stream.</item>
     /// </list>
-    /// <para>TODO T5: cuando se implemente function-calling, aquí se añadirán
-    /// eventos <c>event: tool_use</c> para renderizar chips de herramienta.</para>
+    /// El path de tools solo se activa si el agente tiene tools habilitadas (<c>OPAIModelTool</c>)
+    /// y el <see cref="IToolExecutor"/> está registrado en DI (B1/B2 desbloqueados).
     /// </remarks>
     /// <param name="request">CaseCode y mensaje del usuario.</param>
     /// <param name="ct">Token de cancelación del request HTTP.</param>
@@ -121,6 +131,9 @@ public sealed class ChatController : Controller
             .Include(ap => ap.Agent)
                 .ThenInclude(a => a.OPAIModelPrompt)
                     .ThenInclude(op => op.PromptCodeNavigation)
+            .Include(ap => ap.Agent)
+                .ThenInclude(a => a.OPAIModelTool)
+                    .ThenInclude(mt => mt.ToolCodeNavigation)
             .Where(ap =>
                 ap.DefinitionCode == processCase.DefinitionCode
                 && ap.Agent.IsActive
@@ -163,48 +176,136 @@ public sealed class ChatController : Controller
         var writer            = Response.Body;
         var enc               = Encoding.UTF8;
 
+        // ── 5b. Verificar si el agente tiene tools habilitadas ────────────
+        //   El path de tool-use se activa solo si:
+        //   a) el agente tiene OPAIModelTool con IsEnabled, Y
+        //   b) el IToolExecutor está disponible (B1/B2 desbloqueados)
+        var enabledTools = agent.OPAIModelTool
+            .Where(mt => mt.IsEnabled && mt.ToolCodeNavigation?.IsActive == true)
+            .Select(mt => mt.ToolCodeNavigation!)
+            .ToList();
+
+        var hasTools = enabledTools.Count > 0
+                       && _toolExecutor != null
+                       && string.Equals(config.Provider, "Anthropic", StringComparison.OrdinalIgnoreCase);
+
         // Acumulador para persistencia al final
         var fullText     = new StringBuilder();
         var fullThinking = new StringBuilder();
         AiStreamChunk? doneChunk = null;
 
+        // Helper local: emite un frame SSE
+        async Task EmitSseAsync(string evtName, string payload)
+        {
+            var frame = $"event: {evtName}\ndata: {payload}\n\n";
+            await writer.WriteAsync(enc.GetBytes(frame), ct);
+            await writer.FlushAsync(ct);
+        }
+
         try
         {
-            await foreach (var chunk in completionService.StreamAsync(aiRequest, ct).ConfigureAwait(false))
+            if (hasTools)
             {
-                string eventName;
-                string payload;
-
-                switch (chunk.Type)
+                // ── PATH con tools: CompleteWithToolsAsync (tool-use loop) ──
+                // Persistir un StepExecution para atar las ToolInvocation
+                var execution = new StepExecution
                 {
-                    case AiStreamChunkType.Thinking:
-                        eventName = "thinking";
-                        fullThinking.Append(chunk.Delta);
-                        payload = JsonSerializer.Serialize(new { delta = chunk.Delta });
-                        break;
+                    CaseCode       = processCase.CaseCode,
+                    StepOrder      = 0,        // chat ad-hoc
+                    DataFileId     = processCase.DataFile.FirstOrDefault()?.Id ?? 0,
+                    ModelCode      = agent.Code,
+                    RequestContent = userMessage,
+                    Status         = "Running",
+                    StartDate      = DateTime.UtcNow,
+                    EndpointUrl    = config.EndpointUrl
+                };
+                _db.StepExecution.Add(execution);
+                await _db.SaveChangesAsync(ct);
 
-                    case AiStreamChunkType.Text:
-                        eventName = "text";
-                        fullText.Append(chunk.Delta);
-                        payload = JsonSerializer.Serialize(new { delta = chunk.Delta });
-                        break;
-
-                    case AiStreamChunkType.Done:
-                    default:
-                        doneChunk = chunk;
-                        eventName = "done";
-                        payload   = JsonSerializer.Serialize(new
-                        {
-                            promptTokens     = chunk.PromptTokens,
-                            completionTokens = chunk.CompletionTokens,
-                            thinkingTokens   = chunk.ThinkingTokens
-                        });
-                        break;
+                // Callback SSE para emitir chips de tool en tiempo real
+                async Task OnToolEvent(ToolStreamEvent evt)
+                {
+                    string toolPayload = JsonSerializer.Serialize(new
+                    {
+                        toolName     = evt.ToolName,
+                        inputSummary = evt.InputSummary,
+                        resultStatus = evt.ResultStatus
+                    });
+                    await EmitSseAsync(evt.EventType, toolPayload);
                 }
 
-                var sseFrame = $"event: {eventName}\ndata: {payload}\n\n";
-                await writer.WriteAsync(enc.GetBytes(sseFrame), ct);
-                await writer.FlushAsync(ct);
+                var toolsContext = new ToolsContext
+                {
+                    AvailableTools      = enabledTools,
+                    AgentCode           = agent.Code,
+                    ExecutionId         = execution.ExecutionId,
+                    CaseIdentity        = null,   // sin identidad de caso en chat (se resuelve por la tool)
+                    ToolChoice          = agent.ToolChoice ?? "auto",
+                    StreamEventCallback = OnToolEvent
+                };
+
+                var toolResult = await completionService.CompleteWithToolsAsync(
+                    aiRequest, toolsContext, _toolExecutor!, ct)
+                    .ConfigureAwait(false);
+
+                // Emitir texto final como un único chunk text
+                if (!string.IsNullOrEmpty(toolResult.Text))
+                {
+                    fullText.Append(toolResult.Text);
+                    await EmitSseAsync("text", JsonSerializer.Serialize(new { delta = toolResult.Text }));
+                }
+
+                // Actualizar StepExecution
+                execution.ResponseContent = toolResult.Text;
+                execution.Status          = "Completed";
+                execution.EndDate         = DateTime.UtcNow;
+                await _db.SaveChangesAsync(ct);
+
+                doneChunk = AiStreamChunk.DoneChunk(toolResult.PromptTokens, toolResult.CompletionTokens);
+                await EmitSseAsync("done", JsonSerializer.Serialize(new
+                {
+                    promptTokens     = toolResult.PromptTokens,
+                    completionTokens = toolResult.CompletionTokens,
+                    thinkingTokens   = (int?)null
+                }));
+            }
+            else
+            {
+                // ── PATH sin tools: stream clásico ────────────────────────
+                await foreach (var chunk in completionService.StreamAsync(aiRequest, ct).ConfigureAwait(false))
+                {
+                    string eventName;
+                    string payload;
+
+                    switch (chunk.Type)
+                    {
+                        case AiStreamChunkType.Thinking:
+                            eventName = "thinking";
+                            fullThinking.Append(chunk.Delta);
+                            payload = JsonSerializer.Serialize(new { delta = chunk.Delta });
+                            break;
+
+                        case AiStreamChunkType.Text:
+                            eventName = "text";
+                            fullText.Append(chunk.Delta);
+                            payload = JsonSerializer.Serialize(new { delta = chunk.Delta });
+                            break;
+
+                        case AiStreamChunkType.Done:
+                        default:
+                            doneChunk = chunk;
+                            eventName = "done";
+                            payload   = JsonSerializer.Serialize(new
+                            {
+                                promptTokens     = chunk.PromptTokens,
+                                completionTokens = chunk.CompletionTokens,
+                                thinkingTokens   = chunk.ThinkingTokens
+                            });
+                            break;
+                    }
+
+                    await EmitSseAsync(eventName, payload);
+                }
             }
         }
         catch (OperationCanceledException)
@@ -215,12 +316,7 @@ public sealed class ChatController : Controller
         {
             _logger.LogWarning(ex, "Error durante streaming SSE para caso {CaseCode}.", request.CaseCode);
             var errorPayload = JsonSerializer.Serialize(new { message = ex.Message });
-            var errorFrame   = $"event: error\ndata: {errorPayload}\n\n";
-            try
-            {
-                await writer.WriteAsync(enc.GetBytes(errorFrame), ct);
-                await writer.FlushAsync(ct);
-            }
+            try { await EmitSseAsync("error", errorPayload); }
             catch (Exception writeEx)
             {
                 _logger.LogWarning(writeEx, "No se pudo escribir el evento error SSE.");

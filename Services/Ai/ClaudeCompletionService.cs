@@ -1,7 +1,9 @@
 using Anthropic;
 using Anthropic.Models.Messages;
 using app_tramites.Models.ModelAi;
+using app_tramites.Services.Ai.Tools;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 
 namespace app_tramites.Services.Ai;
 
@@ -192,6 +194,292 @@ public sealed class ClaudeCompletionService : IAiCompletionService
         yield return AiStreamChunk.DoneChunk(
             promptTokens:     (int)inputTokens,
             completionTokens: (int)outputTokens);
+    }
+
+    // ── Tool-use loop (REQ-019 T5) ────────────────────────────────────────
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Tipos del SDK Anthropic v10.4.0 verificados por compilación:
+    /// <list type="bullet">
+    ///   <item><see cref="Tool"/> — definición de tool para <c>MessageCreateParams.Tools</c>.</item>
+    ///   <item><see cref="ToolUnion"/> — union type; <c>Tool</c> convierte implícitamente.</item>
+    ///   <item><see cref="ToolUseBlock"/> — bloque de respuesta con <c>ID</c>, <c>Name</c>, <c>Input</c>.</item>
+    ///   <item><see cref="ToolResultBlockParam"/> — resultado enviado de vuelta, con <c>ToolUseID</c> y <c>Content</c>.</item>
+    ///   <item><see cref="StopReason.ToolUse"/> — <c>Message.StopReason</c> cuando el modelo quiere invocar tools.</item>
+    ///   <item><see cref="ContentBlockParam"/> — se construye implícitamente desde <see cref="ToolResultBlockParam"/>.</item>
+    ///   <item><see cref="MessageParamContent"/> — acepta <c>List&lt;ContentBlockParam&gt;</c> implícitamente.</item>
+    /// </list>
+    /// </remarks>
+    public async Task<AiCompletionResult> CompleteWithToolsAsync(
+        AiCompletionRequest request,
+        ToolsContext toolsContext,
+        IToolExecutor toolExecutor,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(toolsContext);
+        ArgumentNullException.ThrowIfNull(toolExecutor);
+
+        var client = BuildClient();
+
+        // Mapear OPAITool → Tool del SDK Anthropic
+        var sdkTools = MapToSdkTools(toolsContext.AvailableTools);
+
+        // Construir el historial de mensajes (empieza con el user message)
+        var messages = new List<MessageParam>
+        {
+            new() { Role = Role.User, Content = request.UserMessage }
+        };
+
+        // Acumuladores de tokens (se suman en cada vuelta del loop)
+        int totalPromptTokens     = 0;
+        int totalCompletionTokens = 0;
+        string finalText          = string.Empty;
+
+        // Tool-use loop: continúa hasta end_turn o max iteraciones de seguridad
+        const int maxLoopIterations = 10;
+        for (int iteration = 0; iteration < maxLoopIterations; iteration++)
+        {
+            var parameters = new MessageCreateParams
+            {
+                Model     = "claude-opus-4-8",
+                MaxTokens = request.MaxTokens,
+                System    = request.SystemPrompt,
+                Messages  = messages,
+                Tools     = sdkTools
+            };
+
+            var message = await client.Messages.Create(parameters, ct).ConfigureAwait(false);
+
+            // Acumular tokens
+            totalPromptTokens     += (int)(message.Usage?.InputTokens  ?? 0L);
+            totalCompletionTokens += (int)(message.Usage?.OutputTokens ?? 0L);
+
+            // Extraer texto si hay bloques de texto en esta vuelta
+            // Nota: ContentBlock es un union type; usar TryPickText() (no OfType<TextBlock>).
+            foreach (var block in message.Content)
+            {
+                if (block.TryPickText(out var tb) && !string.IsNullOrEmpty(tb.Text))
+                {
+                    finalText = tb.Text;
+                    break;
+                }
+            }
+
+            // Si el modelo terminó (end_turn o sin tool_use), salir del loop
+            // Value() es un método (no propiedad) en ApiEnum<string, StopReason>.
+            if (!(message.StopReason.HasValue && message.StopReason.Value.Value() == StopReason.ToolUse))
+                break;
+
+            // Hay bloques tool_use: recopilar todos usando TryPick (patrón union type SDK)
+            var toolUseBlocksFound = new List<ToolUseBlock>();
+            var assistantContentBlocks = new List<ContentBlockParam>();
+            foreach (var block in message.Content)
+            {
+                if (block.TryPickText(out var tb))
+                    assistantContentBlocks.Add((TextBlockParam)new TextBlockParam { Text = tb.Text });
+                else if (block.TryPickToolUse(out var tub))
+                {
+                    assistantContentBlocks.Add((ToolUseBlockParam)new ToolUseBlockParam
+                    {
+                        ID    = tub.ID,
+                        Name  = tub.Name,
+                        Input = tub.Input
+                    });
+                    toolUseBlocksFound.Add(tub);
+                }
+            }
+            messages.Add(new MessageParam
+            {
+                Role    = Role.Assistant,
+                Content = assistantContentBlocks
+            });
+
+            // Ejecutar cada tool_use y recopilar los tool_result
+            var toolResultBlocks = new List<ContentBlockParam>();
+            foreach (var block in toolUseBlocksFound)
+            {
+                // Emitir evento SSE: tool_use (chip en el chat)
+                if (toolsContext.StreamEventCallback != null)
+                {
+                    await toolsContext.StreamEventCallback(new ToolStreamEvent
+                    {
+                        EventType    = "tool_use",
+                        ToolName     = block.Name,
+                        InputSummary = BuildInputSummary(block.Input)
+                    }).ConfigureAwait(false);
+                }
+
+                string toolResultJson;
+                bool toolIsError;
+
+                try
+                {
+                    // Convertir el Dictionary<string, JsonElement> del SDK a Dictionary<string, object?>
+                    var toolInput = ConvertSdkInput(block.Input);
+                    toolResultJson = await toolExecutor.ExecuteAsync(
+                        block.Name,
+                        toolsContext.AgentCode,
+                        toolInput,
+                        toolsContext.ExecutionId,
+                        toolsContext.CaseIdentity,
+                        ct).ConfigureAwait(false);
+                    toolIsError = false;
+                }
+                catch (Exception ex)
+                {
+                    toolResultJson = JsonSerializer.Serialize(new { error = ex.Message });
+                    toolIsError = true;
+                }
+
+                // Emitir evento SSE: tool_result (chip en el chat)
+                if (toolsContext.StreamEventCallback != null)
+                {
+                    await toolsContext.StreamEventCallback(new ToolStreamEvent
+                    {
+                        EventType    = "tool_result",
+                        ToolName     = block.Name,
+                        ResultStatus = toolIsError ? "error" : "ok"
+                    }).ConfigureAwait(false);
+                }
+
+                toolResultBlocks.Add((ToolResultBlockParam)new ToolResultBlockParam
+                {
+                    ToolUseID = block.ID,
+                    Content   = toolResultJson,
+                    IsError   = toolIsError ? true : null
+                });
+            }
+
+            // Agregar los tool_result como mensaje user al historial
+            messages.Add(new MessageParam
+            {
+                Role    = Role.User,
+                Content = toolResultBlocks
+            });
+        }
+
+        return new AiCompletionResult
+        {
+            Text             = finalText.Trim(),
+            PromptTokens     = totalPromptTokens,
+            CompletionTokens = totalCompletionTokens
+        };
+    }
+
+    // ── Helpers de tool-use ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Mapea las <see cref="OPAITool"/> del catálogo a los tipos del SDK Anthropic.
+    /// </summary>
+    private static List<ToolUnion> MapToSdkTools(IReadOnlyList<OPAITool> tools)
+    {
+        var result = new List<ToolUnion>(tools.Count);
+        foreach (var tool in tools)
+        {
+            var inputSchema = BuildInputSchema(tool.InputSchema);
+            ToolUnion tu = new Tool
+            {
+                Name        = tool.Name,
+                Description = tool.Description,
+                InputSchema = inputSchema
+            };
+            result.Add(tu);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Construye un <see cref="InputSchema"/> a partir del JSON Schema de la tool.
+    /// </summary>
+    private static InputSchema BuildInputSchema(string? inputSchemaJson)
+    {
+        if (string.IsNullOrWhiteSpace(inputSchemaJson))
+        {
+            return new InputSchema
+            {
+                Type = JsonSerializer.SerializeToElement("object"),
+                Properties = new Dictionary<string, JsonElement>()
+            };
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(inputSchemaJson);
+            var root = doc.RootElement;
+
+            var properties = new Dictionary<string, JsonElement>();
+            if (root.TryGetProperty("properties", out var propsEl))
+            {
+                foreach (var prop in propsEl.EnumerateObject())
+                    properties[prop.Name] = prop.Value.Clone();
+            }
+
+            var required = new List<string>();
+            if (root.TryGetProperty("required", out var reqEl))
+            {
+                foreach (var item in reqEl.EnumerateArray())
+                    required.Add(item.GetString() ?? string.Empty);
+            }
+
+            return new InputSchema
+            {
+                Type       = JsonSerializer.SerializeToElement("object"),
+                Properties = properties,
+                Required   = required
+            };
+        }
+        catch
+        {
+            // JSON Schema malformado — devolver schema vacío válido
+            return new InputSchema
+            {
+                Type       = JsonSerializer.SerializeToElement("object"),
+                Properties = new Dictionary<string, JsonElement>()
+            };
+        }
+    }
+
+    /// <summary>
+    /// Convierte el <c>Dictionary&lt;string, JsonElement&gt;</c> del SDK Anthropic
+    /// a <c>IReadOnlyDictionary&lt;string, object?&gt;</c> esperado por el executor.
+    /// </summary>
+    private static IReadOnlyDictionary<string, object?> ConvertSdkInput(
+        Dictionary<string, JsonElement> sdkInput)
+    {
+        var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, element) in sdkInput)
+        {
+            result[key] = element.ValueKind switch
+            {
+                JsonValueKind.String  => element.GetString(),
+                JsonValueKind.Number  => element.TryGetInt64(out var l) ? (object?)l : element.GetDouble(),
+                JsonValueKind.True    => true,
+                JsonValueKind.False   => false,
+                JsonValueKind.Null    => null,
+                _                    => element.GetRawText()
+            };
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Construye un resumen corto del input de una tool para mostrar en la UI (chip).
+    /// Muestra las primeras 3 claves/valores, truncado a 120 caracteres.
+    /// </summary>
+    private static string BuildInputSummary(Dictionary<string, JsonElement> input)
+    {
+        var parts = input.Take(3)
+            .Select(kvp =>
+            {
+                var val = kvp.Value.ValueKind == JsonValueKind.String
+                    ? kvp.Value.GetString()
+                    : kvp.Value.GetRawText();
+                return $"{kvp.Key}={val}";
+            });
+        var summary = string.Join(", ", parts);
+        return summary.Length > 120 ? summary[..117] + "..." : summary;
     }
 
     // ── Construcción del cliente ──────────────────────────────────────────

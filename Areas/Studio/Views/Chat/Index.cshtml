@@ -5,13 +5,9 @@
 }
 
 @* ====================================================
-   REQ-019 T7 — Vista de chat SSE para el Área Studio.
+   REQ-019 T5/T7 — Vista de chat SSE para el Área Studio.
    Consume POST /Studio/Chat/Stream via fetch+ReadableStream.
-   UI mínima funcional; estilos reutilizan clases de Studio.
-
-   TODO T5: cuando se implemente function-calling, renderizar
-   chips de herramienta (tool_use) en el bloque de mensajes
-   usando el evento SSE "event: tool_use".
+   Renderiza chips de herramienta (tool_use/tool_result) en vivo.
    ==================================================== *@
 
 <div class="studio-breadcrumb">
@@ -103,6 +99,11 @@ function createMessageBubble(role) {
     thinkingDetails.appendChild(thinkingSummary);
     thinkingDetails.appendChild(thinkingContent);
 
+    // Contenedor de chips de herramienta (tool_use / tool_result) — REQ-019 T5
+    const toolsContainer = document.createElement('div');
+    toolsContainer.style.cssText =
+        'display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;';
+
     // Bloque de texto de la respuesta
     const textBubble = document.createElement('div');
     textBubble.className = 'studio-card';
@@ -110,10 +111,16 @@ function createMessageBubble(role) {
         'margin:0; padding:10px 14px; font-size:0.95em; white-space:pre-wrap; background:#f8faff; border-left:3px solid #4285f4;';
 
     wrapper.appendChild(thinkingDetails);
+    wrapper.appendChild(toolsContainer);
     wrapper.appendChild(textBubble);
     container.appendChild(wrapper);
 
-    return { bubble: wrapper, thinkingBlock: { details: thinkingDetails, content: thinkingContent }, textBlock: textBubble };
+    return {
+        bubble: wrapper,
+        thinkingBlock: { details: thinkingDetails, content: thinkingContent },
+        textBlock: textBubble,
+        toolsContainer
+    };
 }
 
 function scrollToBottom() {
@@ -148,8 +155,8 @@ async function sendMessage() {
     document.getElementById('userInput').value = '';
     scrollToBottom();
 
-    // Crear burbuja de respuesta del asistente
-    const { thinkingBlock, textBlock: assistantText } = createMessageBubble('assistant');
+    // Crear burbuja de respuesta del asistente (T5: incluye toolsContainer)
+    const { thinkingBlock, textBlock: assistantText, toolsContainer } = createMessageBubble('assistant');
     assistantText.textContent = '';
     scrollToBottom();
 
@@ -207,6 +214,43 @@ async function sendMessage() {
                     } else if (eventType === 'text') {
                         assistantText.textContent += payload.delta || '';
                         scrollToBottom();
+
+                    // ── REQ-019 T5: chips de herramienta ──────────────────
+                    } else if (eventType === 'tool_use') {
+                        // Chip azul: el modelo invocó una tool
+                        const chip = document.createElement('span');
+                        chip.dataset.toolName = payload.toolName || '';
+                        chip.style.cssText =
+                            'display:inline-flex; align-items:center; gap:4px; ' +
+                            'background:#e8f0fe; color:#1a73e8; border:1px solid #aecbfa; ' +
+                            'border-radius:14px; padding:3px 10px; font-size:0.8em; ' +
+                            'font-weight:600; white-space:nowrap;';
+                        chip.title = payload.inputSummary || '';
+                        chip.innerHTML = `<span style="font-size:0.9em">⚙</span> ${payload.toolName || 'tool'}…`;
+                        toolsContainer.appendChild(chip);
+                        scrollToBottom();
+                        setStatus(`Invocando tool: ${payload.toolName}…`, '#1a73e8');
+
+                    } else if (eventType === 'tool_result') {
+                        // Actualizar el chip con el resultado (ok = verde, error = rojo)
+                        const toolName = payload.toolName || '';
+                        const isOk = payload.resultStatus === 'ok';
+                        // Buscar el chip pendiente más reciente para esta tool
+                        const chips = Array.from(toolsContainer.querySelectorAll('span[data-tool-name]'));
+                        const pending = chips.reverse().find(c =>
+                            c.dataset.toolName === toolName && c.innerHTML.endsWith('…</span>') === false
+                            || c.innerHTML.includes('…'));
+                        if (pending) {
+                            pending.style.background = isOk ? '#e6f4ea' : '#fce8e6';
+                            pending.style.color      = isOk ? '#137333' : '#c5221f';
+                            pending.style.borderColor = isOk ? '#81c995' : '#f28b82';
+                            pending.innerHTML = (isOk ? '✓' : '✗') + ' ' + toolName;
+                        }
+                        setStatus(isOk
+                            ? `Tool ${toolName}: completada`
+                            : `Tool ${toolName}: error`, isOk ? '#137333' : '#c5221f');
+
+                    // ── Fin chips ──────────────────────────────────────────
                     } else if (eventType === 'done') {
                         const pt  = payload.promptTokens     ?? 0;
                         const ct  = payload.completionTokens ?? 0;

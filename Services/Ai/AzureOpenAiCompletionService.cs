@@ -1,4 +1,5 @@
 using app_tramites.Models.ModelAi;
+using app_tramites.Services.Ai.Tools;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -90,6 +91,24 @@ public sealed class AzureOpenAiCompletionService : IAiCompletionService
             yield return AiStreamChunk.TextChunk(result.Text);
 
         yield return AiStreamChunk.DoneChunk(result.PromptTokens, result.CompletionTokens);
+    }
+
+    // ── Tool-use (REQ-019 T5): AzureOpenAI no implementa el loop nativo ──
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Azure OpenAI no implementa el tool-use loop nativo de este motor.
+    /// La función calling de AOAI puede incorporarse en una tarea futura.
+    /// </remarks>
+    public Task<AiCompletionResult> CompleteWithToolsAsync(
+        AiCompletionRequest request,
+        ToolsContext toolsContext,
+        IToolExecutor toolExecutor,
+        CancellationToken ct = default)
+    {
+        throw new NotSupportedException(
+            "[T5] CompleteWithToolsAsync no está implementado para AzureOpenAI. " +
+            "Use un agente con Provider=Anthropic para function-calling.");
     }
 
     // ── DTOs internos para deserializar la respuesta de Azure OpenAI ──
