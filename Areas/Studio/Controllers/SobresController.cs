@@ -440,17 +440,15 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
         }
 
         // ----------------------------------------------------------------
-        // REQ-019 T22 — Acciones para el origen Armonix
+        // REQ-019 T22 RW — Acciones para el origen Armonix (flujo simplificado)
         // ----------------------------------------------------------------
 
         // GET /Studio/Sobres/ImportarArmonix
 
         /// <summary>
-        /// Muestra el formulario para buscar documentos de un sobre en Armonix.
-        /// Requiere NumeroSobre + identificadores de contrato (NumeroContrato,
-        /// CodigoProducto, CodigoRegion, NumeroPersonaPaciente).
-        /// Si el operador solo dispone de la cédula, debe resolver el contrato
-        /// previamente con la tool <c>resolver_contrato_por_cedula</c>.
+        /// Muestra el formulario simplificado para buscar un sobre en Armonix.
+        /// El operador solo ingresa el número de sobre o la cédula del afiliado;
+        /// los identificadores de contrato se resuelven automáticamente.
         /// </summary>
         [HttpGet]
         public async Task<IActionResult> ImportarArmonix()
@@ -462,7 +460,7 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
 
             var vm = new ImportarSobreArmonixViewModel
             {
-                ProcessCode       = procesos.FirstOrDefault()?.Code ?? string.Empty,
+                ProcessCode         = procesos.FirstOrDefault()?.Code ?? string.Empty,
                 ProcesosDisponibles = procesos
             };
             return View(vm);
@@ -471,76 +469,138 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
         // POST /Studio/Sobres/BuscarArmonix
 
         /// <summary>
-        /// Llama a Armonix para listar los documentos disponibles del sobre y
-        /// los muestra al usuario antes de confirmar la importación.
+        /// Llama a <c>BuscarSobre</c> de api-armonix para resolver automáticamente
+        /// los identificadores de contrato a partir del número de sobre o cédula.
+        /// Si devuelve 1 sobre, pasa directamente a listar documentos.
+        /// Si devuelve varios, muestra tabla de selección.
+        /// Si devuelve 0, muestra mensaje claro.
         /// </summary>
-        /// <param name="vm">Datos del formulario con identificadores del sobre.</param>
+        /// <param name="vm">Datos del formulario (solo numeroSobre o cedula + processCode).</param>
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> BuscarArmonix(ImportarSobreArmonixViewModel vm)
         {
-            var resultado = new VistaDocumentosArmonixViewModel
+            if (string.IsNullOrWhiteSpace(vm.NumeroSobre) && string.IsNullOrWhiteSpace(vm.Cedula))
             {
-                NumeroSobre           = vm.NumeroSobre ?? string.Empty,
-                NumeroContrato        = vm.NumeroContrato,
-                CodigoProducto        = vm.CodigoProducto,
-                CodigoRegion          = vm.CodigoRegion,
-                NumeroPersonaPaciente = vm.NumeroPersonaPaciente,
-                ProcessCode           = vm.ProcessCode
-            };
-
-            if (string.IsNullOrWhiteSpace(vm.NumeroSobre))
-            {
-                resultado.Error = "El número de sobre es obligatorio.";
-                return View("VistaDocumentosArmonix", resultado);
+                var procesos = await _db.Process
+                    .Where(p => p.IsActive == true)
+                    .OrderBy(p => p.Name)
+                    .ToListAsync();
+                vm.ProcesosDisponibles = procesos;
+                ModelState.AddModelError(string.Empty, "Debe ingresar el número de sobre o la cédula del afiliado.");
+                return View("ImportarArmonix", vm);
             }
 
-            if (string.IsNullOrWhiteSpace(vm.NumeroContrato)
-                || string.IsNullOrWhiteSpace(vm.CodigoProducto)
-                || string.IsNullOrWhiteSpace(vm.CodigoRegion)
-                || string.IsNullOrWhiteSpace(vm.NumeroPersonaPaciente))
-            {
-                resultado.Error =
-                    "Armonix requiere NumeroContrato, CodigoProducto, CodigoRegion y NumeroPersonaPaciente. " +
-                    "Si solo dispone de la cédula, resuelva primero el contrato con la herramienta del agente.";
-                return View("VistaDocumentosArmonix", resultado);
-            }
+            var criterio = !string.IsNullOrWhiteSpace(vm.NumeroSobre)
+                ? vm.NumeroSobre.Trim()
+                : vm.Cedula!.Trim();
 
+            IReadOnlyList<app_ocr_ai_models.Services.Documents.ArmonixSobreResueltoDto> sobres;
             try
             {
-                var filter = new SobreDocumentosFilter
-                {
-                    NumeroSobre           = vm.NumeroSobre.Trim(),
-                    NumeroContrato        = vm.NumeroContrato?.Trim(),
-                    CodigoProducto        = vm.CodigoProducto?.Trim(),
-                    CodigoRegion          = vm.CodigoRegion?.Trim(),
-                    NumeroPersonaPaciente = vm.NumeroPersonaPaciente?.Trim()
-                };
-
-                var documentos = await _armonix.ListarDocumentosAsync(filter);
-                resultado.DocumentosDisponibles = documentos;
+                sobres = await _armonix.BuscarSobresAsync(
+                    string.IsNullOrWhiteSpace(vm.NumeroSobre) ? null : vm.NumeroSobre.Trim(),
+                    string.IsNullOrWhiteSpace(vm.Cedula)      ? null : vm.Cedula.Trim());
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[T22] Error al listar documentos Armonix para sobre {NumeroSobre}.", vm.NumeroSobre);
-                resultado.Error = $"Error al consultar Armonix: {ex.Message}";
+                _logger.LogWarning(ex, "[T22 RW] Error al buscar sobre Armonix con criterio {Criterio}.", criterio);
+                var resultado = new BusquedaSobreArmonixViewModel
+                {
+                    CriterioBuscado = criterio,
+                    ProcessCode     = vm.ProcessCode,
+                    Error           = $"Error al consultar Armonix: {ex.Message}"
+                };
+                return View("BusquedaSobreArmonix", resultado);
             }
 
-            return View("VistaDocumentosArmonix", resultado);
+            // Sin resultados
+            if (sobres.Count == 0)
+            {
+                var resultado = new BusquedaSobreArmonixViewModel
+                {
+                    CriterioBuscado = criterio,
+                    ProcessCode     = vm.ProcessCode
+                };
+                return View("BusquedaSobreArmonix", resultado);
+            }
+
+            // Un solo sobre: ir directamente a listar documentos
+            if (sobres.Count == 1)
+            {
+                return await MostrarDocumentosDeSobre(sobres[0], vm.ProcessCode);
+            }
+
+            // Varios sobres: mostrar tabla de selección
+            var seleccion = new BusquedaSobreArmonixViewModel
+            {
+                CriterioBuscado = criterio,
+                ProcessCode     = vm.ProcessCode,
+                Sobres = sobres.Select(s => new SobreArmonixResueltoViewModel
+                {
+                    NumeroSobre           = s.NumeroSobre,
+                    NombreTitular         = s.NombreTitular,
+                    EstadoSobre           = s.EstadoSobre,
+                    FechaRecepcion        = s.FechaRecepcion,
+                    CodigoRegion          = s.CodigoRegion,
+                    CodigoProducto        = s.CodigoProducto,
+                    NumeroContrato        = s.NumeroContrato,
+                    NumeroPersonaPaciente = s.NumeroPersonaPaciente
+                }).ToList()
+            };
+            return View("BusquedaSobreArmonix", seleccion);
+        }
+
+        // POST /Studio/Sobres/ConfirmarSobreArmonix
+        // Acción intermediaria cuando el operador elige un sobre de la tabla de selección.
+
+        /// <summary>
+        /// Recibe el sobre elegido de la tabla de selección y procede a listar
+        /// sus documentos en Armonix.
+        /// </summary>
+        /// <param name="numeroSobre">Número del sobre seleccionado.</param>
+        /// <param name="numeroContrato">Número de contrato resuelto.</param>
+        /// <param name="codigoProducto">Código de producto resuelto.</param>
+        /// <param name="codigoRegion">Código de región resuelto.</param>
+        /// <param name="numeroPersonaPaciente">Número de persona/paciente resuelto.</param>
+        /// <param name="nombreTitular">Nombre del titular para mostrar.</param>
+        /// <param name="processCode">Código del Process destino.</param>
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ConfirmarSobreArmonix(
+            string numeroSobre,
+            string numeroContrato,
+            string codigoProducto,
+            string codigoRegion,
+            string numeroPersonaPaciente,
+            string nombreTitular,
+            string processCode)
+        {
+            var sobre = new app_ocr_ai_models.Services.Documents.ArmonixSobreResueltoDto
+            {
+                NumeroSobre           = numeroSobre           ?? string.Empty,
+                NumeroContrato        = numeroContrato        ?? string.Empty,
+                CodigoProducto        = codigoProducto        ?? string.Empty,
+                CodigoRegion          = codigoRegion          ?? string.Empty,
+                NumeroPersonaPaciente = numeroPersonaPaciente ?? string.Empty,
+                NombreTitular         = nombreTitular         ?? string.Empty
+            };
+            return await MostrarDocumentosDeSobre(sobre, processCode);
         }
 
         // POST /Studio/Sobres/ImportarDesdeArmonix
 
         /// <summary>
         /// Importa los documentos del sobre desde Armonix como un <see cref="ProcessCase"/> nuevo.
+        /// Los identificadores de contrato provienen de los campos hidden resueltos por <c>BuscarSobre</c>.
         /// Descarga el binario base64, ejecuta OCR con <see cref="IOcrIngestService"/>
         /// y crea los <see cref="DataFile"/> correspondientes.
         /// </summary>
-        /// <param name="numeroSobre">Número del sobre de reembolso.</param>
-        /// <param name="numeroContrato">Número de contrato del afiliado.</param>
-        /// <param name="codigoProducto">Código de producto del contrato.</param>
-        /// <param name="codigoRegion">Código de región del contrato.</param>
-        /// <param name="numeroPersonaPaciente">Número de persona/paciente.</param>
+        /// <param name="numeroSobre">Número del sobre de reembolso (ya resuelto).</param>
+        /// <param name="numeroContrato">Número de contrato resuelto.</param>
+        /// <param name="codigoProducto">Código de producto resuelto.</param>
+        /// <param name="codigoRegion">Código de región resuelto.</param>
+        /// <param name="numeroPersonaPaciente">Número de persona/paciente resuelto.</param>
         /// <param name="processCode">Código del Process destino.</param>
         [HttpPost]
         [ValidateAntiForgeryToken]
@@ -588,7 +648,7 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[T22] Error al importar documentos Armonix para sobre {NumeroSobre}.", numeroSobre);
+                _logger.LogWarning(ex, "[T22 RW] Error al importar documentos Armonix para sobre {NumeroSobre}.", numeroSobre);
                 newCase.State = "ImportError";
                 await _db.SaveChangesAsync();
                 TempData["Error"] = $"Error al importar desde Armonix: {ex.Message}";
@@ -605,6 +665,50 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
             }
 
             return RedirectToAction(nameof(Caso), new { caseCode = newCase.CaseCode });
+        }
+
+        // ── Helper privado: llama BuscarDocumentos y devuelve la vista de documentos
+
+        /// <summary>
+        /// Llama a Armonix para listar los documentos de un sobre ya resuelto
+        /// y devuelve la vista de previsualización.
+        /// </summary>
+        private async Task<IActionResult> MostrarDocumentosDeSobre(
+            app_ocr_ai_models.Services.Documents.ArmonixSobreResueltoDto sobre,
+            string processCode)
+        {
+            var resultado = new VistaDocumentosArmonixViewModel
+            {
+                NumeroSobre           = sobre.NumeroSobre,
+                NombreTitular         = sobre.NombreTitular,
+                NumeroContrato        = sobre.NumeroContrato,
+                CodigoProducto        = sobre.CodigoProducto,
+                CodigoRegion          = sobre.CodigoRegion,
+                NumeroPersonaPaciente = sobre.NumeroPersonaPaciente,
+                ProcessCode           = processCode
+            };
+
+            try
+            {
+                var filter = new SobreDocumentosFilter
+                {
+                    NumeroSobre           = sobre.NumeroSobre,
+                    NumeroContrato        = sobre.NumeroContrato,
+                    CodigoProducto        = sobre.CodigoProducto,
+                    CodigoRegion          = sobre.CodigoRegion,
+                    NumeroPersonaPaciente = sobre.NumeroPersonaPaciente
+                };
+
+                var documentos = await _armonix.ListarDocumentosAsync(filter);
+                resultado.DocumentosDisponibles = documentos;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[T22 RW] Error al listar documentos Armonix para sobre {NumeroSobre}.", sobre.NumeroSobre);
+                resultado.Error = $"Error al consultar Armonix: {ex.Message}";
+            }
+
+            return View("VistaDocumentosArmonix", resultado);
         }
 
         // ----------------------------------------------------------------

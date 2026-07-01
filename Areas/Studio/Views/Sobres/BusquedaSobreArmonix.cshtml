@@ -1,0 +1,80 @@
+@model BusquedaSobreArmonixViewModel
+@{
+    ViewData["Title"] = "Resultados de búsqueda en Armonix";
+}
+
+<div class="studio-breadcrumb">
+    Studio /
+    <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> /
+    <a asp-area="Studio" asp-controller="Sobres" asp-action="ImportarArmonix">Armonix</a> /
+    Resultados
+</div>
+
+<div class="studio-card">
+    <h4>Resultados de búsqueda — <em>@Model.CriterioBuscado</em></h4>
+
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="alert-error">@Model.Error</div>
+    }
+    else if (Model.Sobres.Count == 0)
+    {
+        <div class="alert-warn">
+            No se encontró ningún sobre para <strong>@Model.CriterioBuscado</strong> en Armonix.
+            Verifica el número de sobre o la cédula e intenta nuevamente.
+        </div>
+    }
+    else
+    {
+        <p style="font-size:0.9em; color:#333;">
+            Se encontraron <strong>@Model.Sobres.Count</strong> sobre(s). Selecciona el que deseas importar.
+        </p>
+
+        <table class="studio-table" style="width:100%; font-size:0.88em; border-collapse:collapse; margin-bottom:16px;">
+            <thead>
+                <tr style="background:#f4f6f8; text-align:left;">
+                    <th style="padding:8px 10px;">N.° de Sobre</th>
+                    <th style="padding:8px 10px;">Afiliado</th>
+                    <th style="padding:8px 10px;">Estado</th>
+                    <th style="padding:8px 10px;">Fecha Recepción</th>
+                    <th style="padding:8px 10px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var sobre in Model.Sobres)
+                {
+                    <tr style="border-top:1px solid #e0e4ea;">
+                        <td style="padding:7px 10px; font-weight:600;">@sobre.NumeroSobre</td>
+                        <td style="padding:7px 10px;">@(string.IsNullOrWhiteSpace(sobre.NombreTitular) ? "—" : sobre.NombreTitular)</td>
+                        <td style="padding:7px 10px;">@(string.IsNullOrWhiteSpace(sobre.EstadoSobre) ? "—" : sobre.EstadoSobre)</td>
+                        <td style="padding:7px 10px;">
+                            @(sobre.FechaRecepcion.HasValue ? sobre.FechaRecepcion.Value.ToString("dd/MM/yyyy") : "—")
+                        </td>
+                        <td style="padding:7px 10px;">
+                            <form asp-area="Studio" asp-controller="Sobres" asp-action="ConfirmarSobreArmonix" method="post" style="display:inline;">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="numeroSobre"           value="@sobre.NumeroSobre" />
+                                <input type="hidden" name="numeroContrato"        value="@sobre.NumeroContrato" />
+                                <input type="hidden" name="codigoProducto"        value="@sobre.CodigoProducto" />
+                                <input type="hidden" name="codigoRegion"          value="@sobre.CodigoRegion" />
+                                <input type="hidden" name="numeroPersonaPaciente" value="@sobre.NumeroPersonaPaciente" />
+                                <input type="hidden" name="nombreTitular"         value="@sobre.NombreTitular" />
+                                <input type="hidden" name="processCode"           value="@Model.ProcessCode" />
+                                <button type="submit" class="btn-studio btn-primary-studio" style="padding:4px 12px; font-size:0.85em;">
+                                    Seleccionar
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <div style="margin-top:14px;">
+        <a asp-area="Studio" asp-controller="Sobres" asp-action="ImportarArmonix"
+           class="btn-studio btn-secondary-studio">
+            Nueva búsqueda
+        </a>
+    </div>
+</div>

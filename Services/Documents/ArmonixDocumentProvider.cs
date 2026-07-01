@@ -213,6 +213,74 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
         };
     }
 
+    // ── BuscarSobres (T22 RW — auto-resolución) ──────────────────────────
+
+    /// <summary>
+    /// Llama a <c>POST /api/sobres/BuscarSobre</c> de api-armonix y devuelve
+    /// la lista de sobres con sus identificadores ya resueltos.
+    /// El operador solo necesita proveer <paramref name="numeroSobre"/> o
+    /// <paramref name="cedula"/> (al menos uno).
+    /// </summary>
+    /// <param name="numeroSobre">Número del sobre (opcional si se informa la cédula).</param>
+    /// <param name="cedula">Cédula del afiliado/paciente (opcional si se informa el número de sobre).</param>
+    /// <param name="ct">Token de cancelación.</param>
+    /// <returns>Lista de sobres resueltos con CodigoRegion, CodigoProducto, NumeroContrato y NumeroPersonaPaciente.</returns>
+    public async Task<IReadOnlyList<ArmonixSobreResueltoDto>> BuscarSobresAsync(
+        string? numeroSobre,
+        string? cedula,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(numeroSobre) && string.IsNullOrWhiteSpace(cedula))
+            throw new ArgumentException("Debe informar al menos el número de sobre o la cédula.", nameof(numeroSobre));
+
+        var baseUrl = ResolveBaseUrl();
+        var authHeaders = await _tokenProvider.GetAuthHeadersAsync(ct).ConfigureAwait(false);
+
+        var requestBody = new ArmonixBuscarSobreRequest
+        {
+            NumeroSobre  = string.IsNullOrWhiteSpace(numeroSobre) ? null : numeroSobre.Trim(),
+            NumeroCedula = string.IsNullOrWhiteSpace(cedula)      ? null : cedula.Trim()
+        };
+
+        var json    = System.Text.Json.JsonSerializer.Serialize(requestBody);
+        var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+        using var http = _httpClientFactory.CreateClient("SaludsaInternalApi");
+        using var msg  = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, baseUrl + "/api/sobres/BuscarSobre")
+        {
+            Content = content
+        };
+        foreach (var (name, value) in authHeaders)
+            msg.Headers.TryAddWithoutValidation(name, value);
+
+        using var response = await http.SendAsync(msg, ct).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+            throw new System.Net.Http.HttpRequestException(
+                $"[T22 RW] Armonix BuscarSobre respondió {(int)response.StatusCode}: {body}",
+                null, response.StatusCode);
+
+        var respuesta = System.Text.Json.JsonSerializer.Deserialize<
+            ArmonixRespuestaGenerica<ArmonixRespuestaPaginada<ArmonixSobreEntityDto>>>(body, JsonOptions);
+
+        var lista = respuesta?.Datos?.Lista;
+        if (lista is null || lista.Count == 0)
+            return Array.Empty<ArmonixSobreResueltoDto>();
+
+        return lista.Select(s => new ArmonixSobreResueltoDto
+        {
+            NumeroSobre          = s.NumeroSobre             ?? string.Empty,
+            CodigoRegion         = s.CodigoRegion            ?? string.Empty,
+            CodigoProducto       = s.CodigoProducto          ?? string.Empty,
+            NumeroContrato       = s.NumeroContrato?.ToString() ?? string.Empty,
+            NumeroPersonaPaciente = s.NumeroPersonaPaciente.ToString(),
+            NombreTitular        = s.NombresTitular          ?? string.Empty,
+            EstadoSobre          = s.NombreEstadoSobre       ?? string.Empty,
+            FechaRecepcion       = s.FechaRecepcion
+        }).ToList();
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     /// <summary>

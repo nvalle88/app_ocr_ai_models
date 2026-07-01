@@ -14,21 +14,28 @@
     <h4>Documentos disponibles — Sobre <em>@Model.NumeroSobre</em></h4>
 
     <table style="font-size:0.88em; margin-bottom:14px;">
+        @if (!string.IsNullOrWhiteSpace(Model.NombreTitular))
+        {
+            <tr>
+                <td style="padding:3px 12px 3px 0; font-weight:600;">Afiliado</td>
+                <td>@Model.NombreTitular</td>
+            </tr>
+        }
         <tr>
             <td style="padding:3px 12px 3px 0; font-weight:600;">Contrato</td>
-            <td>@(Model.NumeroContrato ?? "(no especificado)")</td>
+            <td>@(Model.NumeroContrato ?? "(resuelto automáticamente)")</td>
         </tr>
         <tr>
             <td style="padding:3px 12px 3px 0; font-weight:600;">Producto</td>
-            <td>@(Model.CodigoProducto ?? "(no especificado)")</td>
+            <td>@(Model.CodigoProducto ?? "(resuelto automáticamente)")</td>
         </tr>
         <tr>
             <td style="padding:3px 12px 3px 0; font-weight:600;">Región</td>
-            <td>@(Model.CodigoRegion ?? "(no especificado)")</td>
+            <td>@(Model.CodigoRegion ?? "(resuelto automáticamente)")</td>
         </tr>
         <tr>
             <td style="padding:3px 12px 3px 0; font-weight:600;">Persona/Paciente</td>
-            <td>@(Model.NumeroPersonaPaciente ?? "(no especificado)")</td>
+            <td>@(Model.NumeroPersonaPaciente ?? "(resuelto automáticamente)")</td>
         </tr>
         <tr>
             <td style="padding:3px 12px 3px 0; font-weight:600;">Proceso destino</td>
@@ -44,7 +51,6 @@
     {
         <div class="alert-warn">
             Armonix no devolvió documentos para el sobre <strong>@Model.NumeroSobre</strong>.
-            Verifique los identificadores del contrato.
         </div>
     }
     else

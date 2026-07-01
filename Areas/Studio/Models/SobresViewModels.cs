@@ -148,27 +148,17 @@ namespace app_ocr_ai_models.Areas.Studio.Models
     // ----------------------------------------------------------------
 
     /// <summary>
-    /// Formulario para buscar documentos de un sobre en Armonix.
-    /// Requiere el número de sobre más los cuatro identificadores de contrato.
-    /// Si el operador solo dispone de la cédula, debe resolver el contrato
-    /// antes de continuar.
+    /// Formulario simplificado (T22 RW): solo número de sobre o cédula
+    /// más el proceso destino. Los identificadores de contrato se resuelven
+    /// automáticamente via <c>BuscarSobre</c> de api-armonix.
     /// </summary>
     public class ImportarSobreArmonixViewModel
     {
-        /// <summary>Número del sobre en MFiles (campo principal de Armonix).</summary>
+        /// <summary>Número del sobre en Armonix/MFiles (se usa como criterio de búsqueda).</summary>
         public string? NumeroSobre { get; set; }
 
-        /// <summary>Número de contrato del afiliado.</summary>
-        public string? NumeroContrato { get; set; }
-
-        /// <summary>Código de producto del contrato.</summary>
-        public string? CodigoProducto { get; set; }
-
-        /// <summary>Código de región del contrato.</summary>
-        public string? CodigoRegion { get; set; }
-
-        /// <summary>Número de persona/paciente dentro del contrato.</summary>
-        public string? NumeroPersonaPaciente { get; set; }
+        /// <summary>Cédula del afiliado/paciente (alternativa al número de sobre).</summary>
+        public string? Cedula { get; set; }
 
         /// <summary>Código del Process (definición de caso) al que se asignará el caso importado.</summary>
         public string ProcessCode { get; set; } = string.Empty;
@@ -178,23 +168,81 @@ namespace app_ocr_ai_models.Areas.Studio.Models
     }
 
     /// <summary>
-    /// Resultado de la previsualización de documentos Armonix antes de confirmar la importación.
+    /// Sobre resuelto para mostrar en la tabla de selección cuando la búsqueda
+    /// devuelve más de un resultado.
+    /// </summary>
+    public class SobreArmonixResueltoViewModel
+    {
+        /// <summary>Número del sobre.</summary>
+        public string NumeroSobre { get; set; } = string.Empty;
+
+        /// <summary>Nombre del titular/afiliado.</summary>
+        public string NombreTitular { get; set; } = string.Empty;
+
+        /// <summary>Estado del sobre.</summary>
+        public string EstadoSobre { get; set; } = string.Empty;
+
+        /// <summary>Fecha de recepción del sobre.</summary>
+        public DateTime? FechaRecepcion { get; set; }
+
+        // Identificadores resueltos (hidden en la tabla de selección)
+
+        /// <summary>Código de región resuelto.</summary>
+        public string CodigoRegion { get; set; } = string.Empty;
+
+        /// <summary>Código de producto resuelto.</summary>
+        public string CodigoProducto { get; set; } = string.Empty;
+
+        /// <summary>Número de contrato resuelto.</summary>
+        public string NumeroContrato { get; set; } = string.Empty;
+
+        /// <summary>Número de persona/paciente resuelto.</summary>
+        public string NumeroPersonaPaciente { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Resultado de la búsqueda de sobres en Armonix (T22 RW).
+    /// Puede contener cero, uno o varios sobres.
+    /// </summary>
+    public class BusquedaSobreArmonixViewModel
+    {
+        /// <summary>Criterio de búsqueda usado (número de sobre o cédula).</summary>
+        public string CriterioBuscado { get; set; } = string.Empty;
+
+        /// <summary>Sobres encontrados con identificadores ya resueltos.</summary>
+        public IReadOnlyList<SobreArmonixResueltoViewModel> Sobres { get; set; }
+            = Array.Empty<SobreArmonixResueltoViewModel>();
+
+        /// <summary>Código del Process destino.</summary>
+        public string ProcessCode { get; set; } = string.Empty;
+
+        /// <summary>Mensaje de error, si aplica.</summary>
+        public string? Error { get; set; }
+    }
+
+    /// <summary>
+    /// Previsualización de documentos de un sobre ya resuelto antes de confirmar la importación.
     /// </summary>
     public class VistaDocumentosArmonixViewModel
     {
         /// <summary>Número de sobre consultado.</summary>
         public string NumeroSobre { get; set; } = string.Empty;
 
-        /// <summary>Número de contrato.</summary>
+        /// <summary>Nombre del titular para mostrar.</summary>
+        public string NombreTitular { get; set; } = string.Empty;
+
+        // Identificadores resueltos (se pasan como hidden al ImportarDesdeArmonix)
+
+        /// <summary>Número de contrato resuelto.</summary>
         public string? NumeroContrato { get; set; }
 
-        /// <summary>Código de producto.</summary>
+        /// <summary>Código de producto resuelto.</summary>
         public string? CodigoProducto { get; set; }
 
-        /// <summary>Código de región.</summary>
+        /// <summary>Código de región resuelto.</summary>
         public string? CodigoRegion { get; set; }
 
-        /// <summary>Número de persona/paciente.</summary>
+        /// <summary>Número de persona/paciente resuelto.</summary>
         public string? NumeroPersonaPaciente { get; set; }
 
         /// <summary>Nombres/IDs de los documentos disponibles en MFiles.</summary>

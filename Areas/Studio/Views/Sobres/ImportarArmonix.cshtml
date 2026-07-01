@@ -1,6 +1,6 @@
 @model ImportarSobreArmonixViewModel
 @{
-    ViewData["Title"] = "Importar Sobre desde Armonix";
+    ViewData["Title"] = "Importar desde Armonix";
 }
 
 <div class="studio-breadcrumb">
@@ -10,78 +10,42 @@
 <div class="studio-card">
     <h4>Importar documentos desde Armonix</h4>
     <p style="color:#555; font-size:0.9em;">
-        Introduce el número de sobre y los identificadores del contrato para obtener
-        los documentos almacenados en MFiles por Armonix.
-        Los documentos se procesarán con OCR y quedarán disponibles en el Caso.
+        Ingresa el <strong>número de sobre</strong> o la <strong>cédula</strong> del afiliado.
+        El sistema buscará y resolverá automáticamente los identificadores del contrato.
     </p>
-    <div class="alert-warn" style="margin-bottom:14px; font-size:0.88em;">
-        <strong>Nota:</strong> Armonix identifica los documentos por sobre de reembolso,
-        no por cédula. Si solo dispone de la cédula, resuelva primero el contrato
-        con el agente de análisis (tool <em>resolver_contrato_por_cedula</em>).
-    </div>
+
+    @if (!ViewData.ModelState.IsValid)
+    {
+        <div class="alert-error" style="margin-bottom:12px;">
+            @Html.ValidationSummary(false)
+        </div>
+    }
 
     <form asp-area="Studio" asp-controller="Sobres" asp-action="BuscarArmonix" method="post">
         @Html.AntiForgeryToken()
 
         <div style="margin-bottom: 14px;">
             <label style="font-weight:600; display:block; margin-bottom:4px;">
-                Número de sobre <span style="color:#c00;">*</span>
+                Número de sobre
             </label>
             <input asp-for="NumeroSobre"
                    type="text"
                    class="form-control"
                    style="max-width:320px;"
-                   placeholder="Ej: 20240001234"
-                   required />
-            <span asp-validation-for="NumeroSobre" class="text-danger"></span>
+                   placeholder="Ej: 20240001234" />
+            <small style="color:#888;">Deja en blanco si vas a buscar por cédula.</small>
         </div>
 
         <div style="margin-bottom: 14px;">
             <label style="font-weight:600; display:block; margin-bottom:4px;">
-                Número de contrato <span style="color:#c00;">*</span>
+                Cédula del afiliado
             </label>
-            <input asp-for="NumeroContrato"
+            <input asp-for="Cedula"
                    type="text"
                    class="form-control"
                    style="max-width:320px;"
-                   placeholder="Ej: 000001234"
-                   required />
-        </div>
-
-        <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px;">
-            <div>
-                <label style="font-weight:600; display:block; margin-bottom:4px;">
-                    Código de producto <span style="color:#c00;">*</span>
-                </label>
-                <input asp-for="CodigoProducto"
-                       type="text"
-                       class="form-control"
-                       style="max-width:150px;"
-                       placeholder="Ej: 01"
-                       required />
-            </div>
-            <div>
-                <label style="font-weight:600; display:block; margin-bottom:4px;">
-                    Código de región <span style="color:#c00;">*</span>
-                </label>
-                <input asp-for="CodigoRegion"
-                       type="text"
-                       class="form-control"
-                       style="max-width:150px;"
-                       placeholder="Ej: 01"
-                       required />
-            </div>
-            <div>
-                <label style="font-weight:600; display:block; margin-bottom:4px;">
-                    Número de persona/paciente <span style="color:#c00;">*</span>
-                </label>
-                <input asp-for="NumeroPersonaPaciente"
-                       type="text"
-                       class="form-control"
-                       style="max-width:150px;"
-                       placeholder="Ej: 01"
-                       required />
-            </div>
+                   placeholder="Ej: 1701234567" />
+            <small style="color:#888;">Deja en blanco si buscas por número de sobre.</small>
         </div>
 
         <div style="margin-bottom: 14px;">
@@ -99,7 +63,7 @@
             <small style="color:#888;">Define la plantilla de pasos y agentes que usará el caso.</small>
         </div>
 
-        <button type="submit" class="btn-studio btn-primary-studio">Buscar documentos en Armonix</button>
+        <button type="submit" class="btn-studio btn-primary-studio">Buscar en Armonix</button>
         <a asp-area="Studio" asp-controller="Sobres" asp-action="Index"
            class="btn-studio btn-secondary-studio" style="margin-left:8px;">
             Volver a Zendesk
