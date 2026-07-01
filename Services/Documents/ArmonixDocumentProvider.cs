@@ -10,8 +10,9 @@ namespace app_ocr_ai_models.Services.Documents;
 
 // ============================================================
 // REQ-019 T22 — Proveedor documental Armonix (NUEVO).
-// Llama a /api/sobres/BuscarDocumentos (listar) y
-// /api/sobres/BuscarDocumentosCompleto (descargar base64).
+// Llama a /sobres/BuscarDocumentos (listar) y
+// /sobres/BuscarDocumentosCompleto (descargar base64).
+// La baseUrl (Saludsa:BaseUrls:ApiArmonix) YA incluye /api; no se duplica.
 // Auth vía ISaludsaTokenProvider (OAuth2, patrón T5).
 // LIVE gated por B1/B2 (egress + OAuth2 a api-armonix).
 // ============================================================
@@ -63,7 +64,8 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
 
     /// <inheritdoc />
     /// <remarks>
-    /// Llama a <c>POST /api/sobres/BuscarDocumentos</c> de api-armonix,
+    /// Llama a <c>POST /sobres/BuscarDocumentos</c> de api-armonix
+    /// (la baseUrl ya incluye <c>/api</c>),
     /// que devuelve <c>List&lt;string&gt;</c> con los nombres/IDs de los documentos en MFiles.
     /// Requiere todos los campos del <paramref name="filter"/> (CodigoProducto,
     /// CodigoRegion, NumeroContrato, NumeroSobre, NumeroPersonaPaciente).
@@ -79,7 +81,7 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
         var requestBody = BuildRequest(filter);
 
         using var http = _httpClientFactory.CreateClient("SaludsaInternalApi");
-        using var msg = BuildHttpMessage(baseUrl, "/api/sobres/BuscarDocumentos", requestBody);
+        using var msg = BuildHttpMessage(baseUrl, "/sobres/BuscarDocumentos", requestBody);
 
         foreach (var (name, value) in authHeaders)
             msg.Headers.TryAddWithoutValidation(name, value);
@@ -98,7 +100,8 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
 
     /// <inheritdoc />
     /// <remarks>
-    /// Llama a <c>POST /api/sobres/BuscarDocumentosCompleto</c> de api-armonix,
+    /// Llama a <c>POST /sobres/BuscarDocumentosCompleto</c> de api-armonix
+    /// (la baseUrl ya incluye <c>/api</c>),
     /// que devuelve <c>List&lt;RespuestaMFileShift&gt;</c> con el contenido binario
     /// en Base64. Decodifica el Base64, ejecuta OCR con <see cref="IOcrIngestService"/>
     /// y crea cada <see cref="DataFile"/> en el <paramref name="caso"/>.
@@ -120,7 +123,7 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
         try
         {
             using var http = _httpClientFactory.CreateClient("SaludsaInternalApi");
-            using var msg = BuildHttpMessage(baseUrl, "/api/sobres/BuscarDocumentosCompleto", requestBody);
+            using var msg = BuildHttpMessage(baseUrl, "/sobres/BuscarDocumentosCompleto", requestBody);
             foreach (var (name, value) in authHeaders)
                 msg.Headers.TryAddWithoutValidation(name, value);
 
@@ -216,7 +219,8 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
     // ── BuscarSobres (T22 RW — auto-resolución) ──────────────────────────
 
     /// <summary>
-    /// Llama a <c>POST /api/sobres/BuscarSobre</c> de api-armonix y devuelve
+    /// Llama a <c>POST /sobres/BuscarSobre</c> de api-armonix
+    /// (la baseUrl ya incluye <c>/api</c>) y devuelve
     /// la lista de sobres con sus identificadores ya resueltos.
     /// El operador solo necesita proveer <paramref name="numeroSobre"/> o
     /// <paramref name="cedula"/> (al menos uno).
@@ -246,7 +250,7 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
         var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
         using var http = _httpClientFactory.CreateClient("SaludsaInternalApi");
-        using var msg  = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, baseUrl + "/api/sobres/BuscarSobre")
+        using var msg  = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, baseUrl + "/sobres/BuscarSobre")
         {
             Content = content
         };
