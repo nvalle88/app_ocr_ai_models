@@ -15,7 +15,11 @@ BEGIN
 END;
 
 SET NOCOUNT ON;
+SET XACT_ABORT ON;
+SET QUOTED_IDENTIFIER ON;   -- requerido por el índice filtrado IX_Process_ClonedFromCode
+SET ANSI_NULLS ON;
 BEGIN TRANSACTION;
+GO
 
 -- ============================================================
 -- BLOQUE 1: EXTENDER OPAIConfiguration
@@ -108,6 +112,7 @@ BEGIN
         ADD [ExecutionId] bigint NULL;
     PRINT 'Usage.ExecutionId added (FK nullable a StepExecution).';
 END;
+GO
 
 -- FK a StepExecution (solo si la tabla existe y la FK no existe aún)
 IF OBJECT_ID('dbo.StepExecution', 'U') IS NOT NULL
@@ -156,6 +161,7 @@ BEGIN
         ADD [ClonedFromCode] varchar(30) NULL;
     PRINT 'Process.ClonedFromCode added.';
 END;
+GO
 
 -- Añadir FK solo si no existe
 IF NOT EXISTS (
@@ -184,6 +190,7 @@ BEGIN
             CONSTRAINT DF_Process_IsActive DEFAULT 1;
     PRINT 'Process.IsActive added.';
 END;
+GO
 
 -- Índice en Process.IsActive
 IF NOT EXISTS (

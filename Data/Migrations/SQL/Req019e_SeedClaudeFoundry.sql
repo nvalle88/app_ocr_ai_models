@@ -20,7 +20,7 @@ WHEN NOT MATCHED THEN
             'Claude Opus 4.8 (Azure AI Foundry)',
             'Anthropic',
             'https://yvall-mr1pokp6-eastus2.services.ai.azure.com/anthropic',  -- base SIN /v1/messages (el SDK lo agrega)
-            NULL,                       -- ApiKey: dejar NULL; usar SecretRef (Key Vault)
+            '',                         -- ApiKey: placeholder vacio (columna NOT NULL). La key real se pone por UPDATE (test) o via env ANTHROPIC_API_KEY / SecretRef->Key Vault (prod)
             'anthropic-foundry-key',    -- SecretRef: nombre del secret en Key Vault con la key ROTADA del recurso
             'chat',
             1)
