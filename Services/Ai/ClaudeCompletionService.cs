@@ -502,18 +502,34 @@ public sealed class ClaudeCompletionService : IAiCompletionService
         // 2. ANTHROPIC_API_KEY del entorno → el AnthropicClient lo resuelve solo si ApiKey vacío
         // 3. ApiKey de la BD (fallback dev/test únicamente)
         //
-        // REQ-019: el cliente se cachea por clave resuelta para evitar socket-churn.
-        // La clave de caché usa "__env__" cuando se toma del entorno, o el valor ofuscado
-        // (no en claro) cuando viene de la BD, para aislar correctamente las instancias.
+        // REQ-019 T23: BaseUrl configurable para apuntar a endpoints Anthropic-compatibles
+        // (ej. Azure AI Foundry). Si OPAIConfiguration.EndpointUrl está poblado se usa como
+        // BaseUrl del SDK; de lo contrario el cliente usa el default (https://api.anthropic.com).
+        //
+        // Clave de caché: combina el origen de la key Y el endpoint para no mezclar clientes
+        // de distintos proveedores/endpoints.
+        //
+        // Propiedad verificada en SDK Anthropic v10.4.0: BaseUrl (tipo Uri).
+
+        var endpointUrl = string.IsNullOrWhiteSpace(_config.EndpointUrl) ? null : _config.EndpointUrl.Trim();
 
         var envKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
         var hasEnvKey = !string.IsNullOrWhiteSpace(envKey);
         var hasConfigKey = !string.IsNullOrWhiteSpace(_config.ApiKey)
                            && _config.ApiKey != "PLACEHOLDER";
 
+        // Sufijo de endpoint para aislar entradas del caché por destino.
+        // Se usa hash del endpointUrl para no exponer la URL en la clave.
+        var endpointSuffix = endpointUrl is null
+            ? string.Empty
+            : "__ep__" + Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(endpointUrl)));
+
         if (hasEnvKey)
         {
-            return _clientCache.GetOrAdd("__env__", _ => new AnthropicClient());
+            var cacheKey = "__env__" + endpointSuffix;
+            return _clientCache.GetOrAdd(cacheKey, _ => BuildAnthropicClient(apiKey: null, endpointUrl));
         }
 
         if (hasConfigKey)
@@ -521,12 +537,52 @@ public sealed class ClaudeCompletionService : IAiCompletionService
             // La clave de caché es el hash SHA256 de la API key para no almacenarla en texto claro.
             var cacheKey = "bd__" + Convert.ToHexString(
                 System.Security.Cryptography.SHA256.HashData(
-                    System.Text.Encoding.UTF8.GetBytes(_config.ApiKey!)));
-            return _clientCache.GetOrAdd(cacheKey, _ => new AnthropicClient { APIKey = _config.ApiKey });
+                    System.Text.Encoding.UTF8.GetBytes(_config.ApiKey!))) + endpointSuffix;
+            return _clientCache.GetOrAdd(cacheKey, _ => BuildAnthropicClient(_config.ApiKey, endpointUrl));
         }
 
         // Sin ninguna key: dejar al SDK que intente desde entorno y falle en runtime
         // (AnthropicUnauthorizedException) con mensaje claro, no en startup.
-        return _clientCache.GetOrAdd("__env__", _ => new AnthropicClient());
+        var fallbackKey = "__env__" + endpointSuffix;
+        return _clientCache.GetOrAdd(fallbackKey, _ => BuildAnthropicClient(apiKey: null, endpointUrl));
+    }
+
+    /// <summary>
+    /// Instancia un <see cref="AnthropicClient"/> con la API key y, opcionalmente, un
+    /// BaseUrl alternativo (p. ej. Azure AI Foundry Anthropic-compatible).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="AnthropicClient.APIKey"/> y <see cref="AnthropicClient.BaseUrl"/> son
+    /// propiedades <c>init</c>-only en el SDK v10.4.0, por lo que se asignan exclusivamente
+    /// en el inicializador de objeto. Las cuatro combinaciones (key×baseUrl) se cubren
+    /// explícitamente para respetar esa restricción del compilador (CS8852).
+    /// </para>
+    /// <para>
+    /// Si <paramref name="apiKey"/> es <see langword="null"/>, el SDK toma la key desde la
+    /// variable de entorno <c>ANTHROPIC_API_KEY</c> automáticamente.
+    /// </para>
+    /// <para>
+    /// Si <paramref name="baseUrl"/> es <see langword="null"/>, el SDK apunta al default
+    /// <c>https://api.anthropic.com</c> y agrega <c>/v1/messages</c> internamente.
+    /// Para Azure AI Foundry usar <c>https://&lt;recurso&gt;.services.ai.azure.com/anthropic</c>.
+    /// </para>
+    /// </remarks>
+    /// <param name="apiKey">API key explícita, o <see langword="null"/> para resolución por entorno.</param>
+    /// <param name="baseUrl">URL base Anthropic-compatible, o <see langword="null"/> para el default del SDK.</param>
+    private static AnthropicClient BuildAnthropicClient(string? apiKey, string? baseUrl)
+    {
+        var hasKey     = !string.IsNullOrWhiteSpace(apiKey);
+        var hasBaseUrl = !string.IsNullOrWhiteSpace(baseUrl);
+
+        // APIKey y BaseUrl son init-only en AnthropicClient v10.4.0 (CS8852);
+        // se deben asignar en el inicializador de objeto, no después de la construcción.
+        return (hasKey, hasBaseUrl) switch
+        {
+            (true,  true)  => new AnthropicClient { APIKey = apiKey!, BaseUrl = new Uri(baseUrl!) },
+            (true,  false) => new AnthropicClient { APIKey = apiKey! },
+            (false, true)  => new AnthropicClient { BaseUrl = new Uri(baseUrl!) },
+            (false, false) => new AnthropicClient()
+        };
     }
 }
