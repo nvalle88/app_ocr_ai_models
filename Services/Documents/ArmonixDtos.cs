@@ -4,9 +4,86 @@ namespace app_ocr_ai_models.Services.Documents;
 
 // ============================================================
 // REQ-019 T22 — DTOs para la fuente documental Armonix.
-// Mapean los endpoints /api/sobres/BuscarSobre,
-// /api/sobres/BuscarDocumentos y
-// /api/sobres/BuscarDocumentosCompleto de api-armonix.
+//
+// REESCRITO (flujo probado en vivo): el sobre se resuelve por SQL
+// directo contra bdd_Salud_Consultas.dbo.Sobre y los documentos
+// escaneados se obtienen de M-Files vía el ServicioGestionDocumentos:
+//   • Buscar   → POST {base}/Objetos/Busqueda?idClase=60  [{Codigo:1095, Valor:NumeroSobre}]
+//   • Descargar→ POST {base}/Archivos/Descarga?idClase=60 [{Codigo:0,   Valor:Nombre}]
+// (el idClase 60 aplica tanto a Pruebas como a Producción, verificado).
+// ============================================================
+
+// ──────────────────────────────────────────────────────────────
+// M-Files (ServicioGestionDocumentos) — envoltura y objetos
+// ──────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Envoltura genérica de respuesta del ServicioGestionDocumentos (M-Files).
+/// <c>Estado</c> vale "OK" o "Error"; <c>Datos</c> trae el payload; <c>Mensajes</c>
+/// los errores cuando <c>Estado != "OK"</c>.
+/// </summary>
+/// <typeparam name="T">Tipo del payload en <c>Datos</c>.</typeparam>
+public sealed class MFilesEnvelope<T>
+{
+    /// <summary>Estado de la operación ("OK" | "Error").</summary>
+    [JsonPropertyName("Estado")] public string? Estado { get; init; }
+
+    /// <summary>Payload de la respuesta.</summary>
+    [JsonPropertyName("Datos")] public T? Datos { get; init; }
+
+    /// <summary>Mensajes de error cuando la operación no fue exitosa.</summary>
+    [JsonPropertyName("Mensajes")] public List<string>? Mensajes { get; init; }
+}
+
+/// <summary>Par metadato/valor que M-Files usa como criterio de búsqueda.</summary>
+public sealed class MFilesValor
+{
+    /// <summary>Código del metadato (p. ej. 1095 = Número de Sobre, 0 = nombre de archivo).</summary>
+    [JsonPropertyName("Codigo")] public int Codigo { get; init; }
+
+    /// <summary>Valor del metadato.</summary>
+    [JsonPropertyName("Valor")] public string Valor { get; init; } = string.Empty;
+}
+
+/// <summary>Objeto documental devuelto por <c>/Objetos/Busqueda</c>.</summary>
+public sealed class MFilesObjeto
+{
+    /// <summary>Nombre del objeto en M-Files (sirve como criterio de descarga, Codigo 0).</summary>
+    [JsonPropertyName("Nombre")] public string? Nombre { get; init; }
+
+    /// <summary>Clase del objeto (60 = Sobres-Reembolso-Electronico).</summary>
+    [JsonPropertyName("IdClase")] public int IdClase { get; init; }
+
+    /// <summary>Archivos físicos asociados al objeto (traen extensión y tamaño).</summary>
+    [JsonPropertyName("Archivos")] public List<MFilesArchivo>? Archivos { get; init; }
+}
+
+/// <summary>Archivo físico dentro de un <see cref="MFilesObjeto"/>.</summary>
+public sealed class MFilesArchivo
+{
+    /// <summary>Extensión del archivo (p. ej. "pdf", "jpg"), sin punto.</summary>
+    [JsonPropertyName("Extension")] public string? Extension { get; init; }
+
+    /// <summary>Nombre con extensión escapada (p. ej. "NA-2612551-....pdf").</summary>
+    [JsonPropertyName("EscapedName")] public string? EscapedName { get; init; }
+}
+
+/// <summary>Contenido devuelto por <c>/Archivos/Descarga</c> (Base64).</summary>
+public sealed class MFilesContenido
+{
+    /// <summary>Contenido binario del archivo en Base64.</summary>
+    [JsonPropertyName("Contenido")] public string? Contenido { get; init; }
+
+    /// <summary>Extensión del archivo, si M-Files la informa.</summary>
+    [JsonPropertyName("Extension")] public string? Extension { get; init; }
+
+    /// <summary>Nombre del archivo, si M-Files lo informa.</summary>
+    [JsonPropertyName("Nombre")] public string? Nombre { get; init; }
+}
+
+// ============================================================
+// DTOs legacy (endpoints /api/sobres/* de api-armonix) — conservados
+// por compatibilidad; el flujo activo usa SQL directo + M-Files.
 // ============================================================
 
 /// <summary>

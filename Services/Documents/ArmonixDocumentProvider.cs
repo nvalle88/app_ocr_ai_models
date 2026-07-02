@@ -1,36 +1,44 @@
-using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using app_ocr_ai_models.Data;
 using app_tramites.Models.ModelAi;
 using app_tramites.Models.ViewModel;
 using app_tramites.Services.Ai.Tools;
+using Microsoft.Data.SqlClient;
 
 namespace app_ocr_ai_models.Services.Documents;
 
 // ============================================================
-// REQ-019 T22 — Proveedor documental Armonix (NUEVO).
-// Llama a /sobres/BuscarDocumentos (listar) y
-// /sobres/BuscarDocumentosCompleto (descargar base64).
-// La baseUrl (Saludsa:BaseUrls:ApiArmonix) YA incluye /api; no se duplica.
-// Auth vía ISaludsaTokenProvider (OAuth2, patrón T5).
-// LIVE gated por B1/B2 (egress + OAuth2 a api-armonix).
+// REQ-019 T22 — Proveedor documental Armonix (REESCRITO al flujo real y PROBADO).
+//
+// Antes llamaba a endpoints /api/sobres/* de api-armonix apuntando a un
+// ambiente donde el sobre no existía → "no busca en nada".
+//
+// Flujo correcto (validado en vivo con el sobre NA-2612551):
+//   1) Sobre         → SQL directo a bdd_Salud_Consultas.dbo.Sobre (por NumeroSobre).
+//   2) Documentos    → M-Files (ServicioGestionDocumentos):
+//        buscar    POST {base}/Objetos/Busqueda?idClase=60  body [{Codigo:1095, Valor:NumeroSobre}]
+//        descargar POST {base}/Archivos/Descarga?idClase=60 body [{Codigo:0,   Valor:Nombre}]
+//   Auth vía ISaludsaTokenProvider (OAuth2 password grant + cabeceras Saludsa).
+//
+// Config:
+//   ConnectionStrings:SaludConsultas         → cadena a bdd_Salud_Consultas (salud37 pruebas / salud34 prod)
+//   Saludsa:BaseUrls:GestionDocumentos       → base del ServicioGestionDocumentos (incluye /api)
+//   Saludsa:MFiles:IdClaseDocumentos         → idClase de búsqueda (default 60)
 // ============================================================
 
 /// <summary>
-/// Implementación de <see cref="IDocumentSourceProvider"/> que obtiene los documentos
-/// del sobre desde la API de Armonix (MFiles).
-/// Usa <see cref="ISaludsaTokenProvider"/> para la autenticación OAuth2 y
-/// <see cref="IOcrIngestService"/> para Blob + OCR.
+/// Implementación de <see cref="IDocumentSourceProvider"/> que resuelve el sobre
+/// consultando directamente <c>bdd_Salud_Consultas.dbo.Sobre</c> y obtiene sus
+/// documentos escaneados desde M-Files (ServicioGestionDocumentos).
 /// </summary>
-/// <remarks>
-/// La <c>baseUrl</c> de api-armonix se lee de la configuración
-/// (clave <c>Saludsa:BaseUrls:ApiArmonix</c>). Si no está configurada, falla
-/// en runtime con mensaje claro (B1/T0a). No hay tráfico de red si la clave
-/// está ausente.
-/// </remarks>
 public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
 {
+    // Códigos de metadato M-Files (de MFilesConstants de api-armonix)
+    private const int CODIGO_NUMERO_SOBRE   = 1095; // filtro de búsqueda por sobre
+    private const int CODIGO_BUSQUEDA_ARCHIVO = 0;   // filtro de descarga por nombre de archivo
+    private const int DEFAULT_ID_CLASE_DOCS = 60;    // clase "Sobres-Reembolso-Electronico" (pruebas y prod)
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ISaludsaTokenProvider _tokenProvider;
     private readonly IOcrIngestService _ingest;
@@ -40,14 +48,7 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
     private static readonly JsonSerializerOptions JsonOptions =
         new() { PropertyNameCaseInsensitive = true };
 
-    /// <summary>
-    /// Inicializa el proveedor con las dependencias necesarias.
-    /// </summary>
-    /// <param name="httpClientFactory">Factory de HttpClient para llamadas a Armonix.</param>
-    /// <param name="tokenProvider">Proveedor de token OAuth2 Saludsa (B2).</param>
-    /// <param name="ingest">Servicio de ingesta OCR/Blob (T2).</param>
-    /// <param name="config">Configuración de la aplicación (resolución de baseUrl B1).</param>
-    /// <param name="logger">Logger de la aplicación.</param>
+    /// <summary>Inicializa el proveedor con sus dependencias.</summary>
     public ArmonixDocumentProvider(
         IHttpClientFactory httpClientFactory,
         ISaludsaTokenProvider tokenProvider,
@@ -62,49 +63,102 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
         _logger            = logger            ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    // ── BuscarSobres — SQL directo a bdd_Salud_Consultas ──────────────────
+
+    /// <summary>
+    /// Resuelve el/los sobre(s) consultando <c>bdd_Salud_Consultas.dbo.Sobre</c>.
+    /// La búsqueda por número de sobre es exacta; devuelve los identificadores
+    /// de contrato para la trazabilidad (M-Files solo requiere el número de sobre).
+    /// </summary>
+    /// <param name="numeroSobre">Número del sobre (p. ej. "NA-2612551").</param>
+    /// <param name="cedula">Cédula del afiliado (pendiente: por ahora se busca por número de sobre).</param>
+    /// <param name="ct">Token de cancelación.</param>
+    public async Task<IReadOnlyList<ArmonixSobreResueltoDto>> BuscarSobresAsync(
+        string? numeroSobre,
+        string? cedula,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(numeroSobre) && string.IsNullOrWhiteSpace(cedula))
+            throw new ArgumentException("Debe informar al menos el número de sobre o la cédula.", nameof(numeroSobre));
+
+        // La búsqueda por cédula requiere resolver persona→contrato→sobres en la BD
+        // Progress (fuera de bdd_Salud_Consultas). Se implementará en una iteración
+        // posterior; por ahora se guía al operador a usar el número de sobre.
+        if (string.IsNullOrWhiteSpace(numeroSobre))
+            throw new ArgumentException(
+                "La búsqueda por cédula estará disponible próximamente. " +
+                "Por ahora ingrese el número de sobre (p. ej. NA-2612551).");
+
+        var connStr = ResolveSaludConsultasConnectionString();
+        var sobre   = numeroSobre.Trim();
+
+        var resultados = new List<ArmonixSobreResueltoDto>();
+
+        const string sql = @"
+            SELECT TOP 20
+                   s.IdSobre, s.NumeroSobre, s.IdEstadoSobre, s.NumeroContrato,
+                   s.CodigoRegion, s.CodigoProducto, s.ValorPresentado,
+                   s.PersonaContacto, s.FechaRecepcion
+            FROM   dbo.Sobre s WITH (NOLOCK)
+            WHERE  s.NumeroSobre = @numeroSobre
+            ORDER BY s.IdSobre DESC;";
+
+        await using var conn = new SqlConnection(connStr);
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.Add(new SqlParameter("@numeroSobre", System.Data.SqlDbType.VarChar, 50) { Value = sobre });
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            var numContrato   = reader["NumeroContrato"]  == DBNull.Value ? (int?)null : Convert.ToInt32(reader["NumeroContrato"]);
+            var idEstado      = reader["IdEstadoSobre"]   == DBNull.Value ? 0          : Convert.ToInt32(reader["IdEstadoSobre"]);
+            var fechaRecep    = reader["FechaRecepcion"]  == DBNull.Value ? (DateTime?)null : Convert.ToDateTime(reader["FechaRecepcion"]);
+            var valor         = reader["ValorPresentado"] == DBNull.Value ? 0m         : Convert.ToDecimal(reader["ValorPresentado"]);
+
+            resultados.Add(new ArmonixSobreResueltoDto
+            {
+                NumeroSobre           = reader["NumeroSobre"]?.ToString()    ?? sobre,
+                CodigoRegion          = reader["CodigoRegion"]?.ToString()   ?? string.Empty,
+                CodigoProducto        = reader["CodigoProducto"]?.ToString() ?? string.Empty,
+                NumeroContrato        = numContrato?.ToString()             ?? string.Empty,
+                NumeroPersonaPaciente = string.Empty, // M-Files no lo requiere para el filtro por sobre
+                NombreTitular         = reader["PersonaContacto"]?.ToString() ?? string.Empty,
+                EstadoSobre           = $"Estado {idEstado} · ${valor:N2}",
+                FechaRecepcion        = fechaRecep
+            });
+        }
+
+        return resultados;
+    }
+
+    // ── ListarDocumentos — M-Files /Objetos/Busqueda ──────────────────────
+
     /// <inheritdoc />
     /// <remarks>
-    /// Llama a <c>POST /sobres/BuscarDocumentos</c> de api-armonix
-    /// (la baseUrl ya incluye <c>/api</c>),
-    /// que devuelve <c>List&lt;string&gt;</c> con los nombres/IDs de los documentos en MFiles.
-    /// Requiere todos los campos del <paramref name="filter"/> (CodigoProducto,
-    /// CodigoRegion, NumeroContrato, NumeroSobre, NumeroPersonaPaciente).
+    /// Busca en M-Files los objetos del sobre (idClase=60, filtrando SOLO por
+    /// número de sobre — agregar región/producto/contrato hace fallar la búsqueda)
+    /// y devuelve los nombres de los documentos, sin descargar el binario.
     /// </remarks>
     public async Task<IReadOnlyList<string>> ListarDocumentosAsync(
         SobreDocumentosFilter filter,
         CancellationToken ct = default)
     {
-        ValidarIdentificadores(filter);
-
-        var baseUrl = ResolveBaseUrl();
-        var authHeaders = await _tokenProvider.GetAuthHeadersAsync(ct).ConfigureAwait(false);
-        var requestBody = BuildRequest(filter);
-
-        using var http = _httpClientFactory.CreateClient("SaludsaInternalApi");
-        using var msg = BuildHttpMessage(baseUrl, "/sobres/BuscarDocumentos", requestBody);
-
-        foreach (var (name, value) in authHeaders)
-            msg.Headers.TryAddWithoutValidation(name, value);
-
-        using var response = await http.SendAsync(msg, ct).ConfigureAwait(false);
-        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException(
-                $"[T22] Armonix BuscarDocumentos respondió {(int)response.StatusCode}: {body}",
-                null, response.StatusCode);
-
-        var lista = JsonSerializer.Deserialize<List<string>>(body, JsonOptions);
-        return (IReadOnlyList<string>?)lista ?? Array.Empty<string>();
+        ValidarNumeroSobre(filter);
+        var objetos = await BuscarObjetosMFilesAsync(filter.NumeroSobre.Trim(), ct).ConfigureAwait(false);
+        return objetos
+            .Select(o => o.Nombre ?? string.Empty)
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .ToList();
     }
+
+    // ── ImportarDocumentos — M-Files /Archivos/Descarga → OCR → DataFile ──
 
     /// <inheritdoc />
     /// <remarks>
-    /// Llama a <c>POST /sobres/BuscarDocumentosCompleto</c> de api-armonix
-    /// (la baseUrl ya incluye <c>/api</c>),
-    /// que devuelve <c>List&lt;RespuestaMFileShift&gt;</c> con el contenido binario
-    /// en Base64. Decodifica el Base64, ejecuta OCR con <see cref="IOcrIngestService"/>
-    /// y crea cada <see cref="DataFile"/> en el <paramref name="caso"/>.
+    /// Descarga cada documento del sobre desde M-Files (Base64), ejecuta OCR con
+    /// <see cref="IOcrIngestService"/> y crea los <see cref="DataFile"/> en el caso.
     /// </remarks>
     public async Task<ImportarDocumentosResult> ImportarDocumentosAsync(
         SobreDocumentosFilter filter,
@@ -112,81 +166,59 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
         OCRDbContext db,
         CancellationToken ct = default)
     {
-        ValidarIdentificadores(filter);
+        ValidarNumeroSobre(filter);
+        var numeroSobre = filter.NumeroSobre.Trim();
 
-        var baseUrl = ResolveBaseUrl();
-        var authHeaders = await _tokenProvider.GetAuthHeadersAsync(ct).ConfigureAwait(false);
-        var requestBody = BuildRequest(filter);
+        // 1) Listar objetos (nombre + extensión) del sobre en M-Files
+        var objetos = await BuscarObjetosMFilesAsync(numeroSobre, ct).ConfigureAwait(false);
 
-        // ── 1. Llamar a Armonix para obtener los documentos con contenido base64
-        List<ArmonixDocumentoDto> documentos;
-        try
-        {
-            using var http = _httpClientFactory.CreateClient("SaludsaInternalApi");
-            using var msg = BuildHttpMessage(baseUrl, "/sobres/BuscarDocumentosCompleto", requestBody);
-            foreach (var (name, value) in authHeaders)
-                msg.Headers.TryAddWithoutValidation(name, value);
-
-            using var response = await http.SendAsync(msg, ct).ConfigureAwait(false);
-            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-
-            if (!response.IsSuccessStatusCode)
-                throw new HttpRequestException(
-                    $"[T22] Armonix BuscarDocumentosCompleto respondió {(int)response.StatusCode}: {body}",
-                    null, response.StatusCode);
-
-            documentos = JsonSerializer.Deserialize<List<ArmonixDocumentoDto>>(body, JsonOptions)
-                ?? new List<ArmonixDocumentoDto>();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[T22] Error al llamar a Armonix BuscarDocumentosCompleto para sobre {NumeroSobre}.", filter.NumeroSobre);
-            throw;
-        }
-
-        // ── 2. Para cada documento: decodificar base64 → OCR → DataFile
         var dataFileIds  = new List<int>();
         var advertencias = new List<string>();
 
-        foreach (var doc in documentos)
+        if (objetos.Count == 0)
+            advertencias.Add($"No se encontraron documentos en M-Files para el sobre '{numeroSobre}'.");
+
+        // 2) Descargar → OCR → DataFile por cada documento
+        foreach (var obj in objetos)
         {
+            var nombre = obj.Nombre;
+            if (string.IsNullOrWhiteSpace(nombre))
+                continue;
+
             try
             {
-                if (string.IsNullOrWhiteSpace(doc.Contenido))
+                var extension = NormalizarExtension(obj.Archivos?.FirstOrDefault()?.Extension);
+
+                var contenidoB64 = await DescargarDocumentoMFilesAsync(nombre, ct).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(contenidoB64))
                 {
-                    advertencias.Add($"El documento '{doc.Nombre}' llegó sin contenido (Contenido vacío).");
+                    advertencias.Add($"El documento '{nombre}' llegó sin contenido desde M-Files.");
                     continue;
                 }
 
-                var extension = NormalizarExtension(doc.Extension);
-                var fileName  = string.IsNullOrWhiteSpace(doc.Nombre)
-                    ? $"documento{extension}"
-                    : doc.Nombre.Contains('.') ? doc.Nombre : doc.Nombre + extension;
+                var fileName = nombre.Contains('.') ? nombre : nombre + extension;
 
                 string fileUrl;
                 string ocrText;
-
                 try
                 {
                     var ocrFile = new OcrFile
                     {
                         FileName  = fileName,
-                        Content   = doc.Contenido,
+                        Content   = contenidoB64,
                         Extension = extension
                     };
-
                     (fileUrl, ocrText) = await _ingest.ProcessFileAsync(ocrFile).ConfigureAwait(false);
                 }
                 catch (Exception ocrEx)
                 {
-                    _logger.LogWarning(ocrEx, "[T22] OCR falló para documento Armonix {NombreDoc}; se sube solo el blob.", doc.Nombre);
-                    advertencias.Add($"OCR no disponible para '{doc.Nombre}': {ocrEx.Message}");
+                    _logger.LogWarning(ocrEx, "[T22] OCR falló para documento M-Files {NombreDoc}; se sube solo el blob.", nombre);
+                    advertencias.Add($"OCR no disponible para '{nombre}': {ocrEx.Message}");
 
-                    // Fallback: subir el stream sin OCR
-                    var bytes = Convert.FromBase64String(doc.Contenido);
+                    var bytes = Convert.FromBase64String(contenidoB64);
                     using var ms = new MemoryStream(bytes);
-                    fileUrl  = await _ingest.UploadFileAsync(ms, extension).ConfigureAwait(false);
-                    ocrText  = string.Empty;
+                    fileUrl = await _ingest.UploadFileAsync(ms, extension).ConfigureAwait(false);
+                    ocrText = string.Empty;
                 }
 
                 var dataFile = new DataFile
@@ -204,8 +236,8 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[T22] Error al procesar documento Armonix {NombreDoc}.", doc.Nombre);
-                advertencias.Add($"No se pudo procesar '{doc.Nombre}': {ex.Message}");
+                _logger.LogWarning(ex, "[T22] Error al procesar documento M-Files {NombreDoc}.", nombre);
+                advertencias.Add($"No se pudo procesar '{nombre}': {ex.Message}");
             }
         }
 
@@ -216,44 +248,69 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
         };
     }
 
-    // ── BuscarSobres (T22 RW — auto-resolución) ──────────────────────────
+    // ── Helpers M-Files ───────────────────────────────────────────────────
 
     /// <summary>
-    /// Llama a <c>POST /sobres/BuscarSobre</c> de api-armonix
-    /// (la baseUrl ya incluye <c>/api</c>) y devuelve
-    /// la lista de sobres con sus identificadores ya resueltos.
-    /// El operador solo necesita proveer <paramref name="numeroSobre"/> o
-    /// <paramref name="cedula"/> (al menos uno).
+    /// Llama a <c>POST {base}/Objetos/Busqueda?idClase={idClase}</c> filtrando SOLO por
+    /// número de sobre (Codigo 1095). Devuelve los objetos documentales encontrados.
     /// </summary>
-    /// <param name="numeroSobre">Número del sobre (opcional si se informa la cédula).</param>
-    /// <param name="cedula">Cédula del afiliado/paciente (opcional si se informa el número de sobre).</param>
-    /// <param name="ct">Token de cancelación.</param>
-    /// <returns>Lista de sobres resueltos con CodigoRegion, CodigoProducto, NumeroContrato y NumeroPersonaPaciente.</returns>
-    public async Task<IReadOnlyList<ArmonixSobreResueltoDto>> BuscarSobresAsync(
-        string? numeroSobre,
-        string? cedula,
-        CancellationToken ct = default)
+    private async Task<List<MFilesObjeto>> BuscarObjetosMFilesAsync(string numeroSobre, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(numeroSobre) && string.IsNullOrWhiteSpace(cedula))
-            throw new ArgumentException("Debe informar al menos el número de sobre o la cédula.", nameof(numeroSobre));
+        var (baseUrl, idClase) = ResolveMFilesConfig();
+        var criterios = new[]
+        {
+            new MFilesValor { Codigo = CODIGO_NUMERO_SOBRE, Valor = numeroSobre }
+        };
 
-        var baseUrl = ResolveBaseUrl();
+        var envelope = await PostMFilesAsync<List<MFilesObjeto>>(
+            $"{baseUrl}/Objetos/Busqueda?idClase={idClase}", criterios, ct).ConfigureAwait(false);
+
+        if (!EsOk(envelope))
+        {
+            // "No existen resultados de búsqueda" es un caso normal (0 documentos), no un error fatal.
+            _logger.LogInformation("[T22] M-Files Busqueda sobre {Sobre}: {Mensaje}",
+                numeroSobre, DescribirMensajes(envelope));
+            return new List<MFilesObjeto>();
+        }
+
+        return envelope!.Datos ?? new List<MFilesObjeto>();
+    }
+
+    /// <summary>
+    /// Llama a <c>POST {base}/Archivos/Descarga?idClase={idClase}</c> con el nombre del
+    /// archivo (Codigo 0) y devuelve el contenido en Base64.
+    /// </summary>
+    private async Task<string?> DescargarDocumentoMFilesAsync(string nombreArchivo, CancellationToken ct)
+    {
+        var (baseUrl, idClase) = ResolveMFilesConfig();
+        var criterios = new[]
+        {
+            new MFilesValor { Codigo = CODIGO_BUSQUEDA_ARCHIVO, Valor = nombreArchivo }
+        };
+
+        var envelope = await PostMFilesAsync<MFilesContenido>(
+            $"{baseUrl}/Archivos/Descarga?idClase={idClase}", criterios, ct).ConfigureAwait(false);
+
+        if (!EsOk(envelope))
+            throw new HttpRequestException($"[T22] M-Files Descarga de '{nombreArchivo}' falló: {DescribirMensajes(envelope)}");
+
+        return envelope!.Datos?.Contenido;
+    }
+
+    /// <summary>
+    /// POST genérico al ServicioGestionDocumentos con las cabeceras de autenticación Saludsa
+    /// y el cuerpo JSON de criterios. Deserializa la envoltura <see cref="MFilesEnvelope{T}"/>.
+    /// </summary>
+    private async Task<MFilesEnvelope<T>?> PostMFilesAsync<T>(
+        string url, IReadOnlyList<MFilesValor> criterios, CancellationToken ct)
+    {
         var authHeaders = await _tokenProvider.GetAuthHeadersAsync(ct).ConfigureAwait(false);
 
-        var requestBody = new ArmonixBuscarSobreRequest
-        {
-            NumeroSobre  = string.IsNullOrWhiteSpace(numeroSobre) ? null : numeroSobre.Trim(),
-            NumeroCedula = string.IsNullOrWhiteSpace(cedula)      ? null : cedula.Trim()
-        };
-
-        var json    = System.Text.Json.JsonSerializer.Serialize(requestBody);
-        var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        var json    = JsonSerializer.Serialize(criterios);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         using var http = _httpClientFactory.CreateClient("SaludsaInternalApi");
-        using var msg  = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, baseUrl + "/sobres/BuscarSobre")
-        {
-            Content = content
-        };
+        using var msg  = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
         foreach (var (name, value) in authHeaders)
             msg.Headers.TryAddWithoutValidation(name, value);
 
@@ -261,101 +318,59 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
-            throw new System.Net.Http.HttpRequestException(
-                $"[T22 RW] Armonix BuscarSobre respondió {(int)response.StatusCode}: {body}",
+            throw new HttpRequestException(
+                $"[T22] ServicioGestionDocumentos respondió {(int)response.StatusCode} en {url}: {body}",
                 null, response.StatusCode);
 
-        var respuesta = System.Text.Json.JsonSerializer.Deserialize<
-            ArmonixRespuestaGenerica<ArmonixRespuestaPaginada<ArmonixSobreEntityDto>>>(body, JsonOptions);
-
-        var lista = respuesta?.Datos?.Lista;
-        if (lista is null || lista.Count == 0)
-            return Array.Empty<ArmonixSobreResueltoDto>();
-
-        return lista.Select(s => new ArmonixSobreResueltoDto
-        {
-            NumeroSobre          = s.NumeroSobre             ?? string.Empty,
-            CodigoRegion         = s.CodigoRegion            ?? string.Empty,
-            CodigoProducto       = s.CodigoProducto          ?? string.Empty,
-            NumeroContrato       = s.NumeroContrato?.ToString() ?? string.Empty,
-            NumeroPersonaPaciente = s.NumeroPersonaPaciente.ToString(),
-            NombreTitular        = s.NombresTitular          ?? string.Empty,
-            EstadoSobre          = s.NombreEstadoSobre       ?? string.Empty,
-            FechaRecepcion       = s.FechaRecepcion
-        }).ToList();
+        return JsonSerializer.Deserialize<MFilesEnvelope<T>>(body, JsonOptions);
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────
+    private static bool EsOk<T>(MFilesEnvelope<T>? e) =>
+        e != null && string.Equals(e.Estado, "OK", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Resuelve la baseUrl de api-armonix desde la configuración.
-    /// Falla con <see cref="InvalidOperationException"/> si no está configurada (B1/T0a).
-    /// </summary>
-    private string ResolveBaseUrl()
+    private static string DescribirMensajes<T>(MFilesEnvelope<T>? e) =>
+        e?.Mensajes is { Count: > 0 } m ? string.Join("; ", m) : (e?.Estado ?? "sin respuesta");
+
+    // ── Helpers de configuración / validación ─────────────────────────────
+
+    /// <summary>Resuelve la cadena de conexión a bdd_Salud_Consultas (B1).</summary>
+    private string ResolveSaludConsultasConnectionString()
     {
-        const string configKey = "Saludsa:BaseUrls:ApiArmonix";
-        var url = _config[configKey];
-        if (string.IsNullOrWhiteSpace(url))
+        var connStr = _config.GetConnectionString("SaludConsultas");
+        if (string.IsNullOrWhiteSpace(connStr))
             throw new InvalidOperationException(
-                $"[T22 B1] La baseUrl de api-armonix no está configurada. " +
-                $"Configure '{configKey}' en appsettings / Key Vault (B1/T0a).");
-
-        return url.TrimEnd('/');
+                "[T22 B1] La cadena de conexión 'ConnectionStrings:SaludConsultas' no está configurada " +
+                "(bdd_Salud_Consultas). Configúrela en appsettings / Key Vault.");
+        return connStr;
     }
 
-    private static ArmonixSobreRequest BuildRequest(SobreDocumentosFilter filter) =>
-        new()
-        {
-            CodigoProducto      = filter.CodigoProducto      ?? string.Empty,
-            CodigoRegion        = filter.CodigoRegion        ?? string.Empty,
-            NumeroContrato      = filter.NumeroContrato      ?? string.Empty,
-            NumeroSobre         = filter.NumeroSobre,
-            NumeroPersonaPaciente = filter.NumeroPersonaPaciente ?? string.Empty
-        };
-
-    private static HttpRequestMessage BuildHttpMessage(
-        string baseUrl,
-        string path,
-        ArmonixSobreRequest body)
+    /// <summary>Resuelve la base del ServicioGestionDocumentos (M-Files) y el idClase (B1).</summary>
+    private (string BaseUrl, int IdClase) ResolveMFilesConfig()
     {
-        var json    = JsonSerializer.Serialize(body);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-        return new HttpRequestMessage(HttpMethod.Post, baseUrl + path)
-        {
-            Content = content
-        };
+        const string configKey = "Saludsa:BaseUrls:GestionDocumentos";
+        var baseUrl = _config[configKey];
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            throw new InvalidOperationException(
+                $"[T22 B1] La base del ServicioGestionDocumentos no está configurada. " +
+                $"Configure '{configKey}' en appsettings / Key Vault.");
+
+        var idClase = int.TryParse(_config["Saludsa:MFiles:IdClaseDocumentos"], out var v) && v > 0
+            ? v
+            : DEFAULT_ID_CLASE_DOCS;
+
+        return (baseUrl.TrimEnd('/'), idClase);
     }
 
-    /// <summary>
-    /// Valida que el filtro tenga todos los campos requeridos por Armonix.
-    /// Si el usuario solo tiene cédula debe resolver primero el contrato
-    /// con la tool <c>resolver_contrato_por_cedula</c>.
-    /// </summary>
-    private static void ValidarIdentificadores(SobreDocumentosFilter filter)
+    private static void ValidarNumeroSobre(SobreDocumentosFilter filter)
     {
         if (string.IsNullOrWhiteSpace(filter.NumeroSobre))
-            throw new ArgumentException("NumeroSobre es obligatorio para Armonix.", nameof(filter));
-
-        // Armonix requiere los cuatro identificadores de contrato.
-        // Si faltan, el operador debe resolver primero el contrato.
-        if (string.IsNullOrWhiteSpace(filter.NumeroContrato)
-            || string.IsNullOrWhiteSpace(filter.CodigoProducto)
-            || string.IsNullOrWhiteSpace(filter.CodigoRegion)
-            || string.IsNullOrWhiteSpace(filter.NumeroPersonaPaciente))
-        {
-            throw new ArgumentException(
-                "Armonix requiere NumeroContrato, CodigoProducto, CodigoRegion y NumeroPersonaPaciente. " +
-                "Si solo dispone de la cédula, resuelva el contrato primero " +
-                "con la tool 'resolver_contrato_por_cedula'.",
-                nameof(filter));
-        }
+            throw new ArgumentException("NumeroSobre es obligatorio para consultar M-Files.", nameof(filter));
     }
 
-    private static string NormalizarExtension(string extension)
+    private static string NormalizarExtension(string? extension)
     {
         if (string.IsNullOrWhiteSpace(extension))
-            return ".bin";
-
+            return ".pdf"; // los sobres de reembolso electrónico son PDF
         var ext = extension.Trim().TrimStart('.');
         return "." + ext.ToLowerInvariant();
     }
