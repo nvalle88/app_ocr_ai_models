@@ -89,11 +89,27 @@ namespace SmartAdmin.Web.Controllers
                 var ex = await _db.Agent.FindAsync(dto.Code);
                 if (ex == null)
                 {
+                    // Un agente nuevo nacia SIN ModelId, MaxTokens ni ToolChoice, y
+                    // asi no puede atender una sola peticion: ClaudeCompletionService
+                    // necesita MaxTokens y el modelo. La pantalla no ofrece esos
+                    // campos, asi que se heredan de otro agente de la misma
+                    // configuracion; si no hay ninguno, valores de arranque
+                    // razonables. Mejor un agente que funcione y se ajuste que uno
+                    // que se guarda bien y falla al primer uso.
+                    var hermano = await _db.Agent
+                        .Where(a => a.ConfigCode == dto.ConfigCode && a.ModelId != null)
+                        .OrderByDescending(a => a.ModifiedDate)
+                        .FirstOrDefaultAsync();
+
                     _db.Agent.Add(new Agent
                     {
                         Code = dto.Code, Name = dto.Name, ConfigCode = dto.ConfigCode,
                         VersionNumber = dto.VersionNumber, Description = dto.Description,
-                        IsActive = dto.IsActive, CreatedDate = DateTime.Now, ModifiedDate = DateTime.Now
+                        IsActive = dto.IsActive, CreatedDate = DateTime.Now, ModifiedDate = DateTime.Now,
+                        ModelId      = hermano?.ModelId,
+                        MaxTokens    = hermano?.MaxTokens ?? 4000,
+                        ThinkingMode = "off",
+                        ToolChoice   = "auto"
                     });
                 }
                 else
@@ -199,7 +215,8 @@ namespace SmartAdmin.Web.Controllers
             catch (Exception e) { return Json(new { Estado = "Error", Mensaje = e.Message }); }
         }
 
-        [HttpGet]
+        // POST por la misma razon que el de usuarios: borra.
+        [HttpPost, IgnoreAntiforgeryToken]
         public async Task<IActionResult> DeleteMantPolitica(string code)
         {
             try
@@ -261,13 +278,30 @@ namespace SmartAdmin.Web.Controllers
             catch (Exception e) { return Json(new { Estado = "Error", Mensaje = e.Message }); }
         }
 
-        [HttpGet]
+        // POST, no GET: borra. Una accion destructiva detras de un GET se dispara
+        // con un prefetch del navegador, un acelerador de enlaces o alguien que
+        // pega la URL en la barra.
+        [HttpPost, IgnoreAntiforgeryToken]
         public async Task<IActionResult> DeleteMantUsuario(string id)
         {
             try
             {
                 var user = await _userManager.FindByIdAsync(id);
-                if (user != null) await _userManager.DeleteAsync(user);
+                if (user == null) return Json(new { Estado = "Error", Mensaje = "El usuario ya no existe." });
+
+                // Primero sus politicas: dejarlas colgando de un usuario borrado
+                // ensucia PolicyUsers y puede impedir el propio borrado por FK.
+                _db.PolicyUsers.RemoveRange(await _db.PolicyUsers.Where(x => x.UserId == id).ToListAsync());
+                await _db.SaveChangesAsync();
+
+                // Y NO se ignora el resultado: antes se llamaba a DeleteAsync sin
+                // mirarlo y se devolvia OK pasara lo que pasara. La pantalla decia
+                // "borrado" y el usuario seguia ahi.
+                var r = await _userManager.DeleteAsync(user);
+                if (!r.Succeeded)
+                    return Json(new { Estado = "Error",
+                                      Mensaje = string.Join(", ", r.Errors.Select(e => e.Description)) });
+
                 return Json(new { Estado = "OK" });
             }
             catch (Exception e) { return Json(new { Estado = "Error", Mensaje = e.Message }); }

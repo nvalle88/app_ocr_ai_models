@@ -681,17 +681,41 @@
 
 @section Scripts {
 @{ await Html.RenderPartialAsync("_BootboxPartial"); }
-@{ await Html.RenderPartialAsync("_DateTablePartial"); }
+
+@* NO se incluye _DateTablePartial: son 246 lineas de demo de SmartAdmin que
+   inicializan una tabla (#datatable_fixed_column) que no existe en esta
+   pantalla, y que cargan DataTables con loadScript(), o sea con etiquetas
+   <script async> encadenadas. Ese async es el que rompia el mantenedor: el
+   bloque de abajo corre en DOM ready, antes de que la cascada termine, y
+   $(el).DataTable(...) lanzaba "is not a function". La excepcion aborta el
+   resto del $(function(){...}) -donde viven la navegacion del sidebar y el
+   enganche de los botones-, y por eso media pantalla no respondia.
+
+   Se carga aqui, sincrono y antes del codigo que lo usa. *@
+<script src="~/js/plugin/datatables/jquery.dataTables.min.js"></script>
+<script src="~/js/plugin/datatables/dataTables.bootstrap.min.js"></script>
 <script>
 // ── Estado en memoria para prompts del agente ──────────────────────────────
 var agPrompts = [];
 
 // ── Navegación sidebar ─────────────────────────────────────────────────────
 $(function () {
-    ['configai','agentes','prompts','procesos','politicas','usuarios','azureblob'].forEach(function(id) {
-        var el = document.getElementById('dt-' + id);
-        if (el) $(el).DataTable({ pageLength:15, dom:'<"row"<"col-sm-6"l><"col-sm-6"f>>tp', language:{ url:'' } });
-    });
+    // Cinturon: aunque el plugin falte o falle, la pantalla tiene que seguir
+    // funcionando. Las tablas ya vienen pintadas desde el servidor; DataTables
+    // solo añade paginado y buscador. Que un adorno pueda dejar sin navegacion
+    // ni botones a todo el mantenedor es justo lo que paso.
+    try {
+        if ($.fn.DataTable) {
+            ['configai','agentes','prompts','procesos','politicas','usuarios','azureblob'].forEach(function(id) {
+                var el = document.getElementById('dt-' + id);
+                if (el) $(el).DataTable({ pageLength:15, dom:'<"row"<"col-sm-6"l><"col-sm-6"f>>tp', language:{ url:'' } });
+            });
+        } else {
+            console.warn('[Mantenedores] DataTables no esta cargado: las tablas van sin paginado.');
+        }
+    } catch (e) {
+        console.warn('[Mantenedores] DataTables fallo; la pantalla sigue operativa.', e);
+    }
 
     var hash = window.location.hash.replace('#','');
     if (hash) activatePanel(hash);
@@ -862,7 +886,7 @@ function cfgDeletePolitica(code, el) {
         buttons:{ cancel:{ label:'Cancelar' }, confirm:{ label:'Eliminar', className:'btn-danger' } },
         callback: function(ok) {
             if (!ok) return;
-            $.get('/Mantenedores/DeleteMantPolitica?code=' + encodeURIComponent(code), function(r) {
+            $.post('/Mantenedores/DeleteMantPolitica', { code: code }, function(r) {
                 if (r.Estado === 'OK') $(el).closest('tr').fadeOut(300, function(){ $(this).remove(); });
                 else mostrarNotificacion('Error', r.Mensaje);
             });
@@ -874,7 +898,7 @@ function cfgDeleteUsuario(id, el) {
         buttons:{ cancel:{ label:'Cancelar' }, confirm:{ label:'Eliminar', className:'btn-danger' } },
         callback: function(ok) {
             if (!ok) return;
-            $.get('/Mantenedores/DeleteMantUsuario?id=' + encodeURIComponent(id), function(r) {
+            $.post('/Mantenedores/DeleteMantUsuario', { id: id }, function(r) {
                 if (r.Estado === 'OK') $(el).closest('tr').fadeOut(300, function(){ $(this).remove(); });
                 else mostrarNotificacion('Error', r.Mensaje);
             });
