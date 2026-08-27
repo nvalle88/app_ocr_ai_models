@@ -2,8 +2,10 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using app_ocr_ai_models.Data;
 using app_tramites.Models.ModelAi;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
@@ -53,6 +55,39 @@ public sealed class InternalApiToolExecutor : IToolExecutor
     /// <param name="authGuard">Guardián anti-IDOR (D4).</param>
     /// <param name="config">Configuración de la aplicación (resolución de baseUrl).</param>
     /// <param name="logger">Logger.</param>
+    // ── Memoria de los servidores que no contestan ──────────────────────
+    //
+    // Medido en el caso 598ec576: OCHO llamadas a tools SQL fallaron con
+    // "A network-related or instance-specific error occurred", y CADA UNA tardo
+    // ~30 segundos —el Connect Timeout de la cadena— antes de rendirse. Cuatro
+    // minutos de espera muerta en un solo caso, sin un solo dato a cambio. Y
+    // encima repetidas: historial_reembolsos_cliente_bd lo intento 3 veces y
+    // resolver_convenio_por_ruc 2, siempre contra la misma maquina inalcanzable.
+    //
+    // Que un host este caido es una propiedad del HOST, no de la consulta. Se
+    // recuerda un rato corto: lo justo para no repetir el castigo dentro de la
+    // misma resolucion, y lo bastante poco para que en cuanto vuelva la VPN se
+    // reintente solo. No se cachea NADA de datos: solo el hecho de que no
+    // contesta.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>
+        _noContesta = new(StringComparer.OrdinalIgnoreCase);
+
+    private const int SegundosRecordandoElHostCaido = 60;
+
+    /// <summary>Si ese destino se dio por caido hace poco, no se vuelve a intentar todavia.</summary>
+    private static bool SigueCaido(string clave)
+    {
+        if (!_noContesta.TryGetValue(clave, out var hasta)) return false;
+        if (DateTime.UtcNow < hasta) return true;
+
+        // Ya cumplio: se olvida y se le da otra oportunidad.
+        _noContesta.TryRemove(clave, out _);
+        return false;
+    }
+
+    private static void ApuntarCaido(string clave) =>
+        _noContesta[clave] = DateTime.UtcNow.AddSeconds(SegundosRecordandoElHostCaido);
+
     public InternalApiToolExecutor(
         OCRDbContext db,
         IHttpClientFactory httpClientFactory,
@@ -132,23 +167,32 @@ public sealed class InternalApiToolExecutor : IToolExecutor
                 "MCP-ready: se integrará cuando exista el servidor MCP Saludsa.");
         }
 
-        // InternalApi y Armonix comparten el mismo executor HTTP
-        if (!string.Equals(tool.BindingType, "InternalApi", StringComparison.OrdinalIgnoreCase)
+        // InternalApi y Armonix comparten el mismo executor HTTP; Sql va a BD directa.
+        var esSql = string.Equals(tool.BindingType, "Sql", StringComparison.OrdinalIgnoreCase);
+        if (!esSql
+            && !string.Equals(tool.BindingType, "InternalApi", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(tool.BindingType, "Armonix", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
                 $"[T5] BindingType '{tool.BindingType}' no soportado por InternalApiToolExecutor. " +
-                "Tipos soportados: InternalApi, Armonix.");
+                "Tipos soportados: InternalApi, Armonix, Sql.");
         }
 
         // ── 5. D4: Guardián anti-IDOR ────────────────────────────────────
-        if (!_authGuard.IsAuthorized(toolCode, toolInput, caseIdentity))
+        // La identidad no es una sola cédula: un contrato cubre al titular y a
+        // sus dependientes, y el input puede traer contrato o número de persona,
+        // que son otras clases de identificador. Se arma el conjunto completo a
+        // partir del contexto del caso (REQ-020d).
+        var identidad = await ResolverIdentidadCasoAsync(executionId, caseIdentity, ct)
+            .ConfigureAwait(false);
+
+        if (!_authGuard.IsAuthorized(toolCode, toolInput, identidad))
         {
             var denialJson = JsonSerializer.Serialize(new
             {
                 error   = "IDOR_DENIED",
                 message = $"[T5 D4] Los identificadores de afiliado en el input de la tool " +
-                          $"'{toolCode}' no corresponden al titular del Caso. Acceso denegado."
+                          $"'{toolCode}' no corresponden a este caso ({identidad}). Acceso denegado."
             });
 
             // Registrar el intento en ToolInvocation con IsError=true
@@ -167,6 +211,41 @@ public sealed class InternalApiToolExecutor : IToolExecutor
 
             throw new UnauthorizedAccessException(
                 $"[T5 D4] Tool '{toolCode}': identificadores de afiliado no coinciden con el contexto del Caso.");
+        }
+
+        // ── 6-SQL. REQ-019: BindingType 'Sql' — consulta read-only a BD ──
+        //   Misma disciplina que el path HTTP: guard D4 ya validado arriba,
+        //   se persiste ToolInvocation, y el resultado JSON vuelve al modelo.
+        //   La consulta viene del catálogo (OPAITool.BindingConfig, autoría admin);
+        //   el modelo solo aporta VALORES de parámetros (parametrizados) → sin inyección.
+        if (esSql)
+        {
+            var startSql   = DateTime.UtcNow;
+            var reqJsonSql = JsonSerializer.Serialize(toolInput);
+            string respJsonSql;
+            bool sqlError;
+
+            try
+            {
+                respJsonSql = await ExecuteSqlToolAsync(binding, toolInput, ct).ConfigureAwait(false);
+                sqlError = false;
+            }
+            catch (Exception ex)
+            {
+                respJsonSql = JsonSerializer.Serialize(new { error = ex.GetType().Name, message = ex.Message });
+                sqlError = true;
+                _logger.LogWarning(ex, "[T5 Sql] Error ejecutando tool SQL '{ToolCode}'.", toolCode);
+            }
+
+            await PersistInvocationAsync(
+                executionId, toolCode, reqJsonSql, respJsonSql, sqlError, startSql, ct)
+                .ConfigureAwait(false);
+
+            if (sqlError)
+                throw new InvalidOperationException(
+                    $"[T5 Sql] La tool '{toolCode}' respondió con error. Detalle: {respJsonSql}");
+
+            return respJsonSql;
         }
 
         // ── 6. Resolver baseUrl desde configuración ──────────────────────
@@ -261,14 +340,27 @@ public sealed class InternalApiToolExecutor : IToolExecutor
 
         var uriBuilder = new UriBuilder(resolvedBaseUrl.TrimEnd('/') + binding.Path);
 
-        if (method == HttpMethod.Get && binding.ParamMap.Count > 0)
+        // paramMap va a la query string SIEMPRE, no solo en GET.
+        //
+        // Estaba limitado a GET, y con eso una tool POST cuyos parametros viajan
+        // por la URL no podia funcionar: la peticion salia sin ellos. Medido con
+        // cargar_factura_desde_sri (POST /api/Sri?claveAcceso=...), que devolvia
+        // 404 porque el servicio recibia la llamada sin clave.
+        //
+        // No es un caso raro: en el repositorio de comprobantes el POST que trae
+        // la factura del SRI y la guarda lleva su unico parametro en la query.
+        // El body sigue armandose aparte con bodyMap; las dos cosas conviven.
+        if (binding.ParamMap.Count > 0)
         {
             // Armar query string con los campos de paramMap
             var queryParams = new List<string>();
             foreach (var (inputKey, queryKey) in binding.ParamMap)
             {
                 if (toolInput.TryGetValue(inputKey, out var val) && val != null)
-                    queryParams.Add($"{Uri.EscapeDataString(queryKey)}={Uri.EscapeDataString(val.ToString()!)}");
+                {
+                    var texto = NormalizarParametroSaludsa(queryKey, val.ToString()!);
+                    queryParams.Add($"{Uri.EscapeDataString(queryKey)}={Uri.EscapeDataString(texto)}");
+                }
             }
             if (queryParams.Count > 0)
                 uriBuilder.Query = string.Join("&", queryParams);
@@ -310,6 +402,43 @@ public sealed class InternalApiToolExecutor : IToolExecutor
     /// Establece un valor en un <see cref="JsonObject"/> usando notación dot
     /// (ej: <c>filter.region</c> → <c>{ "filter": { "region": value } }</c>).
     /// </summary>
+    /// <summary>
+    /// Corrige los dos formatos que las APIs de Saludsa exigen y que el modelo
+    /// no puede adivinar. Es una red de seguridad: aunque el InputSchema ya lo
+    /// declare, el modelo puede escribir "CEDULA" y la API responderia
+    /// "No existen datos de: contratos" sin decir que el problema es el formato.
+    ///
+    ///  · <c>tipoDocumento</c>: la API solo acepta <c>C</c> (cédula) o
+    ///    <c>P</c> (pasaporte). "CEDULA", "CED", "CI", "IDENTIFICACION" → C;
+    ///    "PASAPORTE", "PASS" → P.
+    ///  · <c>numeroDocumento</c>: la cédula debe ir CON el cero inicial, a 10
+    ///    dígitos. OJO: es lo contrario de las tablas de Saludsa, que la
+    ///    guardan sin el cero — no "arreglar" esto quitándolo.
+    /// </summary>
+    private static string NormalizarParametroSaludsa(string queryKey, string valor)
+    {
+        if (string.IsNullOrWhiteSpace(valor)) return valor;
+
+        if (queryKey.Equals("tipoDocumento", StringComparison.OrdinalIgnoreCase))
+        {
+            var v = valor.Trim().ToUpperInvariant();
+            if (v is "C" or "P") return v;
+            if (v.StartsWith("CED") || v is "CI" or "IDENTIFICACION" or "DNI") return "C";
+            if (v.StartsWith("PAS")) return "P";
+            return valor.Trim();
+        }
+
+        if (queryKey.Equals("numeroDocumento", StringComparison.OrdinalIgnoreCase))
+        {
+            var soloDigitos = new string(valor.Where(char.IsDigit).ToArray());
+            // 9 dígitos = cédula a la que se le comió el cero inicial
+            if (soloDigitos.Length == 9) return soloDigitos.PadLeft(10, '0');
+            return soloDigitos.Length > 0 ? soloDigitos : valor.Trim();
+        }
+
+        return valor;
+    }
+
     private static void SetNestedJsonValue(JsonObject root, string dotPath, object value)
     {
         var parts = dotPath.Split('.');
@@ -329,6 +458,114 @@ public sealed class InternalApiToolExecutor : IToolExecutor
         current[parts[^1]] = JsonValue.Create(value.ToString());
     }
 
+    // ── SQL (BindingType "Sql") ──────────────────────────────────────────
+
+    /// <summary>
+    /// Ejecuta la consulta SELECT read-only de una tool SQL contra la BD de negocio.
+    /// Salvaguardas: solo SELECT (una sentencia, sin DML/DDL por palabra completa),
+    /// parámetros SIEMPRE parametrizados (el modelo no toca el SQL), tope de filas
+    /// y truncado del JSON de salida.
+    /// </summary>
+    private async Task<string> ExecuteSqlToolAsync(
+        ToolBindingConfig binding,
+        IReadOnlyDictionary<string, object?> toolInput,
+        CancellationToken ct)
+    {
+        var query = binding.Query;
+        if (string.IsNullOrWhiteSpace(query))
+            throw new InvalidOperationException("[T5 Sql] La tool no tiene 'query' en su BindingConfig.");
+
+        // Guard 1: SELECT-only, una sola sentencia.
+        var trimmed = query.Trim();
+        if (!trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("[T5 Sql] Solo se permiten consultas SELECT.");
+        if (trimmed.TrimEnd(';').Contains(';'))
+            throw new InvalidOperationException("[T5 Sql] Solo se permite una sentencia por tool.");
+        if (Regex.IsMatch(trimmed,
+                @"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC|EXECUTE|MERGE|TRUNCATE|GRANT|REVOKE|INTO)\b",
+                RegexOptions.IgnoreCase))
+            throw new InvalidOperationException("[T5 Sql] La consulta contiene palabras no permitidas (solo lectura).");
+
+        // Conexión: nombre lógico de ConnectionStrings (default SaludConsultas).
+        var connName = string.IsNullOrWhiteSpace(binding.Connection) ? "SaludConsultas" : binding.Connection;
+        var connStr  = _config.GetConnectionString(connName);
+        if (string.IsNullOrWhiteSpace(connStr))
+            throw new InvalidOperationException(
+                $"[T5 Sql] La cadena de conexión 'ConnectionStrings:{connName}' no está configurada.");
+
+        var maxRows = binding.MaxRows > 0 ? Math.Min(binding.MaxRows, 200) : 50;
+
+        // El destino, no la consulta: si la maquina no contesta, no contesta
+        // para ninguna tool que vaya contra ella.
+        var destino = "sql:" + connName;
+        if (SigueCaido(destino))
+            throw new InvalidOperationException(
+                $"[T5 Sql] La base '{connName}' no respondio hace unos segundos y se dio por "
+                + "no disponible; no se reintenta todavia para no bloquear el analisis. "
+                + "Compruebe la conexion (VPN) y vuelva a lanzarlo.");
+
+        await using var conn = new SqlConnection(connStr);
+        try
+        {
+            await conn.OpenAsync(ct).ConfigureAwait(false);
+        }
+        catch (SqlException)
+        {
+            // Solo el FALLO DE CONEXION apunta el destino como caido. Un error
+            // de la consulta en si (columna inexistente, timeout de comando) es
+            // problema de esa tool, no del servidor, y no debe silenciar a las
+            // demas.
+            ApuntarCaido(destino);
+            throw;
+        }
+
+        await using var cmd = new SqlCommand(query, conn) { CommandTimeout = 30 };
+
+        // Parametrización: por cada @param del SQL, tomar el valor del input (case-insensitive).
+        // Valores como NVARCHAR; SQL Server convierte implícitamente para comparaciones numéricas.
+        var inputCi = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (k, v) in toolInput) inputCi[k] = v;
+
+        foreach (Match m in Regex.Matches(query, @"@([A-Za-z_][A-Za-z0-9_]*)"))
+        {
+            var pName = m.Groups[1].Value;
+            if (cmd.Parameters.Contains("@" + pName)) continue;
+            var val = inputCi.TryGetValue(pName, out var raw) && raw != null
+                ? (object)raw.ToString()!
+                : DBNull.Value;
+            cmd.Parameters.Add(new SqlParameter("@" + pName, System.Data.SqlDbType.NVarChar, 400) { Value = val });
+        }
+
+        // Ejecutar y materializar filas como diccionarios (JSON-friendly).
+        var rows = new List<Dictionary<string, object?>>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (rows.Count < maxRows && await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            var row = new Dictionary<string, object?>();
+            for (var i = 0; i < reader.FieldCount; i++)
+            {
+                var val = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                row[reader.GetName(i)] = val switch
+                {
+                    null            => null,
+                    DateTime dt     => dt.ToString("yyyy-MM-dd HH:mm"),
+                    decimal or double or float or int or long or short or byte or bool => val,
+                    _               => val.ToString()
+                };
+            }
+            rows.Add(row);
+        }
+
+        var json = JsonSerializer.Serialize(new { rowCount = rows.Count, rows });
+
+        // Truncado defensivo para no reventar el contexto del modelo.
+        const int maxLen = 20000;
+        if (json.Length > maxLen)
+            json = json[..maxLen] + "\"…truncado…\"}";
+
+        return json;
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     /// <summary>
@@ -343,7 +580,13 @@ public sealed class InternalApiToolExecutor : IToolExecutor
         {
             ["{api-contrato}"]  = "Saludsa:BaseUrls:ApiContrato",
             ["{api-armonix}"]   = "Saludsa:BaseUrls:ApiArmonix",
-            ["{api-prestador}"] = "Saludsa:BaseUrls:ApiPrestador"
+            ["{api-prestador}"] = "Saludsa:BaseUrls:ApiPrestador",
+            // REQ-019: validación de procedimientos + PVP (api-reembolso-automatico / CorrelacionController)
+            ["{api-reembolso-automatico}"] = "Saludsa:BaseUrls:ApiReembolsoAutomatico",
+            // REQ-021: el repositorio de comprobantes electrónicos. Es la fuente
+            // de verdad de la factura —la trae del SRI y la guarda—, frente al
+            // OCR, que es una lectura de una foto.
+            ["{api-repositorio}"] = "Saludsa:BaseUrls:ApiRepositorio"
         };
 
         foreach (var (placeholder, configKey) in placeholders)
@@ -363,6 +606,88 @@ public sealed class InternalApiToolExecutor : IToolExecutor
 
         // Si no era placeholder, usar tal cual (URL literal en la config)
         return baseUrlTemplate.TrimEnd('/');
+    }
+
+
+    /// <summary>
+    /// Los identificadores que este caso tiene derecho a consultar.
+    ///
+    /// Sale de la nota de contexto del sobre, que es donde el portal y los
+    /// importadores dejan quién es el afiliado, qué contrato es y —desde
+    /// REQ-020c— a qué beneficiario va dirigido el reembolso. Se añaden todos
+    /// porque todos son sujetos legítimos del mismo caso: pedir las
+    /// preexistencias de un hijo por su cédula es correcto, no un IDOR.
+    ///
+    /// Si no se puede leer el contexto se cae a la cédula suelta que llegó por
+    /// parámetro, que es el comportamiento anterior.
+    /// </summary>
+    private async Task<IdentidadCaso> ResolverIdentidadCasoAsync(
+        long executionId, string? caseIdentity, CancellationToken ct)
+    {
+        var identidad = IdentidadCaso.DeCedula(caseIdentity);
+
+        try
+        {
+            var caseCode = await _db.StepExecution.AsNoTracking()
+                .Where(se => se.ExecutionId == executionId)
+                .Select(se => (Guid?)se.CaseCode)
+                .FirstOrDefaultAsync(ct)
+                .ConfigureAwait(false);
+
+            if (caseCode is null || caseCode == Guid.Empty)
+                return identidad;
+
+            var contexto = await _db.Note.AsNoTracking()
+                .Where(n => n.CaseCode == caseCode
+                            && n.Title == app_tramites.Services.Ai.OcrPromptHelper.ContextoSobreNoteTitle)
+                .OrderByDescending(n => n.CreatedAt)
+                .Select(n => n.Detail)
+                .FirstOrDefaultAsync(ct)
+                .ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(contexto))
+                return identidad;
+
+            using var doc = JsonDocument.Parse(contexto);
+            var raiz = doc.RootElement;
+            if (raiz.ValueKind != JsonValueKind.Object)
+                return identidad;
+
+            string? T(JsonElement e, string prop) =>
+                e.ValueKind == JsonValueKind.Object && e.TryGetProperty(prop, out var v)
+                    ? (v.ValueKind == JsonValueKind.String ? v.GetString()
+                       : v.ValueKind == JsonValueKind.Number ? v.ToString() : null)
+                    : null;
+
+            // El contrato se registra con su llave COMPLETA: el número solo no
+            // identifica nada (17% se repiten entre región y producto).
+            identidad.ConCedula(T(raiz, "cedula"))
+                     .ConContrato(T(raiz, "codigoRegion"),
+                                  T(raiz, "codigoProducto"),
+                                  T(raiz, "numeroContrato"))
+                     .ConPersona(T(raiz, "numeroPersonaPaciente"));
+
+            // El beneficiario al que va dirigido el reembolso: su cédula y su
+            // número de persona son legítimos para este caso.
+            if (raiz.TryGetProperty("beneficiario", out var b) && b.ValueKind == JsonValueKind.Object)
+            {
+                identidad.ConCedula(T(b, "cedula"))
+                         .ConPersona(T(b, "numeroPersona"));
+            }
+        }
+        catch (JsonException)
+        {
+            // Un contexto ilegible no debe abrir ni cerrar el guardián de más:
+            // se queda con lo que llegó por parámetro.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[T5 D4] No se pudo resolver la identidad del caso para la ejecución {ExecutionId}; " +
+                "se usa solo la cédula recibida.", executionId);
+        }
+
+        return identidad;
     }
 
     private async Task PersistInvocationAsync(
