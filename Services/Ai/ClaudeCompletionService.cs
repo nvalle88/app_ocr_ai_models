@@ -71,7 +71,7 @@ public sealed class ClaudeCompletionService : IAiCompletionService
             // no incluye aún este identificador (Model.ClaudeOpus4_8 no existe en esa versión).
             Model     = "claude-opus-4-8",
             MaxTokens = request.MaxTokens,
-            System    = request.SystemPrompt,
+            System    = SystemCacheable(request.SystemPrompt),
             Messages  =
             [
                 new() { Role = Role.User, Content = request.UserMessage }
@@ -80,11 +80,18 @@ public sealed class ClaudeCompletionService : IAiCompletionService
 
         var message = await client.Messages.Create(parameters, cancellationToken);
 
-        // Extraer texto: el primer bloque de tipo text
-        var text = message.Content
-            .OfType<TextBlock>()
-            .Select(b => b.Text)
-            .FirstOrDefault() ?? string.Empty;
+        // Extraer texto: TODOS los bloques de texto, concatenados.
+        // BUG CORREGIDO: antes se tomaba solo el PRIMER bloque (FirstOrDefault), asi que
+        // cuando el modelo respondia en varios bloques la respuesta llegaba TRUNCADA
+        // (y un JSON quedaba incompleto o solo llegaba el preambulo). ContentBlock es un
+        // union type del SDK: se usa TryPickText, igual que en CompleteWithToolsAsync.
+        var sbTexto = new System.Text.StringBuilder();
+        foreach (var block in message.Content)
+        {
+            if (block.TryPickText(out var tb) && !string.IsNullOrEmpty(tb.Text))
+                sbTexto.Append(tb.Text);
+        }
+        var text = sbTexto.ToString();
 
         // Tokens estándar — InputTokens/OutputTokens son long en el SDK; cast explícito a int.
         int promptTokens     = (int)(message.Usage?.InputTokens  ?? 0L);
@@ -162,7 +169,7 @@ public sealed class ClaudeCompletionService : IAiCompletionService
         {
             Model     = "claude-opus-4-8",
             MaxTokens = request.MaxTokens,
-            System    = request.SystemPrompt,
+            System    = SystemCacheable(request.SystemPrompt),
             Messages  =
             [
                 new() { Role = Role.User, Content = request.UserMessage }
@@ -243,6 +250,13 @@ public sealed class ClaudeCompletionService : IAiCompletionService
         // Acumuladores de tokens (se suman en cada vuelta del loop)
         int totalPromptTokens     = 0;
         int totalCompletionTokens = 0;
+        // Y los de cache. Sin esto la columna se quedaba en cero por mucho que la
+        // cache funcionara: el bucle de tool-use -que es justo donde la cache
+        // sirve, porque el prompt de sistema y las tools se reenvian en cada
+        // vuelta- no los sumaba. Habria sido imposible saber si el cambio hizo
+        // algo.
+        int totalCacheRead        = 0;
+        int totalCacheCreation    = 0;
         string finalText          = string.Empty;
 
         // Tool-use loop: continúa hasta end_turn o max iteraciones de seguridad
@@ -253,7 +267,7 @@ public sealed class ClaudeCompletionService : IAiCompletionService
             {
                 Model     = "claude-opus-4-8",
                 MaxTokens = request.MaxTokens,
-                System    = request.SystemPrompt,
+                System    = SystemCacheable(request.SystemPrompt),
                 Messages  = messages,
                 Tools     = sdkTools
             };
@@ -263,6 +277,8 @@ public sealed class ClaudeCompletionService : IAiCompletionService
             // Acumular tokens
             totalPromptTokens     += (int)(message.Usage?.InputTokens  ?? 0L);
             totalCompletionTokens += (int)(message.Usage?.OutputTokens ?? 0L);
+            totalCacheRead        += (int)(message.Usage?.CacheReadInputTokens     ?? 0L);
+            totalCacheCreation    += (int)(message.Usage?.CacheCreationInputTokens ?? 0L);
 
             // Extraer texto si hay bloques de texto en esta vuelta
             // Nota: ContentBlock es un union type; usar TryPickText() (no OfType<TextBlock>).
@@ -370,9 +386,11 @@ public sealed class ClaudeCompletionService : IAiCompletionService
 
         return new AiCompletionResult
         {
-            Text             = finalText.Trim(),
-            PromptTokens     = totalPromptTokens,
-            CompletionTokens = totalCompletionTokens
+            Text                = finalText.Trim(),
+            PromptTokens        = totalPromptTokens,
+            CompletionTokens    = totalCompletionTokens,
+            CacheReadTokens     = totalCacheRead,
+            CacheCreationTokens = totalCacheCreation
         };
     }
 
@@ -384,18 +402,60 @@ public sealed class ClaudeCompletionService : IAiCompletionService
     private List<ToolUnion> MapToSdkTools(IReadOnlyList<OPAITool> tools)
     {
         var result = new List<ToolUnion>(tools.Count);
-        foreach (var tool in tools)
+        for (var i = 0; i < tools.Count; i++)
         {
+            var tool = tools[i];
             var inputSchema = BuildInputSchema(tool.InputSchema, tool.Name);
-            ToolUnion tu = new Tool
+            // Un solo punto de corte de cache, en la ULTIMA tool: la marca cubre
+            // todo lo que va antes, o sea las definiciones de las 22 tools
+            // enteras. Marcarlas una por una gastaria puntos de corte -solo hay
+            // cuatro- sin ganar nada.
+            //
+            // Por que importa aqui y no en otro sitio: esto es un bucle de
+            // tool-use. Medido en dbo.Usage, AGENTE_CLAUDE gasta 80.381 tokens
+            // de ENTRADA por llamada y 2,17 millones en 27 llamadas, con
+            // CacheReadTokens = 0. Las definiciones de tools y el prompt de
+            // sistema viajan enteros en CADA vuelta del bucle -medido: 5 tools
+            // de media por paso, hasta 11, o sea entre 6 y 12 envios del mismo
+            // texto- y son la parte que NUNCA cambia entre vueltas.
+            var esUltima = i == tools.Count - 1;
+
+            ToolUnion sdk = new Tool
             {
-                Name        = tool.Name,
-                Description = tool.Description,
-                InputSchema = inputSchema
+                Name         = tool.Name,
+                Description  = tool.Description,
+                InputSchema  = inputSchema,
+                CacheControl = esUltima ? new CacheControlEphemeral() : null
             };
-            result.Add(tu);
+
+            result.Add(sdk);
         }
         return result;
+    }
+
+    /// <summary>
+    /// El prompt de sistema como bloque cacheable.
+    ///
+    /// Es el mismo texto en todas las vueltas del bucle y en todas las
+    /// ejecuciones del mismo agente: el del auditor son ~12.300 caracteres que
+    /// hoy se pagan completos cada vez. Se manda como un unico bloque de texto
+    /// con punto de corte de cache en vez de como cadena suelta.
+    ///
+    /// Si viene vacio se devuelve null y el SDK omite el campo: un bloque de
+    /// texto vacio es un error de la API.
+    /// </summary>
+    private static List<TextBlockParam>? SystemCacheable(string? systemPrompt)
+    {
+        if (string.IsNullOrWhiteSpace(systemPrompt)) return null;
+
+        return new List<TextBlockParam>
+        {
+            new()
+            {
+                Text         = systemPrompt!,
+                CacheControl = new CacheControlEphemeral()
+            }
+        };
     }
 
     /// <summary>

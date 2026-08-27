@@ -119,6 +119,36 @@ public sealed class ClasificacionController : Controller
         // ── Mensaje: contexto + OCR por PÁGINA con marcas [[PAGINA n]] ──
         var userMessage = ConstruirMensaje(caso);
 
+        // Este paso NO tenia StepExecution y por eso era invisible.
+        //
+        // La fila se creaba solo cuando el agente usaba tools, porque nacio para
+        // colgar de ella las ToolInvocation. El clasificador no usa ninguna, asi
+        // que el paso mas lento del pipeline -medido a mano en el navegador: ~50
+        // segundos con un solo PDF- no dejaba rastro de su duracion en ningun
+        // sitio. No se puede mejorar lo que no se mide, y aqui literalmente no
+        // habia dato: hubo que cronometrarlo con un sessionStorage.
+        //
+        // Se registra siempre: duracion, tamaño del prompt y estado.
+        var exec = new StepExecution
+        {
+            CaseCode       = caseCode,
+            StepOrder      = 0,
+            DataFileId     = caso.DataFile.FirstOrDefault()?.Id,
+            // OJO: es el codigo del AGENTE, no el de la configuracion.
+            // StepExecution.ModelCode tiene FK contra dbo.Agent
+            // (FK_StepExecution_Agent): pasarle el ConfigCode revienta el INSERT
+            // con 500. Fue exactamente el fallo de la primera version de esto.
+            ModelCode      = AgenteCode,
+            RequestContent = userMessage,
+            Status         = "Running",
+            StartDate      = DateTime.UtcNow,
+            // config aqui es una proyeccion anonima (ConfigCode, MaxTokens):
+            // no trae EndpointUrl y no merece ampliarla solo por esto.
+            EndpointUrl    = null
+        };
+        _db.StepExecution.Add(exec);
+        await _db.SaveChangesAsync();
+
         string texto;
         try
         {
@@ -131,9 +161,23 @@ public sealed class ClasificacionController : Controller
                 Temperature  = 0
             }, HttpContext.RequestAborted);
             texto = res.Text;
+
+            exec.ResponseContent = texto;
+            exec.Status  = "Completed";
+            exec.EndDate = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+            await UsoDelModelo.ApuntarAsync(_db, exec.ExecutionId, res);
         }
         catch (Exception ex)
         {
+            // El fallo tambien se registra. Una fila que se queda en "Running"
+            // para siempre es la firma de una ejecucion que murio, y es un dato:
+            // sin esto un cuelgue y un error se ven igual, o sea no se ven.
+            exec.Status  = "Failed";
+            exec.EndDate = DateTime.UtcNow;
+            exec.ResponseContent = ex.Message;
+            await _db.SaveChangesAsync();
+
             _logger.LogWarning(ex, "Error clasificando el caso {CaseCode}.", caseCode);
             TempData["Error"] = $"Error al clasificar: {ex.Message}";
             return RedirectToAction(nameof(Index), new { caseCode, embed });
