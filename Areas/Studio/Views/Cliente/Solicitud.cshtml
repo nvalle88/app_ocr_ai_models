@@ -1262,17 +1262,37 @@
             // que le deja la pantalla parpadeando y sin salida. A los dos
             // intentos se para y se le enseña el botón.
             window.addEventListener('load', async function () {
-                var llave = 'stIntentos:@Model.CaseCode';
+                // La cuenta va por SITUACIÓN, no por caso.
+                //
+                // Antes se contaba por caso y se BORRABA al terminar bien, y eso
+                // dejaba un bucle infinito: si el paso devolvía 200 sin haber
+                // hecho nada -pasa, porque el controlador redirige a su pantalla
+                // cuando falla y el fetch sigue la redirección y la ve como
+                // éxito-, se marcaba la etapa en verde, se borraba la cuenta, se
+                // recargaba, seguía habiendo trabajo pendiente y vuelta a empezar.
+                // Medido: 7 ejecuciones fallidas del clasificador en un minuto,
+                // cada una de un segundo, con la pantalla aparentemente parada.
+                //
+                // La llave lleva dentro cuántos documentos hay y qué paso toca:
+                // si el afiliado sube más documentos o el proceso avanza de
+                // verdad, es otra situación y la cuenta empieza de cero. Si nada
+                // cambia, a los dos intentos se para y se le ofrece el botón.
+                var pend0 = pendientes(true);
+                var situacion = '@Model.CaseCode|' + porLeer + '|'
+                              + (pend0.length ? pend0[0].dataset.titulo : 'nada');
+                var llave = 'stIntentos:' + situacion;
                 var intentos = parseInt(sessionStorage.getItem(llave) || '0', 10);
                 if (intentos >= 2) { ofrecerReintento(); return; }
                 sessionStorage.setItem(llave, String(intentos + 1));
 
-                var ok = await correr(pendientes(true),
+                var ok = await correr(pend0,
                     'Identificando sus documentos',
                     porLeer === 1 ? 'Leemos su documento hoja por hoja para saber qué nos trajo.'
                                   : 'Leemos sus ' + porLeer + ' documentos hoja por hoja para saber qué nos trajo.');
                 if (ok) {
-                    sessionStorage.removeItem(llave);
+                    // NO se borra la cuenta: si al recargar sigue la misma
+                    // situación es que no avanzó, y la cuenta tiene que seguir
+                    // subiendo hasta cortar.
                     window.location.reload();
                 } else {
                     ofrecerReintento();

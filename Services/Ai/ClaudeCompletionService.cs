@@ -72,9 +72,14 @@ public sealed class ClaudeCompletionService : IAiCompletionService
             Model     = "claude-opus-4-8",
             MaxTokens = request.MaxTokens,
             System    = SystemCacheable(request.SystemPrompt),
-            // Se pedian y se tiraban: los controladores mandan Temperature = 0
-            // desde hace tiempo y la peticion salia con el valor por defecto.
-            Temperature = request.Temperature.HasValue ? (double)request.Temperature.Value : null,
+            // TEMPERATURE NO SE MANDA. La API la rechaza con este modelo:
+            //   "`temperature` is deprecated for this model." (BadRequest)
+            // Se cablearon las cuatro columnas de dbo.Agent dandolas por buenas
+            // porque el SDK las expone; el SDK las expone, pero claude-opus-4-8
+            // no las acepta. Rompio TODAS las llamadas hasta que las ejecuciones
+            // Failed -que existen desde el commit anterior- lo enseñaron.
+            // Se deja request.Temperature sin usar a proposito: quitarla del DTO
+            // es otro cambio y se usa en otros proveedores.
             Thinking    = PensamientoDe(request.ThinkingMode, request.MaxTokens),
             Messages  =
             [
@@ -174,9 +179,14 @@ public sealed class ClaudeCompletionService : IAiCompletionService
             Model     = "claude-opus-4-8",
             MaxTokens = request.MaxTokens,
             System    = SystemCacheable(request.SystemPrompt),
-            // Se pedian y se tiraban: los controladores mandan Temperature = 0
-            // desde hace tiempo y la peticion salia con el valor por defecto.
-            Temperature = request.Temperature.HasValue ? (double)request.Temperature.Value : null,
+            // TEMPERATURE NO SE MANDA. La API la rechaza con este modelo:
+            //   "`temperature` is deprecated for this model." (BadRequest)
+            // Se cablearon las cuatro columnas de dbo.Agent dandolas por buenas
+            // porque el SDK las expone; el SDK las expone, pero claude-opus-4-8
+            // no las acepta. Rompio TODAS las llamadas hasta que las ejecuciones
+            // Failed -que existen desde el commit anterior- lo enseñaron.
+            // Se deja request.Temperature sin usar a proposito: quitarla del DTO
+            // es otro cambio y se usa en otros proveedores.
             Thinking    = PensamientoDe(request.ThinkingMode, request.MaxTokens),
             Messages  =
             [
@@ -276,7 +286,7 @@ public sealed class ClaudeCompletionService : IAiCompletionService
                 Model     = "claude-opus-4-8",
                 MaxTokens = request.MaxTokens,
                 System    = SystemCacheable(request.SystemPrompt),
-                Temperature = request.Temperature.HasValue ? (double)request.Temperature.Value : null,
+                // Sin Temperature: la rechaza el modelo (ver arriba).
                 Thinking    = PensamientoDe(request.ThinkingMode, request.MaxTokens),
                 // ToolChoice del agente: viajaba en ToolsContext desde siempre y
                 // no llegaba a la peticion. "none" es el que de verdad importa.
