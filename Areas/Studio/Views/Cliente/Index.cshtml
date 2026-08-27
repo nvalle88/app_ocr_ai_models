@@ -1,0 +1,60 @@
+@model app_ocr_ai_models.Areas.Studio.Models.ClienteIdentificacionVm
+@{
+    ViewData["Title"] = "Presentar un reembolso";
+}
+
+@*
+    REQ-020 — La puerta del portal del afiliado.
+    Una sola pregunta por pantalla: quien llega aquí acaba de gastarse su
+    dinero y no está para formularios de veinte campos.
+*@
+
+<div class="st-portal">
+    <div class="st-portal-caja">
+        <div class="st-portal-marca">
+            <i class="fa fa-heartbeat"></i>
+            <span>Salud S.A.</span>
+        </div>
+
+        <h1>Presente su reembolso</h1>
+        <p class="st-portal-bajada">
+            Adjunte sus facturas y le decimos al momento qué le cubre su plan,
+            en qué porcentaje y qué documentos le faltan.
+        </p>
+
+        @if (!string.IsNullOrWhiteSpace(Model.Error))
+        {
+            <div class="st-portal-error">
+                <i class="fa fa-exclamation-circle"></i> @Model.Error
+            </div>
+        }
+
+        <form method="post" asp-action="Contratos" class="st-portal-form"
+              data-st-progreso
+              data-st-titulo="Buscando sus contratos"
+              data-st-etapas="Comprobando su cedula|Consultando sus planes en Salud S.A."
+              data-st-nota="Suele tardar unos segundos."
+              data-st-segundos="4">
+            @Html.AntiForgeryToken()
+            <label for="cedula">Su número de cédula</label>
+            <input type="text" id="cedula" name="Cedula" value="@Model.Cedula"
+                   class="st-portal-input" inputmode="numeric" maxlength="13"
+                   placeholder="0912345678" autocomplete="off" autofocus />
+            <small class="st-portal-ayuda">
+                Los diez dígitos, con el cero del principio si lo tiene.
+            </small>
+
+            <button type="submit" class="st-portal-btn">
+                Continuar <i class="fa fa-arrow-right"></i>
+            </button>
+        </form>
+
+        <p class="st-portal-pie">
+            Consultamos sus contratos con Salud S.A. para mostrarle solo lo suyo.
+        </p>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/app/st-progreso.js" asp-append-version="true"></script>
+}

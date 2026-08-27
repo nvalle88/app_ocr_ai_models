@@ -1,0 +1,105 @@
+@model app_ocr_ai_models.Areas.Studio.Models.ClienteBeneficiarioVm
+@{
+    ViewData["Title"] = "¿Para quién es el reembolso?";
+
+    string Dinero(decimal? v) => v.HasValue ? "$ " + v.Value.ToString("N2") : "—";
+}
+
+@*
+    REQ-020c — El paso que faltaba.
+
+    No es un formalismo: el deducible consumido, la carencia y las
+    preexistencias son de la PERSONA, no del contrato. Elegir mal liquida el
+    gasto de un hijo contra el deducible del padre y se salta la carencia de
+    quien de verdad se atendió.
+
+    Por eso cada tarjeta enseña las condiciones de esa persona AQUÍ, antes de
+    presentar, y no cuando ya es tarde.
+*@
+
+<div class="st-portal is-ancho">
+    <div class="st-portal-cab">
+        <h1>¿Para quién es este reembolso?</h1>
+        <p class="st-portal-bajada">
+            Su plan cubre a @Model.Beneficiarios.Count personas. Elija de quién es el gasto
+            que va a presentar: de eso depende cómo se aplica el deducible y la cobertura.
+        </p>
+    </div>
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="st-portal-error"><i class="fa fa-exclamation-circle"></i> @TempData["Error"]</div>
+    }
+
+    <div class="st-benefs">
+        @foreach (var b in Model.Beneficiarios)
+        {
+            <form method="post" asp-action="ElegirBeneficiario"
+                  class="st-benef @(Model.Elegido == b.NumeroPersona ? "is-elegido" : "")"
+                  data-st-progreso
+                  data-st-titulo="Preparando su solicitud"
+                  data-st-etapas="Guardando a quién va dirigida|Trayendo sus condiciones del plan"
+                  data-st-segundos="3">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+                <input type="hidden" name="numeroPersona" value="@b.NumeroPersona" />
+
+                <div class="st-benef-cab">
+                    <span class="st-benef-avatar">
+                        <i class="fa @(b.EsTitular ? "fa-user" : "fa-users")"></i>
+                    </span>
+                    <div class="st-benef-id">
+                        <strong>@b.NombreCompleto</strong>
+                        <span>
+                            @b.Relacion
+                            @if (b.Edad.HasValue) { <text> &middot; @b.Edad años</text> }
+                            @if (!string.IsNullOrWhiteSpace(b.Documento)) { <text> &middot; @b.Documento</text> }
+                        </span>
+                    </div>
+                    @if (Model.Elegido == b.NumeroPersona)
+                    {
+                        <span class="st-benef-marca"><i class="fa fa-check-circle"></i></span>
+                    }
+                </div>
+
+                @* Las condiciones de ESTA persona: es lo que cambia el resultado *@
+                <div class="st-benef-cond">
+                    <div class="st-benef-dato">
+                        <span class="lbl">Deducible ya cubierto</span>
+                        <span class="val">@Dinero(b.DeducibleCubierto)</span>
+                        <span class="nota">lo que ya ha pagado este año antes de que el plan entre</span>
+                    </div>
+                    @if (b.Preexistencias > 0)
+                    {
+                        <div class="st-benef-dato">
+                            <span class="lbl">Preexistencias</span>
+                            <span class="val">@b.Preexistencias registrada@(b.Preexistencias == 1 ? "" : "s")</span>
+                            <span class="nota">condiciones que ya tenía al entrar al plan</span>
+                        </div>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(b.Advertencia))
+                {
+                    <div class="st-benef-aviso">
+                        <i class="fa fa-clock-o"></i> @b.Advertencia
+                    </div>
+                }
+
+                <button type="submit" class="st-portal-btn is-benef">
+                    Es para @(b.EsTitular ? "mí" : b.Nombres) <i class="fa fa-arrow-right"></i>
+                </button>
+            </form>
+        }
+    </div>
+
+    <div class="st-portal-volver">
+        <a href="@Url.Action("Index", "Cliente", new { area = "Studio" })">
+            <i class="fa fa-arrow-left"></i> Empezar de nuevo
+        </a>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/app/st-progreso.js" asp-append-version="true"></script>
+}

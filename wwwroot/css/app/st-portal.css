@@ -1,0 +1,1074 @@
+/* ============================================================================
+   REQ-020 — El portal del afiliado.
+
+   Deliberadamente NO se parece a la pantalla del auditor. El auditor trabaja en
+   una tabla densa ocho horas al día; el afiliado entra una vez, preocupado, con
+   el móvil en la mano. Más aire, letra más grande, una decisión por pantalla.
+   ========================================================================= */
+
+:root {
+    --pt-azul:      #002F87;   /* el azul institucional de Saludsa */
+    --pt-azul-sua:  #eaf0fb;
+    --pt-verde:     #2c6e49;
+    --pt-verde-sua: #eaf6ee;
+    --pt-ambar:     #8a6100;
+    --pt-ambar-sua: #fff6e0;
+    --pt-rojo:      #a4262c;
+    --pt-rojo-sua:  #fdecec;
+    --pt-tinta:     #1f2733;
+    --pt-gris:      #6b7684;
+    --pt-linea:     #dde3ec;
+}
+
+/* ── El conmutador de rol ───────────────────────────────────────────── */
+.st-rol {
+    display: flex; gap: 4px; align-items: center;
+    background: #fff; border: 1px solid var(--pt-linea); border-radius: 999px;
+    padding: 3px; margin: 0 0 16px; width: fit-content;
+}
+.st-rol-op {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 16px; border-radius: 999px;
+    font-size: 13px; font-weight: 600; color: var(--pt-gris);
+    text-decoration: none; white-space: nowrap;
+}
+.st-rol-op:hover { color: var(--pt-azul); text-decoration: none; }
+.st-rol-op.is-activa { background: var(--pt-azul); color: #fff; }
+
+/* ── Contenedor ─────────────────────────────────────────────────────── */
+.st-portal { max-width: 560px; margin: 0 auto 40px; color: var(--pt-tinta); }
+.st-portal.is-ancho { max-width: 860px; }
+
+.st-portal-caja {
+    background: #fff; border: 1px solid var(--pt-linea); border-radius: 10px;
+    padding: 34px 32px; box-shadow: 0 1px 3px rgba(20,30,50,.06);
+}
+.st-portal-marca {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--pt-azul); font-weight: 700; font-size: 15px; margin-bottom: 22px;
+}
+.st-portal-marca .fa { font-size: 19px; }
+
+.st-portal h1, .st-portal-cab h1 {
+    font-size: 25px; font-weight: 700; color: var(--pt-azul);
+    margin: 0 0 8px; line-height: 1.25;
+}
+.st-portal-bajada {
+    font-size: 14.5px; line-height: 1.55; color: var(--pt-gris); margin: 0 0 22px;
+}
+.st-portal-cab { margin-bottom: 18px; }
+
+/* ── Formulario ─────────────────────────────────────────────────────── */
+.st-portal-form label {
+    display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px;
+}
+.st-portal-input {
+    width: 100%; padding: 13px 15px; font-size: 19px; letter-spacing: 1px;
+    border: 1px solid var(--pt-linea); border-radius: 7px; outline: none;
+    font-variant-numeric: tabular-nums;
+}
+.st-portal-input:focus { border-color: var(--pt-azul); box-shadow: 0 0 0 3px var(--pt-azul-sua); }
+.st-portal-ayuda { display: block; font-size: 12.5px; color: var(--pt-gris); margin: 7px 0 20px; }
+
+.st-portal-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 13px 20px; border: none; border-radius: 7px;
+    background: var(--pt-azul); color: #fff; font-size: 15px; font-weight: 700;
+    cursor: pointer; transition: background .12s;
+}
+.st-portal-btn:hover { background: #00246a; }
+.st-portal-btn.is-plan { margin-top: 14px; }
+.st-portal-btn.is-confirmar { background: var(--pt-verde); max-width: 320px; }
+.st-portal-btn.is-confirmar:hover { background: #22563a; }
+
+.st-portal-pie { font-size: 12px; color: var(--pt-gris); text-align: center; margin: 20px 0 0; }
+.st-portal-volver { text-align: center; margin-top: 18px; }
+.st-portal-volver a { font-size: 13.5px; color: var(--pt-gris); }
+
+/* ── Mensajes ───────────────────────────────────────────────────────── */
+.st-portal-error, .st-portal-ok, .st-portal-aviso {
+    border-radius: 7px; padding: 12px 15px; margin-bottom: 16px;
+    font-size: 14px; line-height: 1.5;
+}
+.st-portal-error { background: var(--pt-rojo-sua);  border: 1px solid #f0c4c4; color: var(--pt-rojo); }
+.st-portal-ok    { background: var(--pt-verde-sua); border: 1px solid #bfe3cd; color: var(--pt-verde); }
+.st-portal-aviso { background: var(--pt-ambar-sua); border: 1px solid #f0dfae; color: var(--pt-ambar); }
+
+/* ── Los planes ─────────────────────────────────────────────────────── */
+.st-planes { display: grid; gap: 14px; }
+.st-plan {
+    background: #fff; border: 1px solid var(--pt-linea); border-radius: 10px;
+    padding: 20px 22px; box-shadow: 0 1px 3px rgba(20,30,50,.05);
+}
+.st-plan-cab {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 14px; margin-bottom: 15px;
+}
+.st-plan-nombre { display: block; font-size: 18px; font-weight: 700; color: var(--pt-azul); }
+.st-plan-sub { display: block; font-size: 12.5px; color: var(--pt-gris); margin-top: 2px; }
+.st-plan-estado {
+    font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+}
+.st-plan-estado.is-ok   { background: var(--pt-verde-sua); color: var(--pt-verde); }
+.st-plan-estado.is-warn { background: var(--pt-ambar-sua); color: var(--pt-ambar); }
+
+.st-plan-datos { display: flex; flex-wrap: wrap; gap: 26px; }
+.st-plan-dato .lbl { display: block; font-size: 11.5px; color: var(--pt-gris); text-transform: uppercase; letter-spacing: .3px; }
+.st-plan-dato .val { display: block; font-size: 17px; font-weight: 700; margin-top: 2px; }
+.st-plan-dato .nota { display: block; font-size: 11.5px; color: var(--pt-gris); font-style: italic; margin-top: 2px; max-width: 260px; }
+
+.st-plan-aviso {
+    margin-top: 15px; background: var(--pt-ambar-sua); border: 1px solid #f0dfae;
+    border-radius: 7px; padding: 11px 14px; font-size: 13.5px; color: var(--pt-ambar);
+}
+.st-plan-aviso-nota { display: block; font-size: 12.5px; margin-top: 4px; opacity: .9; }
+
+/* ── La barra del plan en la solicitud ──────────────────────────────── */
+.st-plan-barra {
+    display: flex; align-items: center; justify-content: space-between; gap: 18px;
+    flex-wrap: wrap;
+    background: var(--pt-azul); color: #fff; border-radius: 10px;
+    padding: 15px 22px; margin-bottom: 18px;
+}
+.st-plan-barra-nombre { display: block; font-size: 16.5px; font-weight: 700; }
+.st-plan-barra-sub { display: block; font-size: 12.5px; opacity: .85; margin-top: 2px; }
+.st-plan-barra-cifras { display: flex; gap: 26px; }
+.st-plan-barra-cifras span { display: block; font-size: 16px; font-weight: 700; white-space: nowrap; }
+.st-plan-barra-cifras small { display: block; font-size: 11px; font-weight: 400; opacity: .8; }
+
+/* ── Bloques ────────────────────────────────────────────────────────── */
+.st-portal-bloque {
+    background: #fff; border: 1px solid var(--pt-linea); border-radius: 10px;
+    padding: 22px 24px; margin-bottom: 16px;
+}
+.st-portal-bloque h2 {
+    font-size: 17px; font-weight: 700; color: var(--pt-azul); margin: 0 0 6px;
+}
+.st-portal-bloque.is-falta { border-left: 4px solid var(--pt-ambar); }
+.st-portal-bloque.is-confirmar { border-left: 4px solid var(--pt-verde); }
+.st-portal-nota { font-size: 12.5px; color: var(--pt-gris); margin: 10px 0 0; }
+
+/* ── Subir ──────────────────────────────────────────────────────────── */
+.st-subir-zona {
+    display: block; text-align: center; cursor: pointer;
+    border: 2px dashed var(--pt-linea); border-radius: 9px;
+    padding: 26px 20px; margin-bottom: 16px; transition: border-color .12s, background .12s;
+}
+.st-subir-zona:hover { border-color: var(--pt-azul); background: var(--pt-azul-sua); }
+.st-subir-zona .fa { font-size: 30px; color: var(--pt-azul); display: block; margin-bottom: 8px; }
+.st-subir-tit { display: block; font-size: 15px; font-weight: 700; }
+.st-subir-sub { display: block; font-size: 12.5px; color: var(--pt-gris); margin-top: 3px; }
+.st-subir-zona input[type=file] { display: none; }
+.st-subir-lista {
+    display: block; margin-top: 10px; font-size: 12.5px; color: var(--pt-azul);
+    font-weight: 600; word-break: break-word;
+}
+
+.st-subir-valor { margin-bottom: 16px; }
+.st-subir-valor label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 5px; }
+.st-subir-valor input {
+    width: 180px; padding: 9px 12px; font-size: 15px;
+    border: 1px solid var(--pt-linea); border-radius: 6px;
+}
+.st-subir-valor small { display: block; font-size: 12px; color: var(--pt-gris); margin-top: 5px; }
+
+/* ── Documentos leídos ──────────────────────────────────────────────── */
+.st-docs-cliente { display: grid; gap: 11px; margin-top: 14px; }
+.st-doc-cliente {
+    border: 1px solid var(--pt-linea); border-radius: 8px; padding: 14px 16px;
+    background: #fcfdff;
+}
+.st-doc-cliente.is-pendiente { background: #fafbfc; border-style: dashed; }
+.st-doc-cliente-cab {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+}
+.st-doc-cliente-tipo { font-size: 15px; font-weight: 700; color: var(--pt-azul); }
+.st-doc-cliente-tipo .fa { margin-right: 6px; }
+.st-doc-cliente-valor { font-size: 16px; font-weight: 700; white-space: nowrap; }
+.st-doc-cliente-nombre { font-size: 12px; color: var(--pt-gris); margin-top: 2px; word-break: break-all; }
+.st-doc-cliente-datos { display: flex; flex-wrap: wrap; gap: 20px; margin-top: 10px; font-size: 13.5px; }
+.st-doc-cliente-datos small {
+    display: block; font-size: 11px; color: var(--pt-gris);
+    text-transform: uppercase; letter-spacing: .3px;
+}
+.st-doc-cliente-espera { margin-top: 8px; font-size: 13px; color: var(--pt-gris); font-style: italic; }
+.st-doc-cliente-porque { margin-top: 10px; font-size: 13px; }
+.st-doc-cliente-porque > summary { cursor: pointer; color: var(--pt-gris); }
+.st-doc-cliente-porque p { margin: 7px 0 0; line-height: 1.5; }
+
+.st-total-cliente {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-top: 16px; padding-top: 13px; border-top: 2px solid var(--pt-linea);
+    font-size: 15px;
+}
+.st-total-cliente strong { font-size: 21px; color: var(--pt-azul); }
+
+/* ── Faltantes ──────────────────────────────────────────────────────── */
+.st-faltantes { list-style: none; padding: 0; margin: 12px 0 0; }
+.st-faltantes li { padding: 9px 0; border-bottom: 1px solid #f0f2f5; }
+.st-faltantes li:last-child { border-bottom: none; }
+.st-faltantes strong { display: block; font-size: 14.5px; }
+.st-faltantes span { display: block; font-size: 13px; color: var(--pt-gris); margin-top: 2px; }
+
+/* ── Confirmado ─────────────────────────────────────────────────────── */
+.st-confirmado { display: flex; align-items: flex-start; gap: 13px; }
+.st-confirmado .fa { font-size: 27px; color: var(--pt-verde); }
+.st-confirmado strong { display: block; font-size: 15.5px; color: var(--pt-verde); }
+.st-confirmado span { display: block; font-size: 13.5px; color: var(--pt-gris); margin-top: 3px; line-height: 1.5; }
+
+/* ── Móvil: es donde de verdad entra el afiliado ────────────────────── */
+@media (max-width: 640px) {
+    .st-portal-caja, .st-portal-bloque, .st-plan { padding: 18px 16px; }
+    .st-plan-barra { padding: 14px 16px; }
+    .st-plan-barra-cifras { gap: 18px; }
+    .st-portal h1, .st-portal-cab h1 { font-size: 21px; }
+    .st-doc-cliente-cab { flex-direction: column; gap: 3px; }
+    .st-portal-btn.is-confirmar { max-width: none; }
+}
+
+
+/* ── La explicación de cobertura ────────────────────────────────────── */
+.st-portal-bloque.is-cobertura { border-left: 4px solid var(--pt-azul); }
+.st-ex-saludo  { font-size: 16.5px; font-weight: 700; color: var(--pt-azul); margin: 8px 0 4px; }
+.st-ex-resumen { font-size: 14.5px; line-height: 1.55; margin: 0 0 16px; }
+
+.st-ex-cifra {
+    background: var(--pt-verde-sua); border: 1px solid #bfe3cd; border-radius: 9px;
+    padding: 16px 20px; margin-bottom: 18px; text-align: center;
+}
+.st-ex-cifra .lbl { display: block; font-size: 12.5px; color: var(--pt-verde); font-weight: 700;
+                    text-transform: uppercase; letter-spacing: .4px; }
+.st-ex-cifra .val { display: block; font-size: 33px; font-weight: 700; color: var(--pt-verde); margin: 3px 0; }
+.st-ex-cifra .nota{ display: block; font-size: 12px; color: var(--pt-gris); }
+
+.st-ex-grupo { margin-top: 18px; }
+.st-ex-grupo h3 { font-size: 15px; font-weight: 700; margin: 0 0 10px; }
+.st-ex-grupo.is-si h3        { color: var(--pt-verde); }
+.st-ex-grupo.is-no h3        { color: var(--pt-rojo); }
+.st-ex-grupo.is-confirmar h3 { color: var(--pt-azul); }
+
+.st-ex-linea {
+    border-left: 3px solid var(--pt-linea); padding: 10px 0 10px 14px; margin-bottom: 10px;
+}
+.st-ex-grupo.is-si .st-ex-linea { border-left-color: var(--pt-verde); }
+.st-ex-grupo.is-no .st-ex-linea { border-left-color: var(--pt-rojo); }
+.st-ex-linea-cab {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+}
+.st-ex-concepto { font-size: 15px; font-weight: 700; }
+.st-ex-cifras { display: inline-flex; align-items: baseline; gap: 9px; white-space: nowrap; }
+.st-ex-pct {
+    background: var(--pt-verde); color: #fff; font-size: 13px; font-weight: 700;
+    padding: 2px 9px; border-radius: 999px;
+}
+.st-ex-val { font-size: 16px; font-weight: 700; }
+.st-ex-porque   { margin: 6px 0 0; font-size: 13.5px; line-height: 1.55; }
+.st-ex-termino  {
+    margin: 7px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--pt-gris);
+    background: #f6f8fb; border-radius: 5px; padding: 7px 10px;
+}
+.st-ex-quehacer {
+    margin: 8px 0 0; font-size: 13px; line-height: 1.5;
+    background: var(--pt-ambar-sua); border: 1px solid #f0dfae; color: var(--pt-ambar);
+    border-radius: 6px; padding: 8px 11px;
+}
+.st-ex-evid {
+    display: inline-block; margin-top: 8px; font-size: 11.5px; color: var(--pt-gris);
+    background: #fff8e1; border: 1px solid #f0e0a8; border-radius: 4px;
+    padding: 3px 8px; font-style: italic; max-width: 100%; word-break: break-word;
+}
+
+.st-ex-confirmar { display: grid; gap: 9px; }
+.st-ex-dato { border: 1px solid var(--pt-linea); border-radius: 7px; padding: 10px 13px; }
+.st-ex-dato .lbl { display: block; font-size: 11.5px; color: var(--pt-gris);
+                   text-transform: uppercase; letter-spacing: .3px; }
+.st-ex-dato .val { display: block; font-size: 15px; font-weight: 700; margin-top: 2px; }
+
+.st-ex-paso {
+    display: flex; align-items: flex-start; gap: 12px; margin-top: 18px;
+    background: var(--pt-azul-sua); border-radius: 8px; padding: 14px 17px;
+}
+.st-ex-paso .fa { font-size: 21px; color: var(--pt-azul); }
+.st-ex-paso strong { display: block; font-size: 14px; color: var(--pt-azul); }
+.st-ex-paso span   { display: block; font-size: 13.5px; margin-top: 2px; line-height: 1.5; }
+
+.st-ex-rehacer { margin-top: 16px; }
+.st-ex-rehacer-btn {
+    background: none; border: 1px solid var(--pt-linea); border-radius: 6px;
+    padding: 8px 15px; font-size: 13px; color: var(--pt-gris); cursor: pointer;
+}
+.st-ex-rehacer-btn:hover { border-color: var(--pt-azul); color: var(--pt-azul); }
+
+.st-falta-bloquea {
+    margin-left: 8px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    background: var(--pt-rojo-sua); color: var(--pt-rojo); border-radius: 999px; padding: 2px 8px;
+}
+.st-falta-donde { display: block; font-size: 12.5px; color: var(--pt-azul); margin-top: 3px; }
+
+
+/* ── La ruta del proceso: donde va su solicitud ──────────────────────── */
+.st-ruta {
+    background: #fff; border: 1px solid var(--pt-linea); border-radius: 10px;
+    padding: 20px 24px; margin-bottom: 16px;
+}
+.st-ruta-cab {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.st-ruta-tit { display: block; font-size: 16.5px; font-weight: 700; color: var(--pt-azul); }
+.st-ruta-sub { display: block; font-size: 12.5px; color: var(--pt-gris); margin-top: 2px; }
+.st-portal-btn.is-ruta { width: auto; padding: 10px 20px; }
+.st-ruta-rehacer {
+    background: none; border: 1px solid var(--pt-linea); border-radius: 6px;
+    padding: 8px 15px; font-size: 13px; color: var(--pt-gris); cursor: pointer;
+}
+.st-ruta-rehacer:hover { border-color: var(--pt-azul); color: var(--pt-azul); }
+
+.st-ruta-pasos { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.st-ruta-paso {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 9px 0; border-bottom: 1px solid #f2f4f8;
+}
+.st-ruta-paso:last-child { border-bottom: none; }
+.st-ruta-num {
+    flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12.5px; font-weight: 700;
+    background: #eef1f6; color: var(--pt-gris);
+}
+.st-ruta-txt strong { display: block; font-size: 14.5px; color: var(--pt-tinta); }
+.st-ruta-txt small  { display: block; font-size: 12.5px; color: var(--pt-gris); margin-top: 1px; }
+
+.st-ruta-paso.is-hecho .st-ruta-num { background: var(--pt-verde); color: #fff; }
+.st-ruta-paso.is-hecho .st-ruta-txt strong { color: var(--pt-verde); }
+.st-ruta-paso.is-run   .st-ruta-num { background: var(--pt-azul); color: #fff; }
+.st-ruta-paso.is-error .st-ruta-num { background: var(--pt-rojo); color: #fff; }
+.st-ruta-paso.is-pend  { opacity: .62; }
+.st-ruta-nota { margin: 14px 0 0; font-size: 13px; color: var(--pt-ambar); }
+
+/* ── Que necesita adjuntar: la lista viva ────────────────────────────── */
+.st-requisitos { list-style: none; margin: 14px 0 0; padding: 0; }
+.st-requisito {
+    display: flex; align-items: flex-start; gap: 11px;
+    padding: 10px 0; border-bottom: 1px solid #f2f4f8;
+}
+.st-requisito:last-child { border-bottom: none; }
+.st-requisito .marca {
+    flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; background: #eef1f6; color: var(--pt-gris);
+}
+.st-requisito.is-tengo .marca { background: var(--pt-verde); color: #fff; }
+.st-requisito.is-falta .marca { background: var(--pt-ambar); color: #fff; }
+.st-requisito .txt strong { display: block; font-size: 14.5px; }
+.st-requisito .txt small  { display: block; font-size: 12.5px; color: var(--pt-gris); margin-top: 2px; line-height: 1.45; }
+.st-requisito.is-tengo .txt strong { color: var(--pt-verde); }
+.st-requisito .obligatorio {
+    margin-left: 7px; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    background: var(--pt-rojo-sua); color: var(--pt-rojo); border-radius: 999px; padding: 1px 7px;
+}
+
+/* ── La resolucion: la cifra que vino a buscar ───────────────────────── */
+.st-reso { border-radius: 10px; padding: 24px 26px; margin-bottom: 16px; color: #fff; }
+.st-reso.is-auto     { background: linear-gradient(135deg, #2c6e49, #22563a); }
+.st-reso.is-revision { background: linear-gradient(135deg, #002F87, #001c52); }
+.st-reso.is-neg      { background: linear-gradient(135deg, #6b4145, #4a2b2e); }
+
+.st-reso-cifra { text-align: center; }
+.st-reso-cifra .lbl { display: block; font-size: 13px; opacity: .85;
+                      text-transform: uppercase; letter-spacing: .5px; font-weight: 700; }
+.st-reso-cifra .val { display: block; font-size: 42px; font-weight: 700; line-height: 1.15; margin: 4px 0; }
+.st-reso-cifra .de  { display: block; font-size: 13px; opacity: .85; }
+
+.st-reso-desglose { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-top: 18px; }
+.st-reso-parte {
+    background: rgba(255,255,255,.12); border-radius: 8px; padding: 10px 15px;
+    min-width: 140px; text-align: center;
+}
+.st-reso-parte .lbl  { display: block; font-size: 11.5px; opacity: .85; text-transform: uppercase; letter-spacing: .3px; }
+.st-reso-parte .val  { display: block; font-size: 19px; font-weight: 700; margin: 2px 0; }
+.st-reso-parte .nota { display: block; font-size: 11px; opacity: .78; line-height: 1.35; }
+
+.st-reso-paso {
+    display: flex; align-items: flex-start; gap: 12px; margin-top: 20px;
+    background: rgba(255,255,255,.13); border-radius: 8px; padding: 14px 16px;
+}
+.st-reso-paso .fa { font-size: 19px; margin-top: 1px; }
+.st-reso-paso strong { display: block; font-size: 14px; }
+.st-reso-paso span   { display: block; font-size: 13.5px; opacity: .92; margin-top: 2px; line-height: 1.5; }
+.st-reso-adv { margin: 14px 0 0; font-size: 11.5px; opacity: .78; text-align: center; }
+
+/* ── Los items de la resolucion ──────────────────────────────────────── */
+.st-portal-bloque.is-cubre   { border-left: 4px solid var(--pt-verde); }
+.st-portal-bloque.is-nocubre { border-left: 4px solid var(--pt-rojo); }
+.st-portal-bloque.is-reglas  { border-left: 4px solid var(--pt-azul); }
+.st-portal-bloque.is-alertas { border-left: 4px solid var(--pt-ambar); }
+
+.st-item-reso { border-left: 3px solid var(--pt-linea); padding: 12px 0 12px 15px; margin-top: 12px; }
+.st-item-reso.is-si { border-left-color: var(--pt-verde); }
+.st-item-reso.is-no { border-left-color: var(--pt-rojo); }
+.st-item-reso-cab { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.st-item-reso-desc { font-size: 15px; font-weight: 700; }
+.st-item-reso-cifras { display: inline-flex; align-items: baseline; gap: 9px; white-space: nowrap; }
+.st-item-reso-pct {
+    background: var(--pt-verde); color: #fff; font-size: 12.5px; font-weight: 700;
+    padding: 2px 9px; border-radius: 999px;
+}
+.st-item-reso-val { font-size: 17px; font-weight: 700; }
+.st-item-reso-meta {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px;
+    font-size: 12.5px; color: var(--pt-gris);
+}
+.st-item-reso-meta .st-chip.is-total   { background: var(--pt-verde-sua); color: var(--pt-verde); }
+.st-item-reso-meta .st-chip.is-parcial { background: var(--pt-ambar-sua); color: var(--pt-ambar); }
+.st-item-reso-cargo {
+    margin: 8px 0 0; font-size: 13px; line-height: 1.5;
+    background: var(--pt-ambar-sua); border: 1px solid #f0dfae; color: var(--pt-ambar);
+    border-radius: 6px; padding: 8px 11px;
+}
+.st-item-reso-motivo { margin: 7px 0 0; font-size: 13.5px; line-height: 1.55; }
+.st-item-reso-porque { margin-top: 9px; font-size: 13px; }
+.st-item-reso-porque > summary { cursor: pointer; color: var(--pt-gris); }
+.st-item-reso-porque p { margin: 7px 0 0; line-height: 1.55; }
+.st-item-reso-evid { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+
+/* ── Las reglas del contrato, en cristiano ───────────────────────────── */
+.st-regla-cli { border: 1px solid var(--pt-linea); border-radius: 8px; padding: 13px 15px; margin-top: 11px; }
+.st-regla-cli-cab { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.st-regla-cli-fam { font-size: 14.5px; font-weight: 700; color: var(--pt-azul); }
+.st-regla-cli-res { font-size: 11.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+.st-regla-cli-res.is-no_cumple   { background: var(--pt-rojo-sua);  color: var(--pt-rojo); }
+.st-regla-cli-res.is-requiere_ch { background: var(--pt-ambar-sua); color: var(--pt-ambar); }
+.st-regla-cli-det  { margin: 7px 0 0; font-size: 13.5px; line-height: 1.55; }
+.st-regla-cli-term {
+    margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--pt-gris);
+    background: #f6f8fb; border-radius: 6px; padding: 8px 11px;
+}
+
+@media (max-width: 640px) {
+    .st-reso { padding: 20px 16px; }
+    .st-reso-cifra .val { font-size: 34px; }
+    .st-ruta { padding: 16px; }
+}
+
+
+/* ── La tarjeta del documento: el veredicto, de frente ───────────────── */
+.st-docv {
+    border: 1px solid var(--pt-linea); border-left-width: 4px; border-radius: 8px;
+    padding: 14px 16px; background: #fff; cursor: pointer;
+    transition: box-shadow .12s, border-color .12s;
+}
+.st-docv:hover { box-shadow: 0 2px 10px rgba(20,30,50,.09); }
+.st-docv.is-ok     { border-left-color: var(--pt-verde); }
+.st-docv.is-aviso  { border-left-color: var(--pt-ambar); background: #fffdf7; }
+.st-docv.is-error  { border-left-color: var(--pt-rojo);  background: #fffafa; }
+.st-docv.is-espera { border-left-color: var(--pt-linea); background: #fafbfc; border-style: dashed; cursor: default; }
+
+.st-docv-cab { display: flex; align-items: flex-start; gap: 12px; }
+.st-docv-marca { flex: 0 0 auto; font-size: 21px; margin-top: 1px; }
+.st-docv.is-ok     .st-docv-marca { color: var(--pt-verde); }
+.st-docv.is-aviso  .st-docv-marca { color: var(--pt-ambar); }
+.st-docv.is-error  .st-docv-marca { color: var(--pt-rojo); }
+.st-docv.is-espera .st-docv-marca { color: var(--pt-gris); }
+
+.st-docv-tit { flex: 1 1 auto; min-width: 0; }
+.st-docv-tit strong { display: block; font-size: 15.5px; line-height: 1.3; }
+.st-docv.is-ok    .st-docv-tit strong { color: var(--pt-verde); }
+.st-docv.is-aviso .st-docv-tit strong { color: var(--pt-ambar); }
+.st-docv.is-error .st-docv-tit strong { color: var(--pt-rojo); }
+.st-docv-es { display: block; font-size: 13px; color: var(--pt-gris); margin-top: 2px; }
+.st-docv-valor { flex: 0 0 auto; font-size: 18px; font-weight: 700; white-space: nowrap; }
+
+.st-docv-datos { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 11px; }
+.st-docv-dato { font-size: 13.5px; }
+.st-docv-dato small {
+    display: block; font-size: 10.5px; color: var(--pt-gris);
+    text-transform: uppercase; letter-spacing: .3px;
+}
+.st-docv-ev {
+    margin-left: 6px; background: #fff8e1; border: 1px solid #f0e0a8; border-radius: 4px;
+    padding: 1px 7px; font-size: 11px; color: #7a5c00; cursor: pointer;
+}
+.st-docv-ev:hover { background: #fff2c4; }
+
+.st-docv-quehacer {
+    margin: 11px 0 0; font-size: 13px; line-height: 1.5;
+    background: var(--pt-ambar-sua); border: 1px solid #f0dfae; color: var(--pt-ambar);
+    border-radius: 6px; padding: 9px 12px;
+}
+.st-docv.is-error .st-docv-quehacer {
+    background: var(--pt-rojo-sua); border-color: #f0c4c4; color: var(--pt-rojo);
+}
+
+.st-docv-pie {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-top: 11px; padding-top: 9px; border-top: 1px solid #f2f4f8;
+}
+.st-docv-abrir {
+    background: none; border: 1px solid var(--pt-linea); border-radius: 6px;
+    padding: 5px 12px; font-size: 12.5px; color: var(--pt-azul); cursor: pointer;
+    white-space: nowrap;
+}
+.st-docv-abrir:hover { border-color: var(--pt-azul); background: var(--pt-azul-sua); }
+.st-docv-fichero {
+    font-size: 11.5px; color: var(--pt-gris); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+
+/* ── El visor, embebido en la propia pantalla ────────────────────────── */
+.st-docv-visor { padding: 0; overflow: hidden; }
+.st-docv-visor-cab {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 11px 16px; background: var(--pt-azul); color: #fff;
+    font-size: 13.5px; font-weight: 600;
+}
+.st-docv-cerrar {
+    background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.4);
+    border-radius: 5px; padding: 4px 11px; font-size: 12px; color: #fff; cursor: pointer;
+}
+.st-docv-cerrar:hover { background: rgba(255,255,255,.28); }
+.st-docv-visor-host { height: 620px; }
+
+@media (max-width: 640px) {
+    .st-docv-cab { flex-wrap: wrap; }
+    .st-docv-valor { width: 100%; }
+    .st-docv-visor-host { height: 440px; }
+}
+
+
+/* ── Elegir beneficiario ─────────────────────────────────────────────── */
+.st-benefs { display: grid; gap: 14px; }
+.st-benef {
+    background: #fff; border: 1px solid var(--pt-linea); border-radius: 10px;
+    padding: 18px 20px; box-shadow: 0 1px 3px rgba(20,30,50,.05);
+}
+.st-benef.is-elegido { border-color: var(--pt-azul); box-shadow: 0 0 0 3px var(--pt-azul-sua); }
+.st-benef-cab { display: flex; align-items: center; gap: 14px; }
+.st-benef-avatar {
+    flex: 0 0 auto; width: 42px; height: 42px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--pt-azul-sua); color: var(--pt-azul); font-size: 19px;
+}
+.st-benef-id { flex: 1 1 auto; min-width: 0; }
+.st-benef-id strong { display: block; font-size: 17px; color: var(--pt-azul); }
+.st-benef-id span { display: block; font-size: 12.5px; color: var(--pt-gris); margin-top: 1px; }
+.st-benef-marca { color: var(--pt-azul); font-size: 21px; }
+
+.st-benef-cond { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 14px; }
+.st-benef-dato .lbl {
+    display: block; font-size: 11px; color: var(--pt-gris);
+    text-transform: uppercase; letter-spacing: .3px;
+}
+.st-benef-dato .val  { display: block; font-size: 16px; font-weight: 700; margin-top: 2px; }
+.st-benef-dato .nota { display: block; font-size: 11.5px; color: var(--pt-gris); font-style: italic; max-width: 250px; }
+
+.st-benef-aviso {
+    margin-top: 13px; background: var(--pt-ambar-sua); border: 1px solid #f0dfae;
+    border-radius: 7px; padding: 10px 13px; font-size: 13px; color: var(--pt-ambar);
+}
+.st-portal-btn.is-benef { margin-top: 15px; }
+
+/* ── Para quién es, en la solicitud ──────────────────────────────────── */
+.st-para-quien {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
+    background: #fff; border: 1px solid var(--pt-linea); border-left: 4px solid var(--pt-azul);
+    border-radius: 8px; padding: 13px 18px; margin-bottom: 16px;
+}
+.st-para-quien-id { display: flex; align-items: center; gap: 13px; min-width: 0; }
+.st-para-quien-id > .fa { font-size: 27px; color: var(--pt-azul); }
+.st-para-quien-id .lbl {
+    display: block; font-size: 10.5px; color: var(--pt-gris);
+    text-transform: uppercase; letter-spacing: .4px; font-weight: 700;
+}
+.st-para-quien-id strong { display: block; font-size: 16px; color: var(--pt-tinta); }
+.st-para-quien-id .sub { display: block; font-size: 12.5px; color: var(--pt-gris); margin-top: 1px; }
+.st-para-quien-cambiar {
+    font-size: 13px; color: var(--pt-azul); white-space: nowrap;
+    border: 1px solid var(--pt-linea); border-radius: 6px; padding: 6px 13px;
+}
+.st-para-quien-cambiar:hover { border-color: var(--pt-azul); background: var(--pt-azul-sua); text-decoration: none; }
+
+
+/* ── Las hojas dentro de un mismo archivo ────────────────────────────── */
+.st-hojas { margin-top: 12px; padding-top: 11px; border-top: 1px dashed var(--pt-linea); }
+.st-hojas-tit { font-size: 13px; color: var(--pt-gris); margin-bottom: 8px; }
+.st-hojas-tit .fa { margin-right: 5px; }
+.st-chip.is-mixto {
+    margin-left: 7px; background: var(--pt-azul-sua); color: var(--pt-azul);
+    font-size: 10.5px; font-weight: 700; border-radius: 999px; padding: 1px 8px;
+}
+.st-hojas-lista { display: flex; flex-wrap: wrap; gap: 7px; }
+.st-hoja {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: #fff; border: 1px solid var(--pt-linea); border-radius: 7px;
+    padding: 6px 11px; font-size: 12.5px; color: var(--pt-tinta); cursor: pointer;
+    transition: border-color .12s, background .12s;
+}
+.st-hoja:hover { border-color: var(--pt-azul); background: var(--pt-azul-sua); }
+.st-hoja.is-factura { border-left: 3px solid var(--pt-verde); }
+.st-hoja-num {
+    flex: 0 0 auto; width: 20px; height: 20px; border-radius: 4px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #eef1f6; color: var(--pt-gris); font-size: 11px; font-weight: 700;
+}
+.st-hoja-que .fa { margin-right: 4px; color: var(--pt-gris); }
+.st-hoja.is-factura .st-hoja-que .fa { color: var(--pt-verde); }
+.st-hoja-val { font-weight: 700; white-space: nowrap; }
+
+
+/* ── REQ-020e: una sola cosa a la vez ────────────────────────────────── */
+/* ── Subir: dos columnas, y la guia a la vista ───────────────────────
+   El portal vive en 560 px porque una decision por pantalla se lee mejor
+   en columna estrecha. Pero en el momento de SUBIR hay una segunda cosa
+   que el afiliado necesita a la vez —que documentos hacen falta— y tenerla
+   plegada detras de un desplegable, con dos tercios de pantalla en blanco
+   al lado, era desperdiciar el sitio justo donde hacia falta la ayuda. */
+/* Ancho acotado: en 1500 px el bloque de subir se estiraria hasta hacerse
+   incomodo de leer. Se queda en una medida de lectura y centrado. */
+.st-subir-rejilla {
+    display: grid; grid-template-columns: minmax(0,1fr) minmax(0,380px);
+    gap: 20px; align-items: start; max-width: 1040px;
+}
+
+.st-guia {
+    background: #fff; border: 1px solid var(--pt-linea); border-radius: 10px;
+    padding: 18px 20px 6px;
+}
+.st-guia-tit {
+    font-size: 14px; font-weight: 700; color: var(--pt-azul);
+    margin: 0 0 4px; display: flex; align-items: center; gap: 8px;
+}
+.st-guia-cuerpo { }
+
+/* En pantalla estrecha vuelve a una sola columna y la guia baja, que es su
+   sitio natural cuando no hay hueco al lado. */
+@media (max-width: 900px) {
+    .st-portal.is-subiendo { max-width: 560px; }
+    .st-subir-rejilla { grid-template-columns: 1fr; }
+}
+
+/* ── En revision: lo comprobado y lo pendiente ───────────────────────
+   Revision NO es negativa. Antes la pantalla anunciaba «Estimamos devolverle
+   $ 0,00» y un motivo que hablaba de la factura, cuando la regla de la
+   factura salia CUMPLE y lo unico pendiente era que lo mirara una persona. */
+.st-reso-cifra .val.is-espera { font-size: 34px; opacity: .5; }
+
+.st-reso-orden, .st-reso-revisar {
+    text-align: left; border-radius: 8px; padding: 14px 16px; margin-top: 14px;
+}
+.st-reso-orden   { background: var(--pt-verde-sua); border: 1px solid #bfe3cd; }
+.st-reso-revisar { background: var(--pt-azul-sua);  border: 1px solid #c9d8f2; }
+
+.st-reso-orden-tit, .st-reso-revisar-tit {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 700; margin-bottom: 8px;
+}
+.st-reso-orden-tit   { color: var(--pt-verde); }
+.st-reso-revisar-tit { color: var(--pt-azul); }
+
+.st-reso-orden ul, .st-reso-revisar ul { list-style: none; margin: 0; padding: 0; }
+.st-reso-orden li {
+    display: flex; gap: 8px; font-size: 12.5px; color: var(--pt-tinta);
+    line-height: 1.5; padding: 2px 0;
+}
+.st-reso-orden li > .fa { color: var(--pt-verde); margin-top: 3px; }
+.st-reso-revisar li { font-size: 12.5px; line-height: 1.5; padding: 4px 0; }
+.st-reso-revisar li strong { display: block; color: var(--pt-tinta); }
+.st-reso-revisar li span { display: block; color: var(--pt-gris); margin-top: 1px; }
+.st-reso-revisar-pie {
+    font-size: 12px; color: var(--pt-gris); margin: 9px 0 0; font-style: italic;
+}
+
+/* ── El arbol: la factura y lo que la respalda ───────────────────────
+   Sin esto la pantalla era una pila de tarjetas iguales y el afiliado no
+   podia saber si sus papeles se sostenian entre si. La sangria y la linea
+   dicen de un vistazo lo que tres parrafos no: esto cuelga de aquello. */
+.st-arbol { margin-bottom: 18px; }
+.st-arbol + .st-arbol { padding-top: 16px; border-top: 1px dashed var(--pt-linea); }
+
+/* Los respaldos van sangrados y colgando de una linea vertical. */
+.st-arbol .st-docs-cliente > .st-docv:not(:first-child) { margin-left: 26px; }
+.st-arbol .st-docs-cliente { position: relative; }
+
+.st-arbol-union {
+    display: flex; align-items: flex-start; gap: 7px;
+    margin: 2px 0 6px 8px; padding-left: 8px;
+    border-left: 2px solid var(--pt-linea);
+    font-size: 12.5px; color: var(--pt-gris); line-height: 1.45;
+}
+.st-arbol-union > .fa { color: var(--pt-azul); opacity: .55; margin-top: 2px; }
+
+/* El caso malo: respaldos sin su factura. No es una tarjeta mas de la pila,
+   es lo unico que impide que le paguen, y se dice con nombre y apellido. */
+.st-arbol.is-huerfano { border-left: 3px solid var(--pt-ambar); padding-left: 12px; }
+.st-arbol-falta {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: var(--pt-ambar-sua); border: 1px solid #f0dfae;
+    border-radius: 7px; padding: 12px 14px; margin-bottom: 10px;
+    color: var(--pt-ambar);
+}
+.st-arbol-falta > .fa { font-size: 16px; margin-top: 2px; }
+.st-arbol-falta strong { display: block; font-size: 13.5px; margin-bottom: 3px; }
+.st-arbol-falta span { display: block; font-size: 12.5px; line-height: 1.5; }
+.st-arbol-pedir { margin-top: 6px; }
+.st-arbol-pedir strong { display: inline; }
+
+/* ── Lo que va a adjuntar, ANTES de adjuntarlo ───────────────────────
+   Un nombre de fichero no dice si la foto salio movida, si esta del reves o
+   si es la hoja que uno creia. Eso solo se ve mirandola, y hay que poder
+   mirarla antes de subir: rehacer una tanda cuesta un minuto de espera. */
+.st-elegidos { margin: 12px 0 16px; }
+.st-elegidos-cab { font-size: 12.5px; color: var(--pt-gris); margin-bottom: 9px; }
+.st-elegidos-tira { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.st-elegido {
+    display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+    width: 108px; padding: 7px; cursor: zoom-in; text-align: left;
+    background: #fff; border: 1px solid var(--pt-linea); border-radius: 8px;
+}
+.st-elegido:hover { border-color: var(--pt-azul); box-shadow: 0 0 0 3px var(--pt-azul-sua); }
+.st-elegido-mini {
+    display: flex; align-items: center; justify-content: center;
+    height: 92px; overflow: hidden; border-radius: 5px;
+    background: #f4f6fa; color: var(--pt-gris); font-size: 22px;
+}
+.st-elegido-mini img { max-width: 100%; max-height: 92px; display: block; }
+.st-elegido-pie strong {
+    display: block; font-size: 11px; font-weight: 600; color: var(--pt-tinta);
+    line-height: 1.3; word-break: break-word;
+    /* Dos lineas y puntos suspensivos: un nombre largo no puede empujar la tira. */
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.st-elegido-pie small { display: block; font-size: 10.5px; color: var(--pt-gris); margin-top: 2px; }
+
+/* ── Verlo entero, sin haberlo subido todavia ──────────────────────── */
+.st-previsor {
+    position: fixed; inset: 0; z-index: 1200;
+    background: rgba(15,25,45,.62);
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.st-previsor[hidden] { display: none; }
+.st-previsor-caja {
+    background: #fff; border-radius: 10px; overflow: hidden;
+    width: min(900px, 100%); max-height: 100%; display: flex; flex-direction: column;
+    box-shadow: 0 18px 50px rgba(10,20,40,.35);
+}
+.st-previsor-host {
+    flex: 1 1 auto; overflow: auto; padding: 14px; background: #f4f6fa;
+    display: flex; align-items: flex-start; justify-content: center;
+}
+.st-previsor-img { max-width: 100%; height: auto; display: block; background: #fff; }
+.st-previsor-nota { font-size: 13.5px; color: var(--pt-gris); margin: 30px 0; text-align: center; }
+
+/* ── La ficha del plan: la MISMA tarjeta que eligio, ya elegida ───────
+   Reusa .st-plan-nombre / .st-plan-sub / .st-plan-estado / .st-plan-dato del
+   selector de planes a proposito: si aqui se dibujara otra cosa, el afiliado
+   tendria que volver a averiguar que esta mirando. */
+.st-ficha {
+    background: #fff; border: 1px solid var(--pt-linea); border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(20,30,50,.05);
+    padding: 16px 20px 18px; margin-bottom: 20px;
+}
+.st-ficha-cab {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 14px; padding-bottom: 13px; border-bottom: 1px solid #f0f2f5;
+}
+.st-ficha-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.st-ficha-id > .fa { font-size: 22px; color: var(--pt-azul); flex: 0 0 auto; }
+
+.st-ficha-datos {
+    display: flex; flex-wrap: wrap; gap: 14px 34px; padding-top: 14px;
+}
+/* La persona manda: va primera y con el nombre a tamano de dato, no de nota. */
+.st-ficha-datos .st-plan-dato.is-persona { margin-right: auto; }
+.st-ficha-datos .st-plan-dato.is-persona .val { font-size: 16px; }
+.st-ficha-datos .st-plan-dato .nota { font-style: normal; max-width: 240px; }
+
+.st-ficha-cambiar {
+    display: inline-block; margin-left: 8px;
+    font-size: 11.5px; color: var(--pt-azul);
+    border: 1px solid var(--pt-linea); border-radius: 5px; padding: 1px 9px;
+    white-space: nowrap; vertical-align: 1px;
+}
+.st-ficha-cambiar:hover {
+    border-color: var(--pt-azul); background: var(--pt-azul-sua); text-decoration: none;
+}
+
+@media (max-width: 560px) {
+    .st-ficha-datos { gap: 12px 22px; }
+    .st-ficha-datos .st-plan-dato.is-persona { flex: 1 0 100%; }
+}
+
+.st-cab-cli {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 18px;
+    padding-bottom: 12px; border-bottom: 1px solid var(--pt-linea);
+}
+.st-cab-cli-plan, .st-cab-cli-benef { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.st-cab-cli-plan > .fa { font-size: 20px; color: var(--pt-azul); }
+.st-cab-cli strong { display: block; font-size: 14.5px; color: var(--pt-tinta); }
+.st-cab-cli small  { display: block; font-size: 11.5px; color: var(--pt-gris); }
+.st-cab-cli-benef a {
+    font-size: 12px; color: var(--pt-azul); border: 1px solid var(--pt-linea);
+    border-radius: 5px; padding: 3px 10px; white-space: nowrap;
+}
+.st-cab-cli-benef a:hover { border-color: var(--pt-azul); background: var(--pt-azul-sua); text-decoration: none; }
+
+/* La instrucción: lo único grande de la pantalla */
+.st-instruccion {
+    font-size: 26px; font-weight: 700; color: var(--pt-azul);
+    margin: 0 0 18px; line-height: 1.25;
+}
+
+/* El foco: la caja de lo que toca ahora */
+.st-foco {
+    background: #fff; border: 1px solid var(--pt-linea); border-radius: 10px;
+    padding: 22px 24px; margin-bottom: 14px;
+}
+.st-foco.is-accion   { border-color: var(--pt-azul); box-shadow: 0 0 0 3px var(--pt-azul-sua); }
+.st-foco.is-falta    { border-left: 4px solid var(--pt-ambar); }
+.st-foco.is-confirmar{ border-left: 4px solid var(--pt-verde); }
+.st-foco h2 { font-size: 16px; font-weight: 700; color: var(--pt-azul); margin: 0 0 8px; }
+.st-foco-cab { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.st-foco-sub { font-size: 13.5px; color: var(--pt-gris); line-height: 1.55; margin: 0 0 16px; }
+.st-foco-alerta {
+    background: var(--pt-ambar-sua); border: 1px solid #f0dfae; color: var(--pt-ambar);
+    border-radius: 7px; padding: 12px 15px; font-size: 14px; line-height: 1.5; margin: 0 0 16px;
+}
+
+/* Lo plegado: a mano, pero fuera del camino */
+.st-plegable {
+    background: #fff; border: 1px solid var(--pt-linea); border-radius: 9px;
+    margin-bottom: 12px; font-size: 13.5px;
+}
+.st-plegable.is-tenue { background: transparent; border-style: dashed; }
+.st-plegable > summary {
+    padding: 12px 18px; cursor: pointer; color: var(--pt-azul); font-weight: 600;
+    list-style: none; outline: none;
+}
+.st-plegable > summary::-webkit-details-marker { display: none; }
+/* Los chevrones habian perdido su escape: el fichero guardaba un byte de
+   control seguido de "BE"/"B4", asi que en pantalla salia el texto suelto
+   "BE" a la derecha del titulo. Son U+25BE y U+25B4. */
+.st-plegable > summary::after { content: "\25BE"; color: var(--pt-gris); float: right; }
+.st-plegable[open] > summary::after { content: "\25B4"; }
+.st-plegable > summary .fa { margin-right: 7px; }
+.st-plegable-cuerpo { padding: 4px 18px 16px; border-top: 1px solid #f0f2f5; }
+
+/* La consecuencia: lo que significa el documento para su bolsillo */
+.st-docv-consec {
+    margin: 9px 0 0; font-size: 13.5px; line-height: 1.5;
+    color: var(--pt-ambar); background: var(--pt-ambar-sua);
+    border: 1px solid #f0dfae; border-radius: 6px; padding: 9px 12px;
+}
+.st-docv-consec.is-ok {
+    color: var(--pt-verde); background: var(--pt-verde-sua); border-color: #bfe3cd;
+}
+.st-docv.is-error .st-docv-consec {
+    color: var(--pt-rojo); background: var(--pt-rojo-sua); border-color: #f0c4c4;
+}
+
+/* Quitar un documento subido por error */
+.st-docv-quitar-form { display: inline; }
+.st-docv-quitar {
+    background: none; border: 1px solid var(--pt-linea); border-radius: 6px;
+    padding: 5px 12px; font-size: 12.5px; color: var(--pt-gris); cursor: pointer;
+    white-space: nowrap;
+}
+.st-docv-quitar:hover { border-color: var(--pt-rojo); color: var(--pt-rojo); background: var(--pt-rojo-sua); }
+.st-docv-pie { gap: 8px; }
+
+@media (max-width: 640px) {
+    .st-instruccion { font-size: 21px; }
+    .st-foco { padding: 16px; }
+    .st-cab-cli { gap: 10px; }
+}
+
+
+/* Lo que el clasificador dedujo del documento, en sus palabras */
+.st-docv-resumen {
+    margin: 9px 0 0; font-size: 13px; line-height: 1.5; color: var(--pt-gris);
+    background: #f6f8fb; border-radius: 6px; padding: 9px 12px; font-style: italic;
+}
+.st-docv-resumen .fa { margin-right: 6px; font-style: normal; }
+
+
+/* ── El documento es de otra persona ─────────────────────────────────── */
+.st-docv-persona {
+    margin: 10px 0 0; border-radius: 7px; padding: 12px 14px;
+    font-size: 13.5px; line-height: 1.5;
+}
+.st-docv-persona.is-cambiable {
+    background: var(--pt-azul-sua); border: 1px solid #c6d6f0; color: var(--pt-azul);
+}
+.st-docv-persona.is-ajeno {
+    background: var(--pt-rojo-sua); border: 1px solid #f0c4c4; color: var(--pt-rojo);
+}
+.st-docv-persona p { margin: 0; font-weight: 600; }
+.st-docv-persona-por {
+    display: block; margin-top: 5px; font-size: 12.5px; opacity: .85; font-style: italic;
+}
+.st-docv-persona-form { margin-top: 11px; }
+.st-docv-persona-btn {
+    background: var(--pt-azul); border: none; border-radius: 6px; color: #fff;
+    padding: 8px 16px; font-size: 13.5px; font-weight: 700; cursor: pointer;
+}
+.st-docv-persona-btn:hover { background: #00246a; }
+.st-docv-persona-nota {
+    display: block; margin-top: 7px; font-size: 12px; opacity: .8;
+}
+
+/* ── Dónde conseguir la factura ──────────────────────────────────────── */
+.st-donde { list-style: none; margin: 6px 0 0; padding: 0; }
+.st-donde li {
+    display: flex; gap: 9px; padding: 8px 0; font-size: 13.5px; line-height: 1.5;
+    border-bottom: 1px solid #f2f4f8;
+}
+.st-donde li:last-child { border-bottom: none; }
+.st-donde .fa { flex: 0 0 auto; margin-top: 3px; color: var(--pt-azul); }
+
+
+/* ============================================================================
+   REQ-020l — Usar la pantalla.
+
+   Antes todo iba en una columna de 860px: en un monitor de 1900 quedaban dos
+   franjas vacías enormes a los lados y los documentos por debajo del pliegue.
+   Ahora, en pantalla ancha, dos columnas: la acción a la izquierda y sus
+   documentos a la derecha, ambos visibles a la vez. En móvil se apilan.
+   ========================================================================= */
+.st-portal.is-panel { max-width: 1500px; }
+
+.st-columnas {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+}
+.st-col-accion, .st-col-docs { min-width: 0; }
+
+/* Sin documentos que enseñar, la segunda columna solo aporta vacio. */
+.st-columnas.is-sola { grid-template-columns: minmax(0, 1fr); }
+
+/* El visor y la lista se quedan a la vista mientras se hace scroll */
+.st-col-docs { position: sticky; top: 12px; }
+
+@media (max-width: 1180px) {
+    .st-columnas { grid-template-columns: 1fr; }
+    .st-col-docs { position: static; }
+}
+
+/* ── La portada del documento ────────────────────────────────────────── */
+.st-docv-portada {
+    flex: 0 0 auto; width: 54px; height: 70px; border-radius: 5px;
+    border: 1px solid var(--pt-linea); background: #f6f8fb;
+    display: inline-flex; align-items: center; justify-content: center;
+    overflow: hidden; color: var(--pt-gris); font-size: 20px;
+}
+.st-docv-portada img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.st-docv-portada.is-lista { background: #fff; }
+
+/* ── Las marcas que encontró el clasificador ─────────────────────────── */
+.st-docv-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.st-tag {
+    background: #eef1f6; color: var(--pt-gris); border-radius: 4px;
+    padding: 2px 8px; font-size: 11px; white-space: nowrap;
+}
+.st-docv.is-ok .st-tag { background: var(--pt-verde-sua); color: var(--pt-verde); }
+
+/* ── El visor: al lado, no abajo, y sin saltos ───────────────────────── */
+.st-docv-visor { margin-top: 14px; }
+.st-docv-visor-host { height: 520px; }
+
+@media (max-width: 1180px) {
+    .st-docv-visor-host { height: 420px; }
+}
+
+
+/* ============================================================================
+   REQ-020m — La tarjeta completa, y el scroll acotado.
+
+   Con veinte documentos la página no puede seguir bajando: la lista vive en un
+   panel con su propio scroll y altura tope. Lo de fuera se queda quieto.
+   ========================================================================= */
+.st-docs-cliente {
+    max-height: calc(100vh - 260px);
+    overflow-y: auto;
+    padding-right: 6px;
+    /* Un borde de aviso arriba y abajo para que se note que hay más */
+    scrollbar-width: thin;
+}
+.st-docs-cliente::-webkit-scrollbar { width: 8px; }
+.st-docs-cliente::-webkit-scrollbar-thumb {
+    background: #cfd8e6; border-radius: 4px;
+}
+.st-docs-cliente::-webkit-scrollbar-track { background: #f4f6fa; border-radius: 4px; }
+
+@media (max-width: 1180px) {
+    .st-docs-cliente { max-height: 520px; }
+}
+
+/* ── Lo que comprobamos ──────────────────────────────────────────────── */
+.st-verif { margin-top: 11px; padding-top: 10px; border-top: 1px solid #f0f2f5; }
+.st-verif-tit {
+    display: block; font-size: 11px; font-weight: 700; color: var(--pt-gris);
+    text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px;
+}
+.st-verif-fila {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    padding: 4px 0; font-size: 13px;
+}
+.st-verif-fila > .fa { color: var(--pt-verde); font-size: 11px; }
+.st-verif-que { color: var(--pt-gris); min-width: 130px; }
+.st-verif-val { font-weight: 600; word-break: break-word; }
+
+/* ── Los rubros de la factura ────────────────────────────────────────── */
+.st-items { margin-top: 12px; padding-top: 10px; border-top: 1px solid #f0f2f5; }
+.st-items-tit, .st-dxs-tit {
+    display: block; font-size: 12.5px; font-weight: 700; color: var(--pt-azul);
+    margin-bottom: 7px;
+}
+.st-items-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.st-items-tabla td { padding: 5px 6px; border-bottom: 1px solid #f4f6fa; vertical-align: top; }
+.st-items-tabla td.desc { width: 100%; }
+.st-items-tabla td.cant { white-space: nowrap; color: var(--pt-gris); text-align: right; }
+.st-items-tabla td.val  { white-space: nowrap; text-align: right; font-weight: 600;
+                          font-variant-numeric: tabular-nums; }
+.st-items-tabla td.ev   { white-space: nowrap; }
+.st-items-rubro {
+    margin-left: 7px; font-size: 10.5px; background: #eef1f6; color: var(--pt-gris);
+    border-radius: 3px; padding: 1px 6px;
+}
+
+/* ── Los diagnósticos ────────────────────────────────────────────────── */
+.st-dxs { margin-top: 12px; padding-top: 10px; border-top: 1px solid #f0f2f5; }
+.st-dx-fila {
+    display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
+    padding: 4px 0; font-size: 13px;
+}
+.st-dx-fila code {
+    background: var(--pt-azul-sua); color: var(--pt-azul); border-radius: 3px;
+    padding: 1px 7px; font-size: 12px; font-weight: 700;
+}
+
+/* ── El ancla de evidencia y su recorte ──────────────────────────────── */
+.st-evid { display: inline-block; position: relative; }
+.st-evid-btn {
+    background: #fff8e1; border: 1px solid #f0e0a8; border-radius: 4px;
+    padding: 1px 8px; font-size: 11px; color: #7a5c00; cursor: pointer;
+    white-space: nowrap;
+}
+.st-evid-btn:hover { background: #fff2c4; }
+.st-evid-btn.is-abierto { background: #ffe89a; border-color: #d9c46a; }
+.st-evid-btn .fa { margin-right: 3px; }
+
+.st-evid-recorte {
+    display: block; margin-top: 7px; border: 1px solid var(--pt-linea);
+    border-radius: 6px; overflow: hidden; background: #fff; max-width: 440px;
+    box-shadow: 0 2px 10px rgba(20,30,50,.1);
+}
+.st-evid-recorte img { display: block; width: 100%; cursor: zoom-in; }
+.st-evid-cargando {
+    display: block; padding: 10px 12px; font-size: 12px; color: var(--pt-gris);
+    font-style: italic;
+}

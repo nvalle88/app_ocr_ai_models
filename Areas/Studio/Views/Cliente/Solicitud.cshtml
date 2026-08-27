@@ -1,0 +1,1308 @@
+@model app_ocr_ai_models.Areas.Studio.Models.ClienteSolicitudVm
+@{
+    ViewData["Title"] = "Su solicitud";
+
+    string Dinero(decimal? v) => v.HasValue ? "$ " + v.Value.ToString("N2") : "—";
+
+    var momento = Model.Momento;
+
+    // Se arranca solo cuando HAY TRABAJO PENDIENTE, no sólo al volver de subir.
+    //
+    // Antes dependía únicamente de TempData["Clasificar"], que vive un solo
+    // viaje: si el afiliado recargaba, volvía atrás o cerraba la pestaña
+    // mientras se identificaba, la pantalla decía «Estamos identificando sus
+    // documentos» para siempre y NO había un solo botón que pulsar — el de
+    // calcular sólo se pinta en REVISAR. Una pantalla que afirma estar
+    // trabajando sin nadie trabajando es la peor clase de cuelgue: el afiliado
+    // no tiene forma de saber que está atascado ni cómo salir.
+    var hayPendientes = Model.PasosPendientes.Count > 0;
+    var clasificar    = TempData["Clasificar"] != null
+                        || (momento == "LEYENDO" && hayPendientes);
+
+    // El ancla de evidencia: la misma del auditor. Un botón «dónde» que pinta
+    // el RECORTE del documento en el sitio donde se encontró el dato. El
+    // nombre del fichero nunca va en un onclick: sus comillas y acentos
+    // cerraban el atributo y el clic no hacía nada.
+    Func<int, int?, string?, Microsoft.AspNetCore.Html.IHtmlContent> Evid =
+        (docId, pagina, texto) =>
+    {
+        if (string.IsNullOrWhiteSpace(texto) || texto!.Trim().Length < 2)
+            return new Microsoft.AspNetCore.Html.HtmlString(string.Empty);
+
+        var t  = System.Net.WebUtility.HtmlEncode(texto.Trim());
+        var pg = pagina?.ToString() ?? "";
+        return new Microsoft.AspNetCore.Html.HtmlString(
+            $@"<span class=""st-evid"">
+                 <button type=""button"" class=""st-evid-btn"" title=""Ver dónde dice esto en su documento""
+                         data-evid-doc=""{docId}"" data-evid-pag=""{pg}"" data-evid-txt=""{t}"">
+                   <i class=""fa fa-search-plus""></i> dónde
+                 </button>
+               </span>");
+    };
+}
+
+@*
+    REQ-020e — Una sola cosa a la vez.
+
+    La versión anterior apilaba veintinueve bloques en una página de ochocientas
+    líneas: había que hacer scroll y deducir por cuenta propia en qué punto
+    estaba la solicitud y qué se esperaba del afiliado. Ahora la pantalla se
+    organiza alrededor de Model.Momento — SUBIR, LEYENDO, FALTA_FACTURA,
+    REVISAR, RESULTADO, ENVIADO — y sólo enseña lo que toca; lo demás va
+    plegado y a mano de quien lo quiera.
+*@
+
+@* Subiendo, la pantalla se ensancha: la guia de documentos deja de estar
+   plegada y se pone AL LADO. En una columna de 560 px la guia solo cabia
+   escondida detras de un "¿Que documentos necesito?" que casi nadie abre,
+   mientras dos tercios de la pantalla estaban en blanco. La duda de "¿que
+   tengo que subir?" es justo la que hay que responder ANTES de que elija los
+   ficheros, no despues. *@
+<div class="st-portal is-panel@(momento == "SUBIR" || momento == "FALTA_FACTURA" ? " is-subiendo" : "")">
+
+    @* ── El plan y para quién es, en UNA tarjeta ─────────────────────
+       Antes era una línea suelta con el nombre del plan a un lado y el
+       beneficiario al otro: se leía como una migaja, no como la ficha de la
+       persona. Y en cuanto el afiliado salía de la pantalla de planes perdía
+       de vista sus cifras justo cuando empieza a importarle cuánto le van a
+       devolver. Se reusa el lenguaje de las tarjetas de plan —mismo borde,
+       misma píldora de estado, mismo par etiqueta/valor— para que sea la
+       MISMA cosa que acaba de elegir, no otra distinta. *@
+    <div class="st-ficha">
+        <div class="st-ficha-cab">
+            <div class="st-ficha-id">
+                <i class="fa fa-id-card-o"></i>
+                <div>
+                    <span class="st-plan-nombre">@(Model.NombrePlan ?? "Su plan")</span>
+                    <span class="st-plan-sub">
+                        Contrato @Model.NumeroContrato
+                        @if (!string.IsNullOrWhiteSpace(Model.Contrato?.Region)) { <text> &middot; @Model.Contrato!.Region</text> }
+                        @if (Model.Contrato?.Nivel is int niv) { <text> &middot; Nivel @niv</text> }
+                    </span>
+                </div>
+            </div>
+            @if (string.Equals(Model.Contrato?.Estado, "Activo", StringComparison.OrdinalIgnoreCase))
+            {
+                <span class="st-plan-estado is-ok"><i class="fa fa-check-circle"></i> Activo</span>
+            }
+            else if (!string.IsNullOrWhiteSpace(Model.Contrato?.Estado))
+            {
+                <span class="st-plan-estado is-warn">@Model.Contrato!.Estado</span>
+            }
+        </div>
+
+        <div class="st-ficha-datos">
+            @if (!string.IsNullOrWhiteSpace(Model.NombreBeneficiario))
+            {
+                <div class="st-plan-dato is-persona">
+                    <span class="lbl">El reembolso es para</span>
+                    <span class="val">@Model.NombreBeneficiario</span>
+                    <span class="nota">
+                        @Model.RelacionBeneficiario
+                        @if (Model.EdadBeneficiario is int ed) { <text> &middot; @ed años</text> }
+                        @if (Model.TotalBeneficiarios > 1)
+                        {
+                            <a class="st-ficha-cambiar"
+                               href="@Url.Action("Beneficiario", "Cliente", new { area = "Studio", caseCode = Model.CaseCode })">cambiar</a>
+                        }
+                    </span>
+                </div>
+            }
+
+            @if (Model.Contrato?.CoberturaMaxima is decimal cob)
+            {
+                <div class="st-plan-dato">
+                    <span class="lbl">Cobertura máxima al año</span>
+                    <span class="val">@Dinero(cob)</span>
+                </div>
+            }
+
+            @* El deducible que le QUEDA, no el del contrato: es el que se le va
+               a retener hoy. Medido: a Martha le quedaban $48 de sus $100 y la
+               resolución retuvo exactamente eso. *@
+            @if (Model.DeduciblePorCubrir is decimal falta)
+            {
+                <div class="st-plan-dato">
+                    <span class="lbl">Deducible por cubrir</span>
+                    <span class="val">@Dinero(falta)</span>
+                    @if (Model.DeducibleCubierto is decimal ya && ya > 0)
+                    {
+                        <span class="nota">de @Dinero(Model.Contrato!.DeducibleTotal); ya lleva @Dinero(ya)</span>
+                    }
+                    else
+                    {
+                        <span class="nota">lo que le toca cubrir antes de que el plan empiece a pagar</span>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    @* ── La única instrucción de la pantalla ─────────────────────────── *@
+    <h1 class="st-instruccion">@Model.Instruccion</h1>
+
+    @if (!string.IsNullOrWhiteSpace(Model.AvisoBeneficiario))
+    {
+        <div class="st-portal-aviso"><i class="fa fa-clock-o"></i> @Model.AvisoBeneficiario</div>
+    }
+    @if (TempData["Ok"] != null)
+    {
+        <div class="st-portal-ok"><i class="fa fa-check-circle"></i> @TempData["Ok"]</div>
+    }
+    @if (TempData["Aviso"] != null)
+    {
+        <div class="st-portal-aviso"><i class="fa fa-info-circle"></i> @TempData["Aviso"]</div>
+    }
+    @if (TempData["Error"] != null)
+    {
+        <div class="st-portal-error"><i class="fa fa-exclamation-circle"></i> @TempData["Error"]</div>
+    }
+
+    @* Dos columnas en pantalla ancha: a la izquierda lo que toca hacer, a la
+       derecha sus documentos. Antes todo iba en una columna de 860px y sobraban
+       dos franjas enormes a los lados. *@
+    @* Mientras no haya documentos, la columna de la derecha esta VACIA y se
+       lleva media pantalla. Se colapsa a una sola columna y el sitio se usa
+       para poner la guia al lado de la caja de subir, que es lo que hace
+       falta justo en ese momento. *@
+    <div class="st-columnas@(Model.Documentos.Count == 0 ? " is-sola" : "")">
+    <div class="st-col-accion">
+
+    @* ═══════════ EL RESULTADO ═══════════════════════════════════════ *@
+    @if ((momento == "RESULTADO" || momento == "ENVIADO") && Model.Resolucion is { HayAlgo: true } r)
+    {
+        var claseReso = (r.EstadoPropuesto ?? "").ToUpperInvariant() == "LIQUIDA_AUTO" ? "is-auto"
+                      : (r.EstadoPropuesto ?? "").ToUpperInvariant() == "NEGATIVA"     ? "is-neg"
+                      : "is-revision";
+
+        <div class="st-reso @claseReso">
+            <div class="st-reso-cifra">
+                <span class="lbl">@r.TitularCifra</span>
+                @if (r.SinCifraTodavia)
+                {
+                    @* Sin importe no se pinta un cero gigante: se dice qué pasa. *@
+                    <span class="val is-espera"><i class="fa fa-hourglass-half"></i></span>
+                    <span class="de">
+                        Sus @Dinero(r.TotalPresentado) están en manos de un analista de Salud S.A.
+                        Le confirmamos el importe en cuanto termine de revisarlo.
+                    </span>
+                }
+                else
+                {
+                    <span class="val">@Dinero(r.Devolvemos)</span>
+                    <span class="de">de @Dinero(r.TotalPresentado) que presentó</span>
+                }
+            </div>
+
+            @* Lo que YA está comprobado. Va primero y a propósito: el afiliado
+               llega asustado creyendo que le rechazaron algo, y lo primero que
+               tiene que leer es qué está bien. *@
+            @if (r.SinCifraTodavia && r.LoQueEstaEnOrden.Count > 0)
+            {
+                <div class="st-reso-orden">
+                    <span class="st-reso-orden-tit">
+                        <i class="fa fa-check-circle"></i> Esto ya está comprobado
+                    </span>
+                    <ul>
+                        @foreach (var ok in r.LoQueEstaEnOrden)
+                        {
+                            <li><i class="fa fa-check"></i> @ok.ParaElCliente</li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            @* Y lo que falta. NO es un rechazo, y por eso no se pinta en rojo
+               ni se le llama motivo: se le llama lo que es. *@
+            @if (r.SinCifraTodavia && r.LoQueFaltaRevisar.Count > 0)
+            {
+                <div class="st-reso-revisar">
+                    <span class="st-reso-revisar-tit">
+                        <i class="fa fa-search"></i> Lo que estamos terminando de comprobar
+                    </span>
+                    <ul>
+                        @foreach (var pd in r.LoQueFaltaRevisar)
+                        {
+                            @* El detalle del modelo está escrito para el
+                               auditor: aquí va la versión del afiliado. *@
+                            <li><strong>@pd.ParaElCliente</strong></li>
+                        }
+                    </ul>
+                    <p class="st-reso-revisar-pie">
+                        Nada de esto depende de usted: no hace falta que envíe nada más.
+                    </p>
+                </div>
+            }
+
+            @if (r.TotalDeducible > 0 || r.TotalCopago > 0 || r.TotalNoCubierto > 0)
+            {
+                <div class="st-reso-desglose">
+                    @if (r.TotalDeducible > 0)
+                    {
+                        <div class="st-reso-parte">
+                            <span class="lbl">Deducible</span>
+                            <span class="val">@Dinero(r.TotalDeducible)</span>
+                            <span class="nota">lo que le toca antes de que el plan pague</span>
+                        </div>
+                    }
+                    @if (r.TotalCopago > 0)
+                    {
+                        <div class="st-reso-parte">
+                            <span class="lbl">Copago</span>
+                            <span class="val">@Dinero(r.TotalCopago)</span>
+                            <span class="nota">el porcentaje a su cargo</span>
+                        </div>
+                    }
+                    @if (r.TotalNoCubierto > 0)
+                    {
+                        <div class="st-reso-parte">
+                            <span class="lbl">No cubierto</span>
+                            <span class="val">@Dinero(r.TotalNoCubierto)</span>
+                            <span class="nota">fuera de su plan</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            <div class="st-reso-paso">
+                <i class="fa fa-info-circle"></i>
+                <div><strong>Qué pasa ahora</strong><span>@r.SiguientePaso</span></div>
+            </div>
+            <p class="st-reso-adv"><i class="fa fa-balance-scale"></i> @r.Advertencia</p>
+        </div>
+
+        @if (r.Faltantes.Count > 0)
+        {
+            <div class="st-foco is-falta">
+                <h2><i class="fa fa-exclamation-circle"></i> Le falta adjuntar</h2>
+                <ul class="st-faltantes">
+                    @foreach (var f in r.Faltantes)
+                    {
+                        <li><strong>@f</strong></li>
+                    }
+                </ul>
+            </div>
+        }
+
+        @* El detalle, plegado: quien quiera el porqué lo abre. *@
+        <details class="st-plegable">
+            <summary><i class="fa fa-list-ul"></i> Ver el detalle línea por línea</summary>
+            <div class="st-plegable-cuerpo">
+                @foreach (var it in r.Cubiertos)
+                {
+                    <div class="st-item-reso is-si">
+                        <div class="st-item-reso-cab">
+                            <span class="st-item-reso-desc">@it.Descripcion</span>
+                            <span class="st-item-reso-cifras">
+                                @if (it.Porcentaje.HasValue)
+                                {
+                                    <span class="st-item-reso-pct">@it.Porcentaje.Value.ToString("0")%</span>
+                                }
+                                <span class="st-item-reso-val">@Dinero(it.ValorCubierto)</span>
+                            </span>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(it.QuedaASuCargo))
+                        {
+                            <p class="st-item-reso-cargo"><i class="fa fa-user"></i> Queda a su cargo: @it.QuedaASuCargo</p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(it.Motivo))
+                        {
+                            <p class="st-item-reso-motivo">@it.Motivo</p>
+                        }
+                    </div>
+                }
+                @foreach (var it in r.NoCubiertos)
+                {
+                    <div class="st-item-reso is-no">
+                        <div class="st-item-reso-cab">
+                            <span class="st-item-reso-desc">@it.Descripcion</span>
+                            <span class="st-item-reso-cifras">
+                                <span class="st-item-reso-val">@Dinero(it.ValorPresentado)</span>
+                            </span>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(it.Motivo))
+                        {
+                            <p class="st-item-reso-motivo">@it.Motivo</p>
+                        }
+                    </div>
+                }
+                @foreach (var g in r.ReglasQueLeAfectan)
+                {
+                    <div class="st-regla-cli">
+                        <div class="st-regla-cli-cab">
+                            <span class="st-regla-cli-fam">@g.Familia</span>
+                            <span class="st-regla-cli-res is-@(g.Resultado.ToLowerInvariant())">@g.ResultadoEnCristiano</span>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(g.Detalle))
+                        {
+                            <p class="st-regla-cli-det">@g.Detalle</p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(g.TerminoExplicado))
+                        {
+                            <p class="st-regla-cli-term"><i class="fa fa-info-circle"></i> @g.TerminoExplicado</p>
+                        }
+                    </div>
+                }
+            </div>
+        </details>
+
+        @if (momento == "RESULTADO")
+        {
+            <div class="st-foco is-confirmar">
+                <h2><i class="fa fa-handshake-o"></i> ¿Está todo correcto?</h2>
+                <p class="st-foco-sub">Al confirmar nos dice que estos documentos son suyos y que los datos son correctos.</p>
+                <form method="post" asp-action="Confirmar"
+                      data-st-progreso data-st-titulo="Enviando su solicitud"
+                      data-st-etapas="Registrando su confirmación|Entregándola a Salud S.A."
+                      data-st-segundos="3">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+                    <button type="submit" class="st-portal-btn is-confirmar">
+                        <i class="fa fa-check"></i> Sí, confirmo y envío
+                    </button>
+                </form>
+            </div>
+        }
+        else
+        {
+            <div class="st-foco is-confirmar">
+                <div class="st-confirmado">
+                    <i class="fa fa-check-circle"></i>
+                    <div>
+                        <strong>Enviada.</strong>
+                        <span>Salud S.A. la tiene para revisión. Le avisaremos del resultado.</span>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+
+    @* ═══════════ SUBIR / FALTA LA FACTURA ═══════════════════════════ *@
+    @if (momento == "SUBIR" || momento == "FALTA_FACTURA")
+    {
+    <div class="st-subir-rejilla">
+        <div class="st-foco is-accion">
+            @if (momento == "FALTA_FACTURA")
+            {
+                <p class="st-foco-alerta">
+                    <i class="fa fa-exclamation-triangle"></i>
+                    Lo que nos trajo sirve de respaldo, pero <strong>sin la factura no se puede
+                    reembolsar el gasto</strong>. Adjúntela aquí.
+                </p>
+
+                @* Dónde conseguirla. Se nombra al prestador CONCRETO que ya
+                   conocemos por sus otros documentos: "pida su factura" a secas
+                   no ayuda a nadie. *@
+                <details class="st-plegable is-tenue" open>
+                    <summary><i class="fa fa-search"></i> ¿No tiene la factura? Así puede conseguirla</summary>
+                    <div class="st-plegable-cuerpo">
+                        <ul class="st-donde">
+                            @foreach (var pista in Model.DondeBuscarLaFactura)
+                            {
+                                <li><i class="fa fa-angle-right"></i> @pista</li>
+                            }
+                        </ul>
+                    </div>
+                </details>
+            }
+            else
+            {
+                <p class="st-foco-sub">
+                    Puede subir varios archivos a la vez, y también fotos. Si en un mismo PDF
+                    vienen la factura y la receta, súbalo tal cual: lo separamos nosotros.
+                </p>
+            }
+
+            <form method="post" asp-action="Adjuntar" enctype="multipart/form-data"
+                  data-st-progreso
+                  data-st-titulo="Recibiendo sus documentos"
+                  data-st-etapas="Subiendo los archivos|Leyendo el contenido de cada hoja|Guardando su expediente"
+                  data-st-nota="Leer un documento escaneado tarda unos segundos por hoja."
+                  data-st-segundos="8">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+
+                <label class="st-subir-zona" for="archivos">
+                    <i class="fa fa-cloud-upload"></i>
+                    <span class="st-subir-tit">Elija sus archivos o tome una foto</span>
+                    <span class="st-subir-sub">PDF, fotos del móvil o el XML de la factura electrónica</span>
+                    <input type="file" id="archivos" name="archivos" multiple
+                           accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.heic,.heif,.webp,.xml" />
+                </label>
+
+                @* Las miniaturas van FUERA del <label>: dentro, cualquier clic
+                   —incluido el de una miniatura— vuelve a abrir el selector de
+                   ficheros, y no habria forma de mirar lo que se eligio.
+
+                   Antes esto era una linea de texto con los nombres de fichero
+                   pegados. Un nombre no dice si la foto salio movida, si esta
+                   del reves o si es la hoja que uno creia: eso solo se ve
+                   mirandola, y hay que poder mirarla ANTES de subir. *@
+                <div class="st-elegidos" id="subirLista" hidden></div>
+
+                <button type="submit" class="st-portal-btn">
+                    Adjuntar <i class="fa fa-arrow-right"></i>
+                </button>
+            </form>
+
+        </div>
+
+        @* La guia, a la vista y al lado. Ya no es un desplegable: responde la
+           duda ANTES de elegir los ficheros, que es cuando sirve. *@
+        @if (momento == "SUBIR" && Model.Requisitos.Count > 0)
+        {
+            <aside class="st-guia">
+                <h2 class="st-guia-tit">
+                    <i class="fa fa-question-circle-o"></i> ¿Qué documentos necesito?
+                </h2>
+                <div class="st-guia-cuerpo">
+                        <ul class="st-requisitos">
+                            @foreach (var q in Model.Requisitos)
+                            {
+                                <li class="st-requisito @(q.Obligatorio ? "is-falta" : "")">
+                                    <span class="marca"><i class="fa fa-circle-thin"></i></span>
+                                    <span class="txt">
+                                        <strong>
+                                            @q.Documento
+                                            @if (q.Obligatorio)
+                                            {
+                                                <span class="obligatorio">imprescindible</span>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(q.SoloSi))
+                                            {
+                                                <span class="st-chip">@q.SoloSi</span>
+                                            }
+                                        </strong>
+                                        <small>@q.PorQue @q.DondeConseguirlo</small>
+                                    </span>
+                                </li>
+                            }
+                        </ul>
+                </div>
+            </aside>
+        }
+    </div>@* /st-subir-rejilla *@
+
+    @* Ver un fichero a tamaño completo ANTES de subirlo. Se apoya en el mismo
+       StPdfViewer del auditor, abriendo la URL blob: local — el fichero no sale
+       del navegador hasta que pulse Adjuntar. *@
+    <div class="st-previsor" id="preVisor" hidden>
+        <div class="st-previsor-caja">
+            <div class="st-docv-visor-cab">
+                <span id="preVisorNombre"></span>
+                <button type="button" class="st-docv-cerrar" id="preVisorCerrar">
+                    <i class="fa fa-times"></i> Cerrar
+                </button>
+            </div>
+            <div id="preVisorHost" class="st-previsor-host"></div>
+        </div>
+    </div>
+    }
+
+    @* ═══════════ IDENTIFICANDO: la salida si el arranque solo falla ══ *@
+    @if (momento == "LEYENDO" && Model.PasosPendientes.Count > 0)
+    {
+        <div class="st-foco is-accion" id="focoLeyendo" style="display:none">
+            <p class="st-foco-sub">
+                No pudimos terminar de leer sus documentos. Están guardados: puede
+                volver a intentarlo sin subirlos otra vez.
+            </p>
+            <button type="button" class="st-portal-btn" id="btnReintentar">
+                <i class="fa fa-refresh"></i> Volver a intentarlo
+            </button>
+        </div>
+    }
+
+    @* ═══════════ CALCULAR ═══════════════════════════════════════════ *@
+    @if (momento == "REVISAR")
+    {
+        <div class="st-foco is-accion">
+            <p class="st-foco-sub">
+                Consultamos su plan y le decimos cuánto le devolvemos y por qué. Tarda un par de minutos.
+            </p>
+            <button type="button" class="st-portal-btn" id="btnProcesar">
+                <i class="fa fa-calculator"></i> Calcular mi reembolso
+            </button>
+        </div>
+    }
+
+    @* Adjuntar más: discreto, cuando ya no es la acción principal *@
+    @if (momento == "REVISAR" || momento == "RESULTADO" || momento == "ENVIADO")
+    {
+        <details class="st-plegable is-tenue">
+            <summary><i class="fa fa-paperclip"></i> Adjuntar otro documento</summary>
+            <div class="st-plegable-cuerpo">
+                <form method="post" asp-action="Adjuntar" enctype="multipart/form-data"
+                      data-st-progreso data-st-titulo="Recibiendo sus documentos"
+                      data-st-etapas="Subiendo los archivos|Leyendo el contenido|Guardando"
+                      data-st-segundos="8">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+                    <label class="st-subir-zona" for="archivosMas">
+                        <i class="fa fa-cloud-upload"></i>
+                        <span class="st-subir-tit">Elija sus archivos</span>
+                        <input type="file" id="archivosMas" name="archivos" multiple
+                               accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.heic,.heif,.webp,.xml" />
+                    </label>
+                    <button type="submit" class="st-portal-btn">Adjuntar</button>
+                </form>
+            </div>
+        </details>
+    }
+    </div>@* /st-col-accion *@
+
+    @* ═══════════ LO QUE NOS TRAJO ═══════════════════════════════════ *@
+    <div class="st-col-docs">
+    @if (Model.Documentos.Count > 0)
+    {
+        <div class="st-foco">
+            <div class="st-foco-cab">
+                <h2><i class="fa fa-folder-open-o"></i> Lo que nos trajo (@Model.Documentos.Count)</h2>
+            </div>
+
+            @* ── El arbol: cada factura con lo que la respalda ──────────
+               Una pila de tarjetas sueltas no responde la pregunta que el
+               afiliado se hace: «¿esto que subi sirve junto o me falta algo?».
+               El emparejamiento ya lo hacia el expediente y se quedaba en la
+               base sin llegar a la pantalla. *@
+            @foreach (var grupo in Model.Agrupados)
+            {
+                <div class="st-arbol @(grupo.EsHuerfano ? "is-huerfano" : "")">
+
+                    @if (grupo.EsHuerfano)
+                    {
+                        <div class="st-arbol-falta">
+                            <i class="fa fa-exclamation-triangle"></i>
+                            <div>
+                                <strong>Falta la factura de este gasto</strong>
+                                <span>@grupo.Aviso</span>
+                                @if (!string.IsNullOrWhiteSpace(grupo.AQuienPedirla))
+                                {
+                                    <span class="st-arbol-pedir">
+                                        Pídasela a <strong>@grupo.AQuienPedirla</strong>, que es quien
+                                        le atendió.
+                                    </span>
+                                }
+                                else if (!string.IsNullOrWhiteSpace(grupo.QuienLoFirma))
+                                {
+                                    @* Quien firma no es quien factura: se dice con otro verbo. *@
+                                    <span class="st-arbol-pedir">
+                                        @(grupo.Respaldos.Count == 1 ? "Este documento lo firma" : "Estos documentos los firma")
+                                        <strong>@grupo.QuienLoFirma</strong>. La factura la emite el
+                                        consultorio, laboratorio u hospital donde le atendieron.
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="st-arbol-pedir">
+                                        Búsquela en su correo: la factura electrónica llega el mismo día
+                                        de la atención, o pídala donde le atendieron.
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+            <div class="st-docs-cliente">
+                @foreach (var d in (grupo.Factura is null
+                                    ? grupo.Respaldos
+                                    : new[] { grupo.Factura }.Concat(grupo.Respaldos).ToList()))
+                {
+                    var esRespaldo = grupo.Factura != null && d.DocId != grupo.Factura.DocId;
+                    if (esRespaldo)
+                    {
+                        <div class="st-arbol-union">
+                            <i class="fa fa-level-up fa-rotate-90"></i>
+                            <span>@(string.IsNullOrWhiteSpace(d.PorQueRespalda)
+                                     ? "Respalda esta factura"
+                                     : d.PorQueRespalda)</span>
+                        </div>
+                    }
+                    <div class="st-docv is-@d.Tono" data-doc="@d.DocId" data-nombre="@(d.Nombre ?? "")">
+                        <div class="st-docv-cab">
+                            @* La portada: el afiliado no reconoce
+                               "NA-2612602-Costa-IND-549616-2.pdf", pero sí
+                               reconoce su factura al verla. Se pinta en el
+                               navegador desde el propio PDF. *@
+                            <span class="st-docv-portada" data-doc="@d.DocId">
+                                <i class="fa fa-file-o"></i>
+                            </span>
+                            <span class="st-docv-marca">
+                                @if (d.Tono == "ok")
+                                {
+                                    <i class="fa fa-check-circle"></i>
+                                }
+                                else if (d.Tono == "aviso")
+                                {
+                                    <i class="fa fa-exclamation-triangle"></i>
+                                }
+                                else if (d.Tono == "error")
+                                {
+                                    <i class="fa fa-times-circle"></i>
+                                }
+                                else
+                                {
+                                    <i class="fa fa-circle-o-notch fa-spin"></i>
+                                }
+                            </span>
+                            <div class="st-docv-tit">
+                                <strong>@d.Titular</strong>
+                                @if (!string.IsNullOrWhiteSpace(d.Emisor))
+                                {
+                                    <span class="st-docv-es">@d.Emisor</span>
+                                }
+                            </div>
+                            @if (d.EsFactura && d.Valor.HasValue)
+                            {
+                                <span class="st-docv-valor">@Dinero(d.Valor)</span>
+                            }
+                        </div>
+
+                        @* Qué parece ser, según lo que leyó el clasificador. Es lo
+                           que convierte un "no reconocimos este documento" inútil en
+                           algo accionable: "es un pedido de Amazon por una prenda". *@
+                        @if (!string.IsNullOrWhiteSpace(d.Resumen) && !d.EsFactura)
+                        {
+                            <p class="st-docv-resumen"><i class="fa fa-eye"></i> @d.Resumen</p>
+                        }
+                        @* ¿De quién es? Si es de otra persona del MISMO plan no se
+                           rechaza: se le ofrece cambiar. Hacerle perder quince días
+                           por haber elegido mal en un desplegable sería absurdo. *@
+                        @if (d.EsDeOtroBeneficiario)
+                        {
+                            <div class="st-docv-persona is-cambiable">
+                                <p><i class="fa fa-user-times"></i> @d.AvisoPersona</p>
+                                @if (!string.IsNullOrWhiteSpace(d.PacienteJustificacion))
+                                {
+                                    <span class="st-docv-persona-por">@d.PacienteJustificacion</span>
+                                }
+                                <form method="post" asp-action="ElegirBeneficiario" class="st-docv-persona-form">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+                                    <input type="hidden" name="numeroPersona" value="@d.PacienteNumeroPersona" />
+                                    <button type="submit" class="st-docv-persona-btn">
+                                        <i class="fa fa-exchange"></i>
+                                        Sí, el reembolso es para @(d.PacienteNombre ?? "esa persona")
+                                    </button>
+                                </form>
+                                <span class="st-docv-persona-nota">
+                                    O quite este documento si lo subió por error.
+                                </span>
+                            </div>
+                        }
+                        else if (d.EsDeFueraDelPlan)
+                        {
+                            <div class="st-docv-persona is-ajeno">
+                                <p><i class="fa fa-ban"></i> @d.AvisoPersona</p>
+                                @if (!string.IsNullOrWhiteSpace(d.PacienteJustificacion))
+                                {
+                                    <span class="st-docv-persona-por">
+                                        @d.PacienteJustificacion
+                                        @* Negar sin enseñar dónde lo vimos es pedirle
+                                           que se fíe. El recorte lleva al sitio del
+                                           documento donde aparece el nombre. *@
+                                        @Evid(d.DocId, null, "PACIENTE")
+                                        @Evid(d.DocId, null, "NOMBRE")
+                                    </span>
+                                }
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(d.Consecuencia))
+                        {
+                            <p class="st-docv-consec @(d.EsFactura ? "is-ok" : "")">@d.Consecuencia</p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(d.QueHacer))
+                        {
+                            <p class="st-docv-quehacer"><i class="fa fa-lightbulb-o"></i> @d.QueHacer</p>
+                        }
+
+                        @* Lo que comprobamos, en cristiano y PINCHABLE: cada una
+                           enseña el recorte del documento donde está. Los tags
+                           crudos del clasificador (TIENE_CLAVE_ACCESO,
+                           DETALLE_ITEMS…) no significan nada para un afiliado. *@
+                        @if (d.Verificaciones.Count > 0)
+                        {
+                            <div class="st-verif">
+                                <span class="st-verif-tit">Esto es lo que comprobamos</span>
+                                @foreach (var vf in d.Verificaciones)
+                                {
+                                    <div class="st-verif-fila">
+                                        <i class="fa fa-check"></i>
+                                        <span class="st-verif-que">@vf.Que</span>
+                                        <span class="st-verif-val">@vf.Valor</span>
+                                        @Evid(d.DocId, null, vf.Buscar)
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @* Los rubros de la factura, uno por uno *@
+                        @if (d.Items.Count > 0)
+                        {
+                            <div class="st-items">
+                                <span class="st-items-tit">
+                                    <i class="fa fa-list"></i> Qué le facturaron (@d.Items.Count)
+                                </span>
+                                <table class="st-items-tabla">
+                                    <tbody>
+                                        @foreach (var it in d.Items)
+                                        {
+                                            <tr>
+                                                <td class="desc">
+                                                    @it.Descripcion
+                                                    @if (!string.IsNullOrWhiteSpace(it.RubroEnCristiano))
+                                                    {
+                                                        <span class="st-items-rubro">@it.RubroEnCristiano</span>
+                                                    }
+                                                </td>
+                                                <td class="cant">
+                                                    @if (it.Cantidad.HasValue && it.Cantidad.Value != 1)
+                                                    {
+                                                        <text>×@it.Cantidad.Value.ToString("0.##")</text>
+                                                    }
+                                                </td>
+                                                <td class="val">@Dinero(it.Valor)</td>
+                                                <td class="ev">@Evid(d.DocId, it.Pagina, it.Descripcion)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+
+                        @* Los diagnósticos que menciona el documento *@
+                        @if (d.Diagnosticos.Count > 0)
+                        {
+                            <div class="st-dxs">
+                                <span class="st-dxs-tit">
+                                    <i class="fa fa-stethoscope"></i> Diagnósticos que menciona
+                                </span>
+                                @foreach (var dx in d.Diagnosticos)
+                                {
+                                    <div class="st-dx-fila">
+                                        <code>@dx.Codigo</code>
+                                        <span>@dx.Descripcion</span>
+                                        @Evid(d.DocId, null, dx.Codigo)
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (d.Hojas.Count > 1)
+                        {
+                            <div class="st-hojas">
+                                <div class="st-hojas-tit"><i class="fa fa-clone"></i> Trae @d.ResumenHojas</div>
+                                <div class="st-hojas-lista">
+                                    @foreach (var h in d.Hojas)
+                                    {
+                                        <button type="button" class="st-hoja @(h.EsFactura ? "is-factura" : "")"
+                                                data-doc="@d.DocId" data-pagina="@h.Pagina" data-nombre="@(d.Nombre ?? "")">
+                                            <span class="st-hoja-num">@h.Pagina</span>
+                                            <span class="st-hoja-que"><i class="fa @h.Icono"></i> @h.QueEs</span>
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <div class="st-docv-pie">
+                            <button type="button" class="st-docv-abrir" data-doc="@d.DocId" data-nombre="@(d.Nombre ?? "")">
+                                <i class="fa fa-eye"></i> Ver
+                            </button>
+                            @* Quitar un documento no es instantáneo: borra su
+                               clasificación, sus rubros, sus diagnósticos e
+                               invalida la resolución. Hay que decir qué se está
+                               haciendo, como en todo lo demás. *@
+                            <form method="post" asp-action="Eliminar" class="st-docv-quitar-form"
+                                  data-st-progreso
+                                  data-st-confirmar-titulo="¿Quitar este documento?"
+                                  data-st-confirmar="Vamos a quitar «@(d.Nombre)» de su solicitud."
+                                  data-st-confirmar-detalle="Se borra todo lo que leímos de él y su reembolso tendrá que volver a calcularse. Si lo necesita después, puede subirlo otra vez."
+                                  data-st-confirmar-ok="Sí, quitarlo"
+                                  data-st-confirmar-no="No, dejarlo"
+                                  data-st-titulo="Quitando el documento"
+                                  data-st-etapas="Borrando lo que leímos de él|Recalculando el total|Actualizando su solicitud"
+                                  data-st-segundos="2">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+                                <input type="hidden" name="docId" value="@d.DocId" />
+                                <button type="submit" class="st-docv-quitar" title="Lo subí por error">
+                                    <i class="fa fa-trash-o"></i> Quitar
+                                </button>
+                            </form>
+                            <span class="st-docv-fichero" title="@d.Nombre">@d.Nombre</span>
+                        </div>
+                    </div>
+                }
+            </div>@* /st-docs-cliente *@
+                </div>@* /st-arbol *@
+            }
+
+            @if (Model.TotalFacturado > 0)
+            {
+                <div class="st-total-cliente">
+                    <span>Total de sus facturas</span>
+                    <strong>@Dinero(Model.TotalFacturado)</strong>
+                </div>
+            }
+        </div>
+
+        <div class="st-portal-bloque st-docv-visor" id="cliVisor" style="display:none;">
+            <div class="st-docv-visor-cab">
+                <span id="cliVisorNombre"></span>
+                <button type="button" class="st-docv-cerrar" id="cliVisorCerrar">
+                    <i class="fa fa-times"></i> Cerrar
+                </button>
+            </div>
+            <div id="cliVisorHost" class="st-docv-visor-host"></div>
+        </div>
+    }
+
+    </div>@* /st-col-docs *@
+    </div>@* /st-columnas *@
+
+    @* Los pasos: información de proceso, no una decisión suya *@
+    @if (Model.Pasos.Count > 0 && momento != "SUBIR")
+    {
+        <details class="st-plegable is-tenue">
+            <summary>
+                <i class="fa fa-tasks"></i>
+                Dónde va su solicitud (@Model.PasosHechos de @Model.PasosTotales)
+            </summary>
+            <div class="st-plegable-cuerpo">
+                <ol class="st-ruta-pasos">
+                    @foreach (var p in Model.Pasos)
+                    {
+                        <li class="st-ruta-paso @(p.Hecho ? "is-hecho" : "is-pend")"
+                            data-url="@(p.Url ?? "")" data-titulo="@p.Titulo">
+                            <span class="st-ruta-num">
+                                @if (p.Hecho)
+                                {
+                                    <i class="fa fa-check"></i>
+                                }
+                                else
+                                {
+                                    @p.Numero
+                                }
+                            </span>
+                            <span class="st-ruta-txt"><strong>@p.Titulo</strong><small>@p.Descripcion</small></span>
+                        </li>
+                    }
+                </ol>
+            </div>
+        </details>
+    }
+</div>
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/app/st-pdf-viewer.css" asp-append-version="true" />
+}
+
+@section Scripts {
+    @* pdf.js servido desde el propio sitio, igual que en la pantalla del auditor. *@
+    <script src="~/lib/pdfjs/pdf.min.js"></script>
+    <script src="~/js/app/st-pdf-viewer.js" asp-append-version="true"></script>
+    <script src="~/js/app/st-progreso.js" asp-append-version="true"></script>
+    <script>
+        // Los nombres elegidos: un input de fichero vacío no dice si el clic
+        // funcionó, y el afiliado vuelve a pulsar creyendo que falló.
+        ['archivos', 'archivosMas'].forEach(function (id) {
+            var inp = document.getElementById(id);
+            if (!inp) return;
+
+            var lst    = document.getElementById('subirLista');
+            var panel  = document.getElementById('preVisor');
+            var host   = document.getElementById('preVisorHost');
+            var titulo = document.getElementById('preVisorNombre');
+            var visorPrevio = null;
+            var urls = [];      // las blob: creadas, para poder soltarlas
+
+            function esImagen(f) { return /^image\//.test(f.type) || /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(f.name); }
+            function esPdf(f)    { return f.type === 'application/pdf' || /\.pdf$/i.test(f.name); }
+            function pesa(f) {
+                var kb = f.size / 1024;
+                return kb < 1024 ? Math.round(kb) + ' KB' : (kb / 1024).toFixed(1) + ' MB';
+            }
+
+            function cerrarPrevio() {
+                if (!panel) return;
+                panel.hidden = true;
+                host.innerHTML = '';
+                visorPrevio = null;
+            }
+
+            function verEntero(f, url) {
+                if (!panel) return;
+                titulo.textContent = f.name;
+                host.innerHTML = '';
+                panel.hidden = false;
+
+                if (esImagen(f)) {
+                    var img = document.createElement('img');
+                    img.src = url;
+                    img.alt = f.name;
+                    img.className = 'st-previsor-img';
+                    host.appendChild(img);
+                } else if (esPdf(f) && window.StPdfViewer) {
+                    visorPrevio = StPdfViewer.create(host, {});
+                    visorPrevio.abrir({ url: url, nombre: f.name, pagina: 1 });
+                } else {
+                    // XML y demas: no hay nada que dibujar, pero sí que decir.
+                    var p = document.createElement('p');
+                    p.className = 'st-previsor-nota';
+                    p.textContent = 'Este archivo no se puede previsualizar, '
+                                  + 'pero lo leeremos igual al adjuntarlo.';
+                    host.appendChild(p);
+                }
+            }
+
+            var btnCerrarPrevio = document.getElementById('preVisorCerrar');
+            if (btnCerrarPrevio) btnCerrarPrevio.addEventListener('click', cerrarPrevio);
+            if (panel) {
+                panel.addEventListener('click', function (e) { if (e.target === panel) cerrarPrevio(); });
+            }
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && panel && !panel.hidden) cerrarPrevio();
+            });
+
+            inp.addEventListener('change', function () {
+                if (!lst) return;
+
+                // Soltar las anteriores: sin esto cada cambio de seleccion deja
+                // los blob de la tanda previa retenidos en memoria.
+                urls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) { } });
+                urls = [];
+                lst.innerHTML = '';
+                cerrarPrevio();
+
+                if (!inp.files.length) { lst.hidden = true; return; }
+                lst.hidden = false;
+
+                var cab = document.createElement('div');
+                cab.className = 'st-elegidos-cab';
+                cab.textContent = inp.files.length === 1
+                    ? 'Va a adjuntar 1 archivo. Púlselo para verlo entero.'
+                    : 'Va a adjuntar ' + inp.files.length + ' archivos. Pulse uno para verlo entero.';
+                lst.appendChild(cab);
+
+                var tira = document.createElement('div');
+                tira.className = 'st-elegidos-tira';
+                lst.appendChild(tira);
+
+                Array.prototype.forEach.call(inp.files, function (f) {
+                    var url = URL.createObjectURL(f);
+                    urls.push(url);
+
+                    var caja = document.createElement('button');
+                    caja.type = 'button';           // dentro de un <form>: sin esto envia
+                    caja.className = 'st-elegido';
+                    caja.title = 'Ver ' + f.name + ' entero';
+
+                    var lienzo = document.createElement('span');
+                    lienzo.className = 'st-elegido-mini';
+                    lienzo.innerHTML = '<i class="fa fa-circle-o-notch fa-spin"></i>';
+                    caja.appendChild(lienzo);
+
+                    var pie = document.createElement('span');
+                    pie.className = 'st-elegido-pie';
+                    pie.innerHTML = '<strong></strong><small></small>';
+                    pie.querySelector('strong').textContent = f.name;
+                    pie.querySelector('small').textContent = pesa(f);
+                    caja.appendChild(pie);
+
+                    caja.addEventListener('click', function () { verEntero(f, url); });
+                    tira.appendChild(caja);
+
+                    if (esImagen(f)) {
+                        var img = document.createElement('img');
+                        img.src = url;
+                        img.alt = '';
+                        img.onload = function () { lienzo.innerHTML = ''; lienzo.appendChild(img); };
+                        img.onerror = function () { lienzo.innerHTML = '<i class="fa fa-file-image-o"></i>'; };
+                    } else if (esPdf(f) && window.StPdfViewer) {
+                        // La portada de verdad, con el mismo motor que ya pinta
+                        // las miniaturas de los documentos ya subidos.
+                        StPdfViewer.portada(url, 150).then(function (data) {
+                            if (data) {
+                                var im = document.createElement('img');
+                                im.src = data; im.alt = '';
+                                lienzo.innerHTML = ''; lienzo.appendChild(im);
+                            } else {
+                                lienzo.innerHTML = '<i class="fa fa-file-pdf-o"></i>';
+                            }
+                        }).catch(function () {
+                            lienzo.innerHTML = '<i class="fa fa-file-pdf-o"></i>';
+                        });
+                    } else {
+                        lienzo.innerHTML = '<i class="fa fa-file-code-o"></i>';
+                    }
+                });
+            });
+        });
+
+        // ── El visor: el mismo componente del auditor ─────────────────────
+        (function () {
+            var BASE = '@Url.Action("DownloadCaseDocument", "Nexus", new { area = "", caseCode = Model.CaseCode })';
+            var visor = null;
+            function url(d) { return BASE + '&fileId=' + d + '&inline=true'; }
+
+            function abrir(docId, nombre, pagina) {
+                var panel = document.getElementById('cliVisor');
+                if (!panel) return;
+                panel.style.display = 'block';
+                document.getElementById('cliVisorNombre').textContent =
+                    (nombre || ('Documento ' + docId)) + (pagina > 1 ? ' — hoja ' + pagina : '');
+                if (!visor) visor = StPdfViewer.create(document.getElementById('cliVisorHost'), {});
+                visor.abrir({ url: url(docId), nombre: nombre, pagina: pagina || 1 });
+                // El visor vive en la columna de la derecha y es sticky: sólo se
+                // desplaza si de verdad quedó fuera de la vista (móvil, donde
+                // las columnas se apilan). Antes saltaba siempre al fondo.
+                var caja = panel.getBoundingClientRect();
+                if (caja.top < 0 || caja.top > window.innerHeight - 120) {
+                    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }
+
+            // Las portadas: una por documento, en cuanto carga la página.
+            // Se piden de una en una para no ahogar al navegador abriendo
+            // ocho PDF a la vez.
+            (async function portadas() {
+                var cajas = Array.prototype.slice.call(
+                    document.querySelectorAll('.st-docv-portada[data-doc]'));
+
+                // En paralelo y cada una por su cuenta: si un PDF se atasca, las
+                // demás portadas salen igual. En serie, uno solo dejaba la lista
+                // entera sin miniaturas.
+                await Promise.all(cajas.map(async function (caja) {
+                    try {
+                        var data = await StPdfViewer.portada(url(caja.dataset.doc), 150);
+                        if (!data) return;
+                        var img = document.createElement('img');
+                        img.src = data;
+                        img.alt = '';
+                        caja.innerHTML = '';
+                        caja.appendChild(img);
+                        caja.classList.add('is-lista');
+                    } catch (e) { /* sin portada: se queda el icono del tipo */ }
+                }));
+            })();
+
+            // ── El recorte del documento: el mismo mecanismo del auditor ──
+            // Se pincha «dónde» y se pinta el trozo del papel en el que está el
+            // dato, con el resaltador encima. Es lo que convierte una afirmación
+            // en algo comprobable.
+            document.addEventListener('click', function (ev) {
+                var b = ev.target.closest('.st-evid-btn');
+                if (!b) return;
+                ev.stopPropagation();
+
+                var cont = b.closest('.st-evid');
+                var ya = cont.querySelector('.st-evid-recorte');
+                if (ya) {                       // segundo clic: se pliega
+                    cont.removeChild(ya);
+                    b.classList.remove('is-abierto');
+                    return;
+                }
+
+                var caja = document.createElement('div');
+                caja.className = 'st-evid-recorte';
+                caja.innerHTML = '<span class="st-evid-cargando">buscando en el documento…</span>';
+                cont.appendChild(caja);
+                b.classList.add('is-abierto');
+
+                var doc = b.dataset.evidDoc;
+                var pag = b.dataset.evidPag ? parseInt(b.dataset.evidPag, 10) : null;
+                var txt = b.dataset.evidTxt;
+
+                // Cinturón: pase lo que pase por dentro, la caja resuelve. Un
+                // "buscando en el documento…" eterno es lo peor que le puede
+                // pasar al afiliado — peor que decirle que no se pudo.
+                Promise.race([
+                    StPdfViewer.miniatura(url(doc), pag, txt, 420),
+                    new Promise(function (r) { setTimeout(function () { r(null); }, 12000); })
+                ])
+                    .then(function (res) {
+                        if (!res || !res.img) {
+                            caja.innerHTML = '<span class="st-evid-cargando">' +
+                                'No pudimos abrir este documento para señalárselo. ' +
+                                'Puede verlo entero con el botón «Ver».</span>';
+                            return;
+                        }
+                        caja.innerHTML = '';
+                        var img = document.createElement('img');
+                        img.src = res.img;
+                        img.alt = 'Su documento';
+                        img.title = 'Clic para abrir el documento aquí';
+                        img.onclick = function () { abrir(doc, '', pag || 1); };
+                        caja.appendChild(img);
+
+                        // Si no se pudo señalar el punto exacto se dice, en vez
+                        // de dejar que crea que el resaltado marca el dato. Pasa
+                        // con las fotos: el OCR lo leyó, pero el texto vive en
+                        // nuestra base y no dentro del fichero.
+                        if (!res.exacto) {
+                            var pie = document.createElement('div');
+                            pie.className = 'st-evid-pie';
+                            pie.textContent = 'Es una foto o un escaneado: no podemos señalar '
+                                            + 'el punto exacto, pero el dato está en esta hoja.';
+                            caja.appendChild(pie);
+                        }
+                    })
+                    .catch(function () {
+                        caja.innerHTML = '<span class="st-evid-cargando">No se pudo leer el documento.</span>';
+                    });
+            });
+
+            document.addEventListener('click', function (ev) {
+                // El ancla de evidencia y el botón de quitar viven dentro de la
+                // tarjeta: ninguno debe abrir el visor entero.
+                if (ev.target.closest('.st-evid')) return;
+                if (ev.target.closest('.st-docv-quitar-form')) return;
+
+                var b = ev.target.closest('.st-hoja, .st-docv-abrir, .st-docv');
+                if (!b) return;
+                if (b.classList.contains('st-hoja')) {
+                    abrir(b.dataset.doc, b.dataset.nombre, parseInt(b.dataset.pagina, 10) || 1);
+                } else {
+                    abrir(b.dataset.doc, b.dataset.nombre, 1);
+                }
+                ev.stopPropagation();
+            });
+
+            var cerrar = document.getElementById('cliVisorCerrar');
+            if (cerrar) {
+                cerrar.addEventListener('click', function () {
+                    document.getElementById('cliVisor').style.display = 'none';
+                });
+            }
+        })();
+
+        // ── El proceso, paso a paso y con progreso REAL ───────────────────
+        (function () {
+            function token() {
+                var i = document.querySelector('input[name="__RequestVerificationToken"]');
+                return i ? i.value : '';
+            }
+
+            async function correr(pasos, titulo, nota) {
+                if (!pasos.length) {
+                    // No debería pasar, pero si pasa se dice: recargar sin más
+                    // deja al afiliado creyendo que el botón está roto.
+                    StProgreso.abrir({ titulo: 'No hay nada que recalcular', etapas: [] })
+                              .error('Su solicitud ya está al día. Si esperaba otro resultado, '
+                                   + 'adjunte el documento que falte y vuelva a intentarlo.');
+                    return false;
+                }
+                var p = StProgreso.abrir({
+                    titulo: titulo,
+                    etapas: pasos.map(function (li) { return li.dataset.titulo; }),
+                    autoAvance: false,
+                    nota: nota || ''
+                });
+
+                for (var i = 0; i < pasos.length; i++) {
+                    var li = pasos[i];
+                    p.etapa(i, 'Paso ' + (i + 1) + ' de ' + pasos.length);
+                    try {
+                        var fd = new FormData();
+                        fd.append('caseCode', '@Model.CaseCode');
+                        fd.append('__RequestVerificationToken', token());
+                        var resp = await fetch(li.dataset.url, {
+                            method: 'POST', credentials: 'same-origin',
+                            headers: { 'RequestVerificationToken': token() }, body: fd
+                        });
+                        if (!resp.ok) {
+                            p.error('No se pudo completar «' + li.dataset.titulo + '». ' +
+                                    'Sus documentos están guardados; vuelva a intentarlo.');
+                            return false;
+                        }
+                        p.hecho(i);
+                    } catch (e) {
+                        p.error('Se perdió la conexión. Sus documentos están guardados.');
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            function pendientes(soloPrimero) {
+                var conUrl = Array.prototype.slice.call(document.querySelectorAll('.st-ruta-paso'))
+                    .filter(function (li) { return li.dataset.url; });
+                var pend = conUrl.filter(function (li) { return li.classList.contains('is-pend'); });
+
+                // Si no queda nada pendiente pero el afiliado pulsa igualmente,
+                // es que la pantalla dice que se puede calcular y no hay
+                // resultado: se rehace TODO en vez de recargar y no hacer nada.
+                if (!pend.length && !soloPrimero) return conUrl;
+
+                return soloPrimero ? pend.slice(0, 1) : pend;
+            }
+
+            // Cuántos documentos quedan por leer: decirle "3 documentos" hace
+            // que un minuto de espera se entienda; "Qué nos trajo" a secas, no.
+            var porLeer = document.querySelectorAll('.st-docv.is-espera').length;
+
+            /** El botón de salida: sólo aparece si el arranque automático falló. */
+            function ofrecerReintento() {
+                var foco = document.getElementById('focoLeyendo');
+                if (foco) foco.style.display = '';
+            }
+
+        @if (clasificar)
+        {
+            <text>
+            // Identificar los documentos NO puede depender de que el afiliado
+            // adivine que hay un botón: se lanza solo mientras quede algo
+            // pendiente. Sin esto la tarjeta se quedaba en "identificando"
+            // para siempre.
+            //
+            // Con tope de intentos: si la identificación falla de verdad, esto
+            // recargaría, volvería a lanzarse y recargaría otra vez — un bucle
+            // que le deja la pantalla parpadeando y sin salida. A los dos
+            // intentos se para y se le enseña el botón.
+            window.addEventListener('load', async function () {
+                var llave = 'stIntentos:@Model.CaseCode';
+                var intentos = parseInt(sessionStorage.getItem(llave) || '0', 10);
+                if (intentos >= 2) { ofrecerReintento(); return; }
+                sessionStorage.setItem(llave, String(intentos + 1));
+
+                var ok = await correr(pendientes(true),
+                    'Identificando sus documentos',
+                    porLeer === 1 ? 'Leemos su documento hoja por hoja para saber qué nos trajo.'
+                                  : 'Leemos sus ' + porLeer + ' documentos hoja por hoja para saber qué nos trajo.');
+                if (ok) {
+                    sessionStorage.removeItem(llave);
+                    window.location.reload();
+                } else {
+                    ofrecerReintento();
+                }
+            });
+            </text>
+        }
+
+            var btnRe = document.getElementById('btnReintentar');
+            if (btnRe) {
+                btnRe.addEventListener('click', async function () {
+                    btnRe.disabled = true;
+                    sessionStorage.removeItem('stIntentos:@Model.CaseCode');
+                    var ok = await correr(pendientes(false),
+                        'Identificando sus documentos',
+                        'Volvemos a leer lo que nos trajo.');
+                    if (ok) { window.location.reload(); } else { btnRe.disabled = false; }
+                });
+            }
+
+            var btn = document.getElementById('btnProcesar');
+            if (btn) {
+                btn.addEventListener('click', async function () {
+                    btn.disabled = true;
+                    var ok = await correr(pendientes(false),
+                        'Calculando su reembolso',
+                        'Consultamos su plan de verdad. Puede tardar un par de minutos.');
+                    if (ok) { window.location.reload(); } else { btn.disabled = false; }
+                });
+            }
+        })();
+    </script>
+}

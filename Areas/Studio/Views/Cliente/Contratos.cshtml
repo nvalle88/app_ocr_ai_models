@@ -1,0 +1,120 @@
+@model app_ocr_ai_models.Areas.Studio.Models.ClienteContratosVm
+@{
+    ViewData["Title"] = "Elija su plan";
+
+    string Dinero(decimal? v) => v.HasValue ? "$ " + v.Value.ToString("N2") : "—";
+}
+
+@*
+    REQ-020 — Pantalla 2: sus contratos.
+    Se enseña lo que el afiliado reconoce (el nombre comercial de su plan) y lo
+    que le va a condicionar el reembolso (cobertura máxima y deducible). Si el
+    contrato ya trae un impedimento o mora, se avisa AQUÍ y no después de que
+    haya subido ocho documentos.
+*@
+
+<div class="st-portal is-ancho">
+    <div class="st-portal-cab">
+        <h1>
+            @if (!string.IsNullOrWhiteSpace(Model.NombrePila))
+            {
+                <text>Hola, @Model.NombrePila</text>
+            }
+            else
+            {
+                <text>Sus planes</text>
+            }
+        </h1>
+        <p class="st-portal-bajada">
+            @if (Model.Contratos.Count == 1)
+            {
+                <text>Este es el plan con el que vamos a revisar su reembolso.</text>
+            }
+            else
+            {
+                <text>Tiene @Model.Contratos.Count planes. Elija con cuál presenta este reembolso.</text>
+            }
+        </p>
+    </div>
+
+    <div class="st-planes">
+        @foreach (var c in Model.Contratos)
+        {
+            <form method="post" asp-action="Elegir" class="st-plan"
+                  data-st-progreso
+                  data-st-titulo="Abriendo su solicitud"
+                  data-st-etapas="Guardando el plan elegido|Preparando su expediente"
+                  data-st-segundos="3">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+                <input type="hidden" name="cedula" value="@Model.Cedula" />
+                <input type="hidden" name="numeroContrato" value="@c.Numero" />
+                <input type="hidden" name="contratoJson" value="@c.Crudo" />
+
+                <div class="st-plan-cab">
+                    <div>
+                        <span class="st-plan-nombre">@c.Titulo</span>
+                        <span class="st-plan-sub">
+                            Contrato @c.Numero
+                            @if (!string.IsNullOrWhiteSpace(c.Region)) { <text> &middot; @c.Region</text> }
+                        </span>
+                    </div>
+                    @if (string.Equals(c.Estado, "Activo", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <span class="st-plan-estado is-ok"><i class="fa fa-check-circle"></i> Activo</span>
+                    }
+                    else
+                    {
+                        <span class="st-plan-estado is-warn">@c.Estado</span>
+                    }
+                </div>
+
+                <div class="st-plan-datos">
+                    <div class="st-plan-dato">
+                        <span class="lbl">Cobertura máxima al año</span>
+                        <span class="val">@Dinero(c.CoberturaMaxima)</span>
+                    </div>
+                    <div class="st-plan-dato">
+                        <span class="lbl">Deducible</span>
+                        <span class="val">@Dinero(c.DeducibleTotal)</span>
+                        <span class="nota">lo que le toca cubrir antes de que el plan empiece a pagar</span>
+                    </div>
+                    @if (c.Nivel.HasValue)
+                    {
+                        <div class="st-plan-dato">
+                            <span class="lbl">Nivel del plan</span>
+                            <span class="val">@c.Nivel</span>
+                        </div>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(c.Advertencia))
+                {
+                    <div class="st-plan-aviso">
+                        <i class="fa fa-exclamation-triangle"></i>
+                        @c.Advertencia
+                        <span class="st-plan-aviso-nota">
+                            Puede continuar, pero esto puede frenar el pago hasta que se regularice.
+                        </span>
+                    </div>
+                }
+
+                <button type="submit" class="st-portal-btn is-plan">
+                    Presentar con este plan <i class="fa fa-arrow-right"></i>
+                </button>
+            </form>
+        }
+    </div>
+
+    <div class="st-portal-volver">
+        <a href="@Url.Action("Index", "Cliente", new { area = "Studio" })">
+            <i class="fa fa-arrow-left"></i> Usar otra cédula
+        </a>
+    </div>
+</div>
+
+@await Component.InvokeAsync("ToolsUsadas", new { caseCode = Model.CaseCode, modelo = "AGENTE_PORTAL_CLIENTE" })
+
+@section Scripts {
+    <script src="~/js/app/st-progreso.js" asp-append-version="true"></script>
+}
