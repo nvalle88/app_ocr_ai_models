@@ -47,7 +47,6 @@ public class ArbolDocumentosTests
         Assert.Single(grupos);
         Assert.Equal(10842, grupos[0].Factura!.DocId);
         Assert.Equal(new[] { 10843, 10844 }, grupos[0].Respaldos.Select(r => r.DocId));
-        Assert.False(vm.HayRespaldosSueltos);
     }
 
     [Fact]
@@ -84,7 +83,6 @@ public class ArbolDocumentosTests
 
         Assert.Single(grupos);
         Assert.True(grupos[0].EsHuerfano);
-        Assert.True(vm.HayRespaldosSueltos);
         Assert.Contains("no encontramos la factura", grupos[0].Aviso);
         Assert.Equal("Laboratorio de Patología Dr. Fernando Camacho A.", grupos[0].AQuienPedirla);
     }

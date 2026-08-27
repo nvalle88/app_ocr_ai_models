@@ -745,9 +745,6 @@ public sealed class ClienteSolicitudVm
         }
     }
 
-    /// <summary>Hay respaldos que no cuelgan de ninguna factura.</summary>
-    public bool HayRespaldosSueltos => Agrupados.Any(g => g.EsHuerfano);
-
     public int Leidos => Documentos.Count(d => d.Leido);
     public decimal TotalFacturado => Documentos.Where(d => d.EsFactura).Sum(d => d.Valor ?? 0m);
 

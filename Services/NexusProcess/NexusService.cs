@@ -829,8 +829,34 @@ public class NexusService : INexusService
 
         await EnsureInitializedAsync();
 
-        var ocrTasks = files.Select(f =>
-            ProcessFileAsync(f, _ocrSetting!, _blobCfg!, _docClient!, timeoutMilliseconds: 90000));
+        // En paralelo, pero con tope.
+        //
+        // Antes era un Task.WhenAll sobre TODOS los ficheros a la vez. Con una
+        // tanda de 20 fotos de movil son 20 llamadas simultaneas a Document
+        // Intelligence -que responde 429 y ahi no hay reintento- y los 20
+        // ficheros vivos en memoria a la vez: llegan ya en base64 desde el
+        // controlador, o sea ~1,37 veces su tamaño, unos 130 MB para 20x5 MB.
+        //
+        // Cuatro a la vez conserva casi toda la ganancia -el cuello es la espera
+        // del servicio, no la CPU- y acota el pico. El SemaphoreSlim se libera
+        // en finally para que un fichero que reviente no deje el hueco cerrado y
+        // cuelgue a los que esperan.
+        const int aLaVez = 4;
+        using var turno = new SemaphoreSlim(aLaVez, aLaVez);
+
+        var ocrTasks = files.Select(async f =>
+        {
+            await turno.WaitAsync();
+            try
+            {
+                return await ProcessFileAsync(f, _ocrSetting!, _blobCfg!, _docClient!,
+                                              timeoutMilliseconds: 90000);
+            }
+            finally
+            {
+                turno.Release();
+            }
+        });
 
         var ocrResults = await Task.WhenAll(ocrTasks);
         var now = DateTime.UtcNow;

@@ -72,6 +72,10 @@ public sealed class ClaudeCompletionService : IAiCompletionService
             Model     = "claude-opus-4-8",
             MaxTokens = request.MaxTokens,
             System    = SystemCacheable(request.SystemPrompt),
+            // Se pedian y se tiraban: los controladores mandan Temperature = 0
+            // desde hace tiempo y la peticion salia con el valor por defecto.
+            Temperature = request.Temperature.HasValue ? (double)request.Temperature.Value : null,
+            Thinking    = PensamientoDe(request.ThinkingMode, request.MaxTokens),
             Messages  =
             [
                 new() { Role = Role.User, Content = request.UserMessage }
@@ -170,6 +174,10 @@ public sealed class ClaudeCompletionService : IAiCompletionService
             Model     = "claude-opus-4-8",
             MaxTokens = request.MaxTokens,
             System    = SystemCacheable(request.SystemPrompt),
+            // Se pedian y se tiraban: los controladores mandan Temperature = 0
+            // desde hace tiempo y la peticion salia con el valor por defecto.
+            Temperature = request.Temperature.HasValue ? (double)request.Temperature.Value : null,
+            Thinking    = PensamientoDe(request.ThinkingMode, request.MaxTokens),
             Messages  =
             [
                 new() { Role = Role.User, Content = request.UserMessage }
@@ -268,6 +276,11 @@ public sealed class ClaudeCompletionService : IAiCompletionService
                 Model     = "claude-opus-4-8",
                 MaxTokens = request.MaxTokens,
                 System    = SystemCacheable(request.SystemPrompt),
+                Temperature = request.Temperature.HasValue ? (double)request.Temperature.Value : null,
+                Thinking    = PensamientoDe(request.ThinkingMode, request.MaxTokens),
+                // ToolChoice del agente: viajaba en ToolsContext desde siempre y
+                // no llegaba a la peticion. "none" es el que de verdad importa.
+                ToolChoice  = EleccionDeTool(toolsContext.ToolChoice),
                 Messages  = messages,
                 Tools     = sdkTools
             };
@@ -432,6 +445,49 @@ public sealed class ClaudeCompletionService : IAiCompletionService
         }
         return result;
     }
+
+    /// <summary>
+    /// El pensamiento extendido, si el agente lo pide.
+    ///
+    /// Estas columnas de dbo.Agent -ThinkingMode, Temperature, ToolChoice- se
+    /// escribian y NADIE las leia aqui, que es donde se construye la peticion.
+    /// Los tres agentes lentos estaban en "adaptive" y dbo.Usage marcaba
+    /// ThinkingTokens = 0: el pensamiento no se estaba usando. Configuracion que
+    /// aparenta funcionar y no hace nada es peor que no tenerla, porque quien la
+    /// toca cree que ajusto algo.
+    ///
+    /// Se devuelve null salvo que se pida explicitamente, para que encender esto
+    /// sea una decision con su medicion detras y no un efecto colateral: el
+    /// pensamiento extendido multiplica latencia y coste, justo lo contrario de
+    /// lo que se acaba de optimizar con la cache.
+    ///
+    /// El presupuesto sale de MaxTokens porque la API exige que sea MENOR: la
+    /// mitad deja sitio de sobra para la respuesta.
+    /// </summary>
+    private static ThinkingConfigParam? PensamientoDe(string? modo, int maxTokens)
+    {
+        var m = (modo ?? string.Empty).Trim().ToLowerInvariant();
+        if (m is not ("adaptive" or "enabled" or "on" or "extended")) return null;
+
+        // Minimo de la API: 1024. Si no cabe, no se enciende.
+        var presupuesto = Math.Max(1024, maxTokens / 2);
+        if (presupuesto >= maxTokens) return null;
+
+        return new ThinkingConfigEnabled { BudgetTokens = presupuesto };
+    }
+
+    /// <summary>
+    /// Que puede hacer el modelo con las herramientas. "none" es util de verdad:
+    /// hay pasos -el clasificador- que no deben llamar a ninguna.
+    /// </summary>
+    private static ToolChoice? EleccionDeTool(string? modo) =>
+        (modo ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "none" => new ToolChoiceNone(),
+            "any"  => new ToolChoiceAny(),
+            "auto" => new ToolChoiceAuto(),
+            _      => null      // sin configurar: el default del SDK
+        };
 
     /// <summary>
     /// El prompt de sistema como bloque cacheable.
