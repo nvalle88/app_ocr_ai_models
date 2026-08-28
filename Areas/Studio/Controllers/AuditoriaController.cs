@@ -34,13 +34,16 @@ public sealed class AuditoriaController : Controller
     private readonly AiCompletionServiceFactory _factory;
     private readonly IToolExecutor? _toolExecutor;
     private readonly ILogger<AuditoriaController> _logger;
+    private readonly Services.Ai.IPreValidaciones? _previas;
 
     public AuditoriaController(
         OCRDbContext db,
         AiCompletionServiceFactory factory,
         ILogger<AuditoriaController> logger,
-        IToolExecutor? toolExecutor = null)
+        IToolExecutor? toolExecutor = null,
+        Services.Ai.IPreValidaciones? previas = null)
     {
+        _previas = previas;
         _db           = db      ?? throw new ArgumentNullException(nameof(db));
         _factory      = factory ?? throw new ArgumentNullException(nameof(factory));
         _logger       = logger  ?? throw new ArgumentNullException(nameof(logger));
@@ -156,6 +159,43 @@ public sealed class AuditoriaController : Controller
                 };
                 _db.StepExecution.Add(exec);
                 await _db.SaveChangesAsync();
+
+                // ── Lo que se va a consultar SI o SI, ya consultado ──────────
+                //
+                // Cada herramienta que el modelo pide es una ida y vuelta
+                // completa. Medido: 6,6 herramientas por ejecucion y 87 s de
+                // media, contra los 4 s del agente que solo pide una. El
+                // contrato, las preexistencias y el convenio del prestador se
+                // consultan SIEMPRE, asi que se lanzan a la vez y entran ya en
+                // el mensaje. Si alguna falla se omite y el agente la pide.
+                if (_previas != null)
+                {
+                    var rucs = caso.DataFile
+                        .SelectMany(f => _db.DocumentoClasificacion
+                                            .Where(c => c.DataFileId == f.Id && c.IsCurrent)
+                                            .Select(c => c.EmisorRuc))
+                        .ToList();
+
+                    var bloque = await _previas.BloqueAsync(
+                        agent.Code, exec.ExecutionId, caseCedula, rucs, caseCedula,
+                        HttpContext.RequestAborted);
+
+                    if (!string.IsNullOrWhiteSpace(bloque))
+                    {
+                        // UserMessage es init-only: se rehace la petición en vez
+                        // de mutarla.
+                        aiRequest = new AiCompletionRequest
+                        {
+                            SystemPrompt = aiRequest.SystemPrompt,
+                            UserMessage  = bloque + Environment.NewLine + aiRequest.UserMessage,
+                            MaxTokens    = aiRequest.MaxTokens,
+                            Temperature  = aiRequest.Temperature,
+                            ThinkingMode = aiRequest.ThinkingMode
+                        };
+                        exec.RequestContent = aiRequest.UserMessage;
+                        await _db.SaveChangesAsync();
+                    }
+                }
 
                 var toolsCtx = new ToolsContext
                 {

@@ -81,6 +81,13 @@ namespace app_ocr_ai_models
             builder.Services.AddScoped<app_ocr_ai_models.Services.IVerificadorSri,
                                        app_ocr_ai_models.Services.VerificadorSri>();
 
+            // Lo que se consulta SI o SI -contrato, preexistencias, convenio- se
+            // lanza en paralelo ANTES de la primera llamada al modelo, para no
+            // pagar una ida y vuelta por cada una. Medido: 7,3 herramientas por
+            // ejecucion = 8 viajes = 115 segundos.
+            builder.Services.AddScoped<app_ocr_ai_models.Services.Ai.IPreValidaciones,
+                                       app_ocr_ai_models.Services.Ai.PreValidaciones>();
+
             builder.Services.AddScoped<app_ocr_ai_models.Services.Ai.IHomologadorProcedimientos,
                                         app_ocr_ai_models.Services.Ai.HomologadorProcedimientos>();
             builder.Services.AddScoped<IOcrIngestService, OcrIngestService>();
