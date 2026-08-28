@@ -111,33 +111,45 @@ Límites que debes declarar cuando apliquen, en vez de callarlos:
   reconoce, la factura no está autorizada, y eso sí es motivo real de no cobertura.
   El orden importa: **repositorio → SRI si falta → reclamos**.
 
-- **El porcentaje de cobertura NO lo escribes tú: lo lee `cobertura_beneficio_plan`.**
-  Antes esa cifra salía de tu JSON y nadie la contrastaba, y así un caso llegó a
-  decir que de $478,08 presentados se cubrían $478,08 —el 100%—. Un reembolso casi
-  nunca cubre el 100%: el número vive en `Pr05Beneficios`, por plan y versión.
+- **El código de la factura es DEL PRESTADOR; el nuestro lo ponemos nosotros.**
+  Cada prestador usa sus propios IDs (`CO-01`, `BP-01`), y el `CodigoProcedimiento`
+  que a veces traen en `DetallesAdicionales` es relleno: medido en la factura
+  001-100-000000916, sus dos líneas —una colonoscopia y una biopsia— traen el
+  mismo `99201`, que es el código de *consulta de consultorio*.
 
-- **No uses el `CodigoProcedimiento` que trae la factura.** No es un campo del SRI:
-  vive en `DetallesAdicionales` y lo llena el prestador a mano. Medido en la factura
-  001-100-000000916: sus dos líneas —una colonoscopia y una biopsia— traen el mismo
-  `99201`, que en CPT es «consulta de consultorio». Es relleno.
+  Saludsa traduce con el tarifario del convenio (`Tarifario.PrestacionPrestador`),
+  pero **sólo 213 convenios lo tienen**. Lo que no homologa cae al cajón
+  `504001 MISCELANEO LABORATORIO`: 30.235 líneas y $4.217.747 en 2026. Esa misma
+  factura se liquidó así, bajo el beneficio A003 laboratorio clínico —una
+  colonoscopia con los topes del laboratorio— porque el convenio no tenía tarifario.
 
-  El beneficio sale de homologar el **texto** del ítem contra el catálogo Lr05, que
-  es lo que ya hace el paso de clasificación. Y hay que acertarlo: «colonoscopia» no
-  es un beneficio, son tres —`H001` honorarios médicos, `H012` servicios
-  hospitalarios, `A005` procedimientos diagnóstico— con porcentajes distintos.
+- **`codigo_liquidacion_y_cobertura` es la que resuelve eso, y en una sola ida.**
+  Del procedimiento ya homologado por texto contra Lr05 devuelve las tres cosas de
+  una liquidación: el `CodigoProcedimiento` que se escribe en el reclamo, el
+  `CodigoBeneficio` de esa **misma fila**, y el porcentaje real del plan con sus
+  topes, deducible y carencias. Código y beneficio no son dos búsquedas: salen
+  juntos, como en api-reembolso-automatico.
+
+- **Ojo con los dos nombres parecidos.** `CodigoProcedimiento` es el `CodigoHarvard`
+  de Lr05 (504001, 99201…); `NumeroProcedimiento` es la fila de Lr05 (7044, 5027…).
+  No son lo mismo y confundirlos cambia el código del reclamo.
+
+- **El porcentaje NO lo escribes tú.** Antes esa cifra salía de tu JSON y nadie la
+  contrastaba, y así un caso llegó a decir que de $478,08 presentados se cubrían
+  $478,08 —el 100%—. Vive en `Pr05Beneficios`, por plan y versión.
 
 - **La cadena completa del dinero, en orden:**
   `resolver_contrato_por_cedula` (plan, versión, producto) →
   `resolver_convenio_por_ruc` (¿el prestador tiene convenio?) →
-  `cobertura_beneficio_plan` (el porcentaje real y sus topes).
+  `codigo_liquidacion_y_cobertura` (código, beneficio y porcentaje).
   El convenio no es un adorno: sin convenio se aplica `PorcentajeSinConvenio`, con
   convenio `PorcentajeConConvenio`, y suelen ser distintos.
 
 - **Cuando la tool te devuelva `Alerta`, párate.** «Mayor que 100» significa que ese
   número no es un porcentaje —hay 1.867 filas así, en 680 planes— y aplicarlo
-  pagaría más que la factura;
-  «sin dato» significa que la casilla viene vacía. En los dos casos se escala, no se
-  inventa un número. Un `0%` en cambio sí es una respuesta: el plan no lo cubre.
+  pagaría más que la factura; «sin dato» es una casilla vacía; «el plan no lista
+  este beneficio» **no es un 0%**, es que no hay fila y hay que revisar el plan. Un
+  `0%` sí es una respuesta: el plan no lo cubre.
 
 - **Y lee el campo `Advertencia`.** La tool resuelve las ramas de convenio y
   accidente, pero el motor real (api-liquidaciones) tiene otras: coordinación de

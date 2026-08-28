@@ -32,6 +32,7 @@ namespace app_ocr_ai_models.Services.Ai;
 /// <summary>Un procedimiento del catálogo Lr05 con sus raíces ya calculadas.</summary>
 public sealed record ProcedimientoLr05(
     int NumeroProcedimiento,
+    int? CodigoHarvard,
     string? CodigoBeneficio,
     string NombreEspanol,
     List<string> Raices);
@@ -40,6 +41,15 @@ public sealed record ProcedimientoLr05(
 public sealed class HomologacionResultado
 {
     public int NumeroProcedimiento { get; init; }
+
+    /// <summary>
+    /// El codigo que la liquidacion escribe de verdad en Lr04DetalleReclamo.
+    /// OJO: <c>CodigoProcedimiento</c> del detalle del reclamo NO es
+    /// <see cref="NumeroProcedimiento"/> -que es la fila de Lr05- sino este
+    /// CodigoHarvard. Verificado: la fila 7044 tiene Harvard 504001, y es el
+    /// 504001 el que aparece en el reclamo.
+    /// </summary>
+    public int? CodigoHarvard { get; init; }
     public string? NombreLr05 { get; init; }
     public string? CodigoBeneficio { get; init; }
     public bool EsMedicina { get; init; }
@@ -178,6 +188,7 @@ public sealed class HomologadorProcedimientos : IHomologadorProcedimientos
         return new HomologacionResultado
         {
             NumeroProcedimiento = m.P.NumeroProcedimiento,
+            CodigoHarvard = m.P.CodigoHarvard,
             NombreLr05 = m.P.NombreEspanol,
             CodigoBeneficio = m.P.CodigoBeneficio,
             EsMedicina = esMedicina,
@@ -329,7 +340,7 @@ public sealed class HomologadorProcedimientos : IHomologadorProcedimientos
             await cn.OpenAsync(ct);
             await using var cmd = cn.CreateCommand();
             cmd.CommandText =
-                "SELECT NumeroProcedimiento, CodigoBeneficio, NombreEspanol " +
+                "SELECT NumeroProcedimiento, CodigoBeneficio, NombreEspanol, CodigoHarvard " +
                 "FROM Salud.dbo.Lr05Procedimientos WITH (NOLOCK) " +
                 "WHERE NombreEspanol IS NOT NULL AND LEN(LTRIM(RTRIM(NombreEspanol))) > 2";
             cmd.CommandTimeout = 60;
@@ -339,6 +350,7 @@ public sealed class HomologadorProcedimientos : IHomologadorProcedimientos
                 var nombre = rd.GetString(2);
                 lista.Add(new ProcedimientoLr05(
                     rd.GetInt32(0),
+                    rd.IsDBNull(3) ? null : rd.GetInt32(3),
                     rd.IsDBNull(1) ? null : rd.GetString(1),
                     nombre,
                     Raices(nombre)));
