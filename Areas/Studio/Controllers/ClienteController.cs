@@ -57,6 +57,7 @@ public sealed class ClienteController : Controller
     private readonly IToolExecutor? _toolExecutor;
     private readonly ILogger<ClienteController> _log;
     private readonly Services.IBuscadorFacturaRepetida _repetidas;
+    private readonly Services.IEvaluadorDeCobertura? _cobertura;
 
     public ClienteController(
         OCRDbContext db,
@@ -65,9 +66,11 @@ public sealed class ClienteController : Controller
         AiCompletionServiceFactory factory,
         ILogger<ClienteController> log,
         Services.IBuscadorFacturaRepetida repetidas,
+        Services.IEvaluadorDeCobertura? cobertura = null,
         IToolExecutor? toolExecutor = null)
     {
         _repetidas    = repetidas;
+        _cobertura    = cobertura;
         _db           = db;
         _portal       = portal;
         _nexus        = nexus;
@@ -1411,6 +1414,50 @@ public sealed class ClienteController : Controller
                         .FirstOrDefault();
         vm.Resolucion = LeerResolucion(reso, audi);
 
+        // ── El porcentaje sale del PLAN, no del JSON del modelo ──────────────
+        //
+        // Hasta hoy se derivaba de valorCubierto/valorPresentado, cifras que
+        // escribia el modelo y que nadie contrastaba. Desde REQ-027b al modelo se
+        // le pide que las deje en null cuando no le constan, asi que sin esto la
+        // pantalla enseñaria «0%» y el afiliado leeria «no me cubren nada».
+        //
+        // Los hechos ya estan estructurados de la clasificacion: procedimiento
+        // homologado, beneficio, y si la homologacion quedo ambigua. Con eso y el
+        // plan del contrato, la cobertura se CONSULTA en Pr05Beneficios.
+        if (_cobertura != null && vm.Resolucion is { Items.Count: > 0 } rvm)
+        {
+            var procs = await _db.DocumentoProcedimiento.AsNoTracking()
+                .Where(x => _db.DataFile.Any(f => f.Id == x.DataFileId && f.CaseCode == caseCode))
+                .Select(x => new { x.Descripcion, x.CodigoBeneficio, x.NumeroProcedimiento,
+                                   x.NombreLr05, x.HomologacionAmbigua })
+                .ToListAsync();
+
+            if (procs.Count > 0)
+            {
+                var evaluados = await _cobertura.EvaluarAsync(
+                    procs.Select(x => (x.Descripcion ?? string.Empty, 0m, x.CodigoBeneficio,
+                                       (int?)x.NumeroProcedimiento, x.NombreLr05,
+                                       x.HomologacionAmbigua == true)),
+                    sol.CodigoPlan, VersionDelPlan(sol.ContratoJson), sol.CodigoProducto,
+                    HttpContext.RequestAborted);
+
+                // Se emparejan por la descripcion normalizada: las dos vienen del
+                // mismo OCR, asi que coinciden salvo mayusculas, tildes y espacios.
+                // Lo que no empareja se queda sin porcentaje, que es mejor que
+                // ponerle el de otra linea.
+                var porTexto = evaluados
+                    .GroupBy(e => Normaliza(e.Descripcion))
+                    .ToDictionary(g => g.Key, g => g.First());
+
+                foreach (var it in rvm.Items)
+                {
+                    if (!porTexto.TryGetValue(Normaliza(it.Descripcion), out var ev)) continue;
+                    it.PorcentajeDelPlan  = ev.PorcentajeDelPlan;
+                    it.ExplicacionDelPlan = ev.ParaElCliente;
+                }
+            }
+        }
+
         // ── Una factura no se paga dos veces, y eso no lo decide el modelo ────
         //
         // El hallazgo del duplicado llegaba al agente como un dato más y era él
@@ -1585,5 +1632,41 @@ public sealed class ClienteController : Controller
         }
 
         return vm;
+    }
+
+    /// <summary>
+    /// La version del plan, que vive dentro del contrato guardado. Sin ella no se
+    /// puede consultar la cobertura: el mismo plan cambia de porcentajes entre
+    /// versiones.
+    /// </summary>
+    private static int? VersionDelPlan(string? contratoJson)
+    {
+        if (string.IsNullOrWhiteSpace(contratoJson)) return null;
+        try
+        {
+            var raiz = JsonDocument.Parse(contratoJson).RootElement;
+            if (raiz.TryGetProperty("Version", out var v) && v.ValueKind == JsonValueKind.Number)
+                return v.GetInt32();
+        }
+        catch { /* contrato ilegible: sin version, y la cobertura lo dira */ }
+        return null;
+    }
+
+    /// <summary>
+    /// Para emparejar descripciones que salieron del mismo OCR por caminos
+    /// distintos: fuera mayusculas, tildes, signos y espacios de mas.
+    /// </summary>
+    private static string Normaliza(string? texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto)) return string.Empty;
+        var sb = new StringBuilder();
+        foreach (var c in texto.Normalize(System.Text.NormalizationForm.FormD))
+        {
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c)
+                == System.Globalization.UnicodeCategory.NonSpacingMark) continue;
+            if (char.IsLetterOrDigit(c)) sb.Append(char.ToUpperInvariant(c));
+            else if (char.IsWhiteSpace(c) && sb.Length > 0 && sb[^1] != ' ') sb.Append(' ');
+        }
+        return sb.ToString().Trim();
     }
 }

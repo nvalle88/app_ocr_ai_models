@@ -91,11 +91,32 @@ public sealed class ItemResolucionVm
     public bool EsCubierto => !Estado.Equals("NO_CUBIERTO", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// El porcentaje se CALCULA de los valores de la resolución, no se pide al
-    /// modelo: así no puede discrepar de las cifras que ve el auditor.
+    /// Lo que dice el PLAN para el beneficio de esta prestación, leído de
+    /// Pr05Beneficios. Es la fuente buena y por eso manda.
+    /// </summary>
+    public decimal? PorcentajeDelPlan { get; set; }
+
+    /// <summary>La frase del plan para esta línea, compuesta con sus datos.</summary>
+    public string? ExplicacionDelPlan { get; set; }
+
+    /// <summary>
+    /// El porcentaje que se enseña.
+    ///
+    /// Primero el del PLAN: sale de Pr05Beneficios por plan y versión, y es
+    /// verificable contra la tabla.
+    ///
+    /// Si no lo hay, se cae al derivado de los valores de la resolución. Ese
+    /// derivado tenía un problema que ahora es visible: si el modelo no pone
+    /// valorCubierto —y desde REQ-027b se le pide que lo deje en null cuando no
+    /// le consta— la división da 0 y en pantalla saldría «0%», que el afiliado
+    /// lee como «no me cubren nada». Por eso sólo se deriva cuando hay una cifra
+    /// de verdad detrás; si no, no se enseña porcentaje.
     /// </summary>
     public decimal? Porcentaje =>
-        ValorPresentado > 0 ? Math.Round(ValorCubierto / ValorPresentado * 100m, 0) : null;
+        PorcentajeDelPlan
+        ?? (ValorPresentado > 0 && ValorCubierto > 0
+                ? Math.Round(ValorCubierto / ValorPresentado * 100m, 0)
+                : null);
 
     /// <summary>Cómo llamar a este estado delante del afiliado.</summary>
     public string EstadoEnCristiano => Estado.ToUpperInvariant() switch

@@ -353,7 +353,14 @@
                         <tr class="@(it.EsCubierto ? "es-si" : "es-no")">
                             <td>
                                 <strong>@it.Descripcion</strong>
-                                @if (!string.IsNullOrWhiteSpace(it.PorQueEnCristiano))
+                                @* La frase del PLAN manda: sale de Pr05Beneficios y es
+                                   verificable contra la tabla. La del modelo entra
+                                   solo cuando no hay dato del plan. *@
+                                @if (!string.IsNullOrWhiteSpace(it.ExplicacionDelPlan))
+                                {
+                                    <span class="st-tabla-porque">@it.ExplicacionDelPlan</span>
+                                }
+                                else if (!string.IsNullOrWhiteSpace(it.PorQueEnCristiano))
                                 {
                                     <span class="st-tabla-porque">@it.PorQueEnCristiano</span>
                                 }
