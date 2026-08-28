@@ -583,8 +583,10 @@
         </div>
     }
 
-    @* ═══════════ CALCULAR ═══════════════════════════════════════════ *@
-    @if (momento == "REVISAR")
+    @* ═══════════ CALCULAR ═══════════════════════════════════════════
+       No se ofrece cuando la factura ya está registrada: invitarle a calcular un
+       reembolso que no va a haber es hacerle esperar dos minutos para nada. *@
+    @if (momento == "REVISAR" && Model.FacturaRepetida is not { Bloquea: true })
     {
         <div class="st-foco is-accion">
             <p class="st-foco-sub">

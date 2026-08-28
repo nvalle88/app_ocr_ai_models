@@ -56,6 +56,7 @@ public sealed class ClienteController : Controller
     private readonly AiCompletionServiceFactory _factory;
     private readonly IToolExecutor? _toolExecutor;
     private readonly ILogger<ClienteController> _log;
+    private readonly Services.IBuscadorFacturaRepetida _repetidas;
 
     public ClienteController(
         OCRDbContext db,
@@ -63,8 +64,10 @@ public sealed class ClienteController : Controller
         INexusService nexus,
         AiCompletionServiceFactory factory,
         ILogger<ClienteController> log,
+        Services.IBuscadorFacturaRepetida repetidas,
         IToolExecutor? toolExecutor = null)
     {
+        _repetidas    = repetidas;
         _db           = db;
         _portal       = portal;
         _nexus        = nexus;
@@ -1415,14 +1418,21 @@ public sealed class ClienteController : Controller
         // el contrato que se presentaba y 1 en otro.
         //
         // Los anulados NO cuentan: si se anuló, esa presentación dejó de existir.
-        var repetida = await _db.ToolInvocation
-            .Where(ti => ti.ToolCode == "factura_ya_pagada_bd"
-                      && _db.StepExecution.Any(se => se.ExecutionId == ti.ExecutionId
-                                                  && se.CaseCode == caseCode)
-                      && !ti.IsError)
-            .OrderByDescending(ti => ti.InvocationId)
-            .Select(ti => ti.ResponseJson)
-            .FirstOrDefaultAsync();
+        // Se pregunta DIRECTAMENTE, no se espera a que el agente haya llamado a
+        // su herramienta: en cuanto el documento se identifica ya hay clave de
+        // acceso, y el agente todavia no ha corrido. Hacerle recorrer el camino
+        // entero para darle un no que se sabia desde el primer papel es hacerle
+        // perder el tiempo.
+        var facturas = clas
+            .Where(c => !string.IsNullOrWhiteSpace(c.NumeroFactura)
+                     && !string.IsNullOrWhiteSpace(c.ClaveAcceso))
+            .Select(c => ((string?)c.NumeroFactura, (string?)c.ClaveAcceso))
+            .Distinct()
+            .ToList();
+
+        var repetida = facturas.Count > 0
+            ? await _repetidas.BuscarAsync(facturas)
+            : null;
 
         vm.FacturaRepetida = FacturaRepetida.Juzgar(repetida, vm.NumeroContrato);
 

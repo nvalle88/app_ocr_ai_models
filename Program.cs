@@ -70,6 +70,11 @@ namespace app_ocr_ai_models
             builder.Services.AddTransient<INexusService, NexusService>();
             builder.Services.AddMemoryCache();
             // REQ-019r: homologa el texto de la factura contra Salud.dbo.Lr05 y valida Lr46
+            // La comprobacion de factura repetida NO pasa por el agente: se
+            // pregunta directamente, en cuanto el documento se identifica.
+            builder.Services.AddScoped<app_ocr_ai_models.Services.IBuscadorFacturaRepetida,
+                                       app_ocr_ai_models.Services.BuscadorFacturaRepetida>();
+
             builder.Services.AddScoped<app_ocr_ai_models.Services.Ai.IHomologadorProcedimientos,
                                         app_ocr_ai_models.Services.Ai.HomologadorProcedimientos>();
             builder.Services.AddScoped<IOcrIngestService, OcrIngestService>();
