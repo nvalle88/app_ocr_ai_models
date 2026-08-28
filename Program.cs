@@ -88,6 +88,12 @@ namespace app_ocr_ai_models
             builder.Services.AddScoped<app_ocr_ai_models.Services.Ai.IPreValidaciones,
                                        app_ocr_ai_models.Services.Ai.PreValidaciones>();
 
+            // El modelo saca los codigos y estructura los documentos; con esos
+            // hechos, QUE CUBRE EL PLAN se consulta y se calcula, no se le
+            // pregunta a nadie.
+            builder.Services.AddScoped<app_ocr_ai_models.Services.IEvaluadorDeCobertura,
+                                       app_ocr_ai_models.Services.EvaluadorDeCobertura>();
+
             builder.Services.AddScoped<app_ocr_ai_models.Services.Ai.IHomologadorProcedimientos,
                                         app_ocr_ai_models.Services.Ai.HomologadorProcedimientos>();
             builder.Services.AddScoped<IOcrIngestService, OcrIngestService>();
