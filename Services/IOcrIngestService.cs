@@ -21,6 +21,19 @@ namespace app_ocr_ai_models.Services
             int timeoutMilliseconds = 90000);
 
         /// <summary>
+        /// Igual que <see cref="ProcessFileAsync"/> pero devuelve además el texto
+        /// DESGLOSADO POR PÁGINA (AnalyzeResult.Pages), que la tupla (Url, Text)
+        /// descartaba. <see cref="OcrResultado.Text"/> es idéntico al Text de
+        /// ProcessFileAsync, de modo que ambos métodos son intercambiables.
+        /// </summary>
+        /// <param name="file">Archivo con contenido base64 o URL remota, más extensión.</param>
+        /// <param name="timeoutMilliseconds">Tiempo máximo de espera para la operación completa.</param>
+        /// <returns>URL del blob, texto completo y lista de páginas.</returns>
+        Task<OcrResultado> ProcessFileDetailedAsync(
+            OcrFile file,
+            int timeoutMilliseconds = 90000);
+
+        /// <summary>
         /// Sube un archivo (desde base64 o URL) a Blob Storage y devuelve su URL pública.
         /// </summary>
         /// <param name="file">Archivo con contenido base64 o URL remota, más extensión.</param>

@@ -2,113 +2,280 @@
 @model ChatIndexViewModel
 @{
     ViewData["Title"] = "Chat IA — Motor Streaming";
+    var tieneCaso = Model.CaseCode != Guid.Empty;
+    var shortCode = tieneCaso ? Model.CaseCode.ToString().Split('-')[0] : null;
+    var _embed = (ViewData["Embed"] as bool?) == true;   // dentro del workspace (iframe) se oculta la cabecera
 }
 
 @* ====================================================
-   REQ-019 T5/T7 — Vista de chat SSE para el Área Studio.
-   Consume POST /Studio/Chat/Stream via fetch+ReadableStream.
+   REQ-019 T5/T7 — Chat SSE del Área Studio.
+   Consume POST /Studio/Chat/Stream vía fetch + ReadableStream.
    Renderiza chips de herramienta (tool_use/tool_result) en vivo.
+   La lógica de streaming se conserva intacta; sólo cambió el "chrome"
+   (ahora hereda el tema Nexus) y los estilos pasaron a studio.css.
    ==================================================== *@
 
-<div class="studio-breadcrumb">
-    Studio / <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> / Chat IA
+<div class="st-head" style="@(_embed ? "display:none" : "")">
+    <div class="st-head-main">
+        <div class="st-crumbs">
+            Studio /
+            <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> /
+            Chat IA
+        </div>
+        <h1 class="st-title"><i class="fa fa-comments-o"></i>Chat con el caso</h1>
+        <p class="st-sub">
+            El modelo responde en streaming; el razonamiento interno (<em>thinking</em>) se muestra colapsado.
+        </p>
+    </div>
+    @if (tieneCaso)
+    {
+        <div class="st-actions">
+            <a class="btn btn-default" asp-area="Studio" asp-controller="Sobres" asp-action="Caso"
+               asp-route-caseCode="@Model.CaseCode">
+                <i class="fa fa-arrow-left"></i> Volver al caso
+            </a>
+            <a class="btn btn-default" asp-area="Studio" asp-controller="Analizar" asp-action="Index"
+               asp-route-caseCode="@Model.CaseCode">
+                <i class="fa fa-cogs"></i> Analizar
+            </a>
+            <a class="btn btn-default" asp-area="Studio" asp-controller="Analizar" asp-action="Informe"
+               asp-route-caseCode="@Model.CaseCode" target="_blank"
+               title="Informe imprimible con las respuestas del análisis (Descargar PDF)">
+                <i class="fa fa-file-pdf-o"></i> Informe PDF
+            </a>
+        </div>
+    }
 </div>
 
-<div class="studio-card">
-    <h4>Chat con el modelo IA</h4>
-    <p style="font-size:0.9em; color:#555;">
-        Consulta sobre un Caso importado. El modelo responde en streaming; el bloque de
-        razonamiento interno (<em>thinking</em>) se muestra colapsado antes del texto final.
-    </p>
-
-    <div style="margin-bottom:10px;">
-        <label style="font-weight:600; display:block; margin-bottom:4px;">CaseCode:</label>
-        <input id="caseCodeInput" type="text"
-               value="@Model.CaseCode"
-               style="width:360px; padding:6px 8px; font-family:monospace;"
-               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+<div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+    <header><span class="widget-icon"><i class="fa fa-folder-open"></i></span><h2>Caso en contexto</h2></header>
+    <div>
+        <div class="widget-body">
+            @if (tieneCaso)
+            {
+                @* Caso ya elegido: solo lectura, no se teclea el GUID. *@
+                <p class="form-control-static">
+                    <i class="fa fa-folder-open text-muted"></i> <strong>Caso @shortCode</strong>
+                    <small class="text-muted" style="margin-left:8px; font-family:monospace;">@Model.CaseCode</small>
+                </p>
+                <input id="caseCodeInput" type="hidden" value="@Model.CaseCode" />
+            }
+            else
+            {
+                <label class="control-label">CaseCode</label>
+                <input id="caseCodeInput" type="text" class="form-control" value="@Model.CaseCode"
+                       style="max-width:420px; font-family:monospace;"
+                       placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+                <small class="text-muted">Normalmente llegas aquí desde un caso y este dato ya viene resuelto.</small>
+            }
+        </div>
     </div>
 </div>
 
 @if (!string.IsNullOrEmpty(Model.Error))
 {
-    <div class="alert-error" style="margin-top:8px;">
-        <strong>Error:</strong> @Model.Error
-    </div>
+    <div class="alert alert-danger"><strong><i class="fa fa-times-circle"></i> Error:</strong> @Model.Error</div>
 }
 
-@* ── Historial de mensajes ── *@
-<div id="chatHistory" style="max-height:520px; overflow-y:auto; margin-bottom:12px;">
-    <div id="messages" style="display:flex; flex-direction:column; gap:12px; padding:4px 0;"></div>
+@* Historial de mensajes *@
+<div id="chatHistory" class="st-chat-log">
+    <div id="messages" style="display:flex; flex-direction:column; gap:12px; width:100%;"></div>
 </div>
 
-@* ── Input + botón enviar ── *@
-<div class="studio-card" style="margin-top:0;">
-    <div style="display:flex; gap:8px; align-items:flex-end;">
-        <textarea id="userInput" rows="3"
-                  style="flex:1; padding:8px; font-size:0.95em; resize:vertical;"
-                  placeholder="Escribe tu pregunta sobre el caso..."></textarea>
-        <button id="sendBtn" class="btn-studio btn-primary-studio"
-                style="height:56px; white-space:nowrap;"
-                onclick="sendMessage()">
-            Enviar
-        </button>
-    </div>
-    <div id="statusBar" style="font-size:0.82em; color:#888; margin-top:6px; min-height:18px;"></div>
+@* Preguntas sugeridas (REQ-019 UX): un clic y se envían — muestran lo que el agente sabe hacer *@
+<div class="st-tools" style="margin-bottom:8px;">
+    <button type="button" class="st-chip st-sugerida">¿Qué coberturas tiene el plan para esta factura?</button>
+    <button type="button" class="st-chip st-sugerida">¿El diagnóstico es una preexistencia del afiliado?</button>
+    <button type="button" class="st-chip st-sugerida">¿Cuánto queda de deducible y cuánto se estima cubrir?</button>
+    <button type="button" class="st-chip st-sugerida">Resume el sobre: cliente, procedimientos y valores</button>
 </div>
 
+@* Composer *@
+<div class="st-composer">
+    <textarea id="userInput" rows="3" class="form-control"
+              placeholder="Escribe tu pregunta sobre el caso… (Ctrl+Enter para enviar)"></textarea>
+    <button id="sendBtn" class="btn btn-ia" style="height:64px; white-space:nowrap;" onclick="sendMessage()">
+        <i class="fa fa-paper-plane"></i> Enviar
+    </button>
+</div>
+<div id="statusBar" class="st-status"></div>
+
+@section Scripts {
+    <script src="~/js/app/st-json.js" asp-append-version="true"></script>
 <script>
+
+    // ════════════════════════════════════════════════════════════════════
+    // El chat no muestra JSON crudo
+    //
+    // Los agentes estructurados responden JSON porque su salida se persiste.
+    // Volcarlo tal cual en pantalla es ilegible. Al cerrar la respuesta se
+    // intenta interpretar; si es JSON se pinta como fichas, y el crudo queda
+    // plegado por si el analista lo necesita.
+    // ════════════════════════════════════════════════════════════════════
+
+    function chatExtraerJson(txt) {
+        if (!txt) return null;
+        var t = txt.trim();
+        // Tolera que venga envuelto en una valla de código
+        var valla = t.match(/^```(?:json)?\s*([\s\S]*?)```$/);
+        if (valla) t = valla[1].trim();
+        if (!(t.charAt(0) === '{' || t.charAt(0) === '[')) return null;
+        try { return JSON.parse(t); } catch (e) { return null; }
+    }
+
+    function chatEtiqueta(k) {
+        return String(k)
+            .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+            .replace(/[_-]+/g, ' ')
+            .replace(/^./, function (c) { return c.toUpperCase(); });
+    }
+
+    function chatValor(v) {
+        if (v === null || v === undefined || v === '') return '<span class="st-json-nulo">—</span>';
+        if (typeof v === 'boolean') {
+            return v ? '<span class="st-json-si"><i class="fa fa-check"></i> sí</span>'
+                     : '<span class="st-json-no"><i class="fa fa-times"></i> no</span>';
+        }
+        if (typeof v === 'number') return '<span class="st-json-num">' + v + '</span>';
+        return String(v).replace(/[<>&]/g, function (c) {
+            return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c];
+        });
+    }
+
+    // Pinta un objeto/array como fichas anidadas. Profundidad acotada: pasada
+    // cierta anidación se muestra el crudo, que es más honesto que una ficha
+    // ilegible.
+    function chatPintarJson(dato, nivel) {
+        nivel = nivel || 0;
+        if (nivel > 3) return '<pre class="st-json-crudo">' + chatValor(JSON.stringify(dato, null, 1)) + '</pre>';
+
+        if (Array.isArray(dato)) {
+            if (!dato.length) return '<span class="st-json-nulo">(vacío)</span>';
+            // Array de objetos con la misma forma -> tabla
+            var todosObj = dato.every(function (x) { return x && typeof x === 'object' && !Array.isArray(x); });
+            if (todosObj && dato.length > 1) {
+                var cols = [];
+                dato.forEach(function (o) {
+                    Object.keys(o).forEach(function (k) { if (cols.indexOf(k) < 0) cols.push(k); });
+                });
+                if (cols.length <= 6) {
+                    var h = '<div class="table-responsive"><table class="st-json-tabla"><thead><tr>';
+                    cols.forEach(function (c) { h += '<th>' + chatEtiqueta(c) + '</th>'; });
+                    h += '</tr></thead><tbody>';
+                    dato.forEach(function (o) {
+                        h += '<tr>';
+                        cols.forEach(function (c) {
+                            var v = o[c];
+                            h += '<td>' + (v && typeof v === 'object'
+                                ? chatPintarJson(v, nivel + 2) : chatValor(v)) + '</td>';
+                        });
+                        h += '</tr>';
+                    });
+                    return h + '</tbody></table></div>';
+                }
+            }
+            var lista = '<ul class="st-json-lista">';
+            dato.forEach(function (x) {
+                lista += '<li>' + (x && typeof x === 'object'
+                    ? chatPintarJson(x, nivel + 1) : chatValor(x)) + '</li>';
+            });
+            return lista + '</ul>';
+        }
+
+        if (dato && typeof dato === 'object') {
+            var h = '<div class="st-json-ficha">';
+            Object.keys(dato).forEach(function (k) {
+                var v = dato[k];
+                var esComplejo = v && typeof v === 'object';
+                h += '<div class="st-json-fila' + (esComplejo ? ' is-bloque' : '') + '">'
+                   + '<span class="st-json-k">' + chatEtiqueta(k) + '</span>'
+                   + '<span class="st-json-v">'
+                   + (esComplejo ? chatPintarJson(v, nivel + 1) : chatValor(v))
+                   + '</span></div>';
+            });
+            return h + '</div>';
+        }
+        return chatValor(dato);
+    }
+
+    // Markdown mínimo para las respuestas que no son JSON
+    function chatMarkdown(txt) {
+        var h = chatValor(txt);
+        h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        h = h.replace(/^### (.+)$/gm, '<h5>$1</h5>');
+        h = h.replace(/^## (.+)$/gm, '<h4>$1</h4>');
+        h = h.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+        h = h.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>');
+        return h.replace(/\n{2,}/g, '<br/><br/>').replace(/\n/g, '<br/>');
+    }
+
+    /** Se llama al cerrar la respuesta: delega en el renderizador compartido. */
+    function chatRenderFinal(nodo) {
+        if (window.StJson) { delete nodo.dataset.stJsonHecho; StJson.aplicar(nodo); return; }
+        if (!nodo) return;
+        var crudo = nodo.textContent || '';
+        if (!crudo.trim()) return;
+
+        var dato = chatExtraerJson(crudo);
+        if (!dato) {                       // texto normal: solo formato
+            nodo.innerHTML = chatMarkdown(crudo);
+            return;
+        }
+
+        nodo.innerHTML = chatPintarJson(dato, 0);
+
+        var det = document.createElement('details');
+        det.className = 'st-json-ver';
+        det.innerHTML = '<summary>Ver la respuesta original (JSON)</summary>'
+                      + '<pre class="st-json-crudo">' + chatValor(JSON.stringify(dato, null, 2)) + '</pre>';
+        nodo.appendChild(det);
+    }
 // ====================================================================
-// REQ-019 T7 — Chat SSE: transmisión en tiempo real con fetch + ReadableStream.
+// REQ-019 T7 — Chat SSE: transmisión en tiempo real (fetch + ReadableStream).
+// Lógica conservada; el estilo de las burbujas/chips ahora vive en studio.css.
 // ====================================================================
 
 let isStreaming = false;
 
 /**
- * Crea y agrega un elemento de burbuja de mensaje al historial.
+ * Crea y agrega una burbuja de mensaje al historial.
  * role: 'user' | 'assistant'
- * returns: { bubble, thinkingBlock, textBlock }
  */
 function createMessageBubble(role) {
     const container = document.getElementById('messages');
-
     const wrapper = document.createElement('div');
-    wrapper.style.cssText = role === 'user'
-        ? 'align-self:flex-end; max-width:80%;'
-        : 'align-self:flex-start; max-width:90%; width:100%;';
+    wrapper.className = role === 'user' ? 'st-msg st-msg--user' : 'st-msg st-msg--ai';
 
     if (role === 'user') {
         const bubble = document.createElement('div');
-        bubble.style.cssText =
-            'background:#003366; color:#fff; padding:10px 14px; border-radius:12px 12px 2px 12px; font-size:0.95em; white-space:pre-wrap;';
+        bubble.className = 'st-bubble-user';
         wrapper.appendChild(bubble);
         container.appendChild(wrapper);
         return { bubble, thinkingBlock: null, textBlock: bubble };
     }
 
-    // Bloque thinking (colapsable) — se muestra solo si llegan deltas thinking
+    // Bloque thinking (colapsable) — visible solo si llegan deltas thinking.
     const thinkingDetails = document.createElement('details');
-    thinkingDetails.style.cssText =
-        'background:#f0f4ff; border:1px solid #c5d2e8; border-radius:6px; padding:8px 12px; margin-bottom:6px; display:none;';
+    thinkingDetails.className = 'st-think';
+    thinkingDetails.style.display = 'none';
     const thinkingSummary = document.createElement('summary');
-    thinkingSummary.style.cssText = 'cursor:pointer; font-size:0.85em; color:#4b5e82; font-weight:600;';
-    thinkingSummary.textContent = '🧠 Pensando…';  // 🧠 Pensando…
+    thinkingSummary.textContent = '🧠 Pensando…';
     const thinkingContent = document.createElement('pre');
-    thinkingContent.style.cssText =
-        'font-size:0.8em; color:#445; white-space:pre-wrap; margin:8px 0 0; max-height:200px; overflow-y:auto;';
     thinkingDetails.appendChild(thinkingSummary);
     thinkingDetails.appendChild(thinkingContent);
 
-    // Contenedor de chips de herramienta (tool_use / tool_result) — REQ-019 T5
+    // Contenedor de chips de herramienta (tool_use / tool_result).
     const toolsContainer = document.createElement('div');
-    toolsContainer.style.cssText =
-        'display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;';
+    toolsContainer.className = 'st-tools';
 
-    // Bloque de texto de la respuesta
+    // Texto de la respuesta (arranca con el indicador "escribiendo…" animado).
     const textBubble = document.createElement('div');
-    textBubble.className = 'studio-card';
-    textBubble.style.cssText =
-        'margin:0; padding:10px 14px; font-size:0.95em; white-space:pre-wrap; background:#f8faff; border-left:3px solid #4285f4;';
+    textBubble.className = 'st-bubble-ai';
+
+    const typing = document.createElement('div');
+    typing.className = 'st-typing';
+    typing.innerHTML = '<span></span><span></span><span></span>';
+    textBubble.appendChild(typing);
 
     wrapper.appendChild(thinkingDetails);
     wrapper.appendChild(toolsContainer);
@@ -119,8 +286,28 @@ function createMessageBubble(role) {
         bubble: wrapper,
         thinkingBlock: { details: thinkingDetails, content: thinkingContent },
         textBlock: textBubble,
-        toolsContainer
+        toolsContainer,
+        typing
     };
+}
+
+// ── Cronómetro de actividad: el usuario SIEMPRE ve que algo está pasando ──
+let elapsedTimer = null;
+let elapsedStart = null;
+let lastStatusMsg = '';
+
+function startElapsed() {
+    elapsedStart = Date.now();
+    stopElapsed();
+    elapsedTimer = setInterval(function () {
+        const s = Math.round((Date.now() - elapsedStart) / 1000);
+        const bar = document.getElementById('statusBar');
+        bar.textContent = lastStatusMsg + '  ·  ' + s + 's';
+    }, 1000);
+}
+
+function stopElapsed() {
+    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
 }
 
 function scrollToBottom() {
@@ -129,16 +316,17 @@ function scrollToBottom() {
 }
 
 function setStatus(msg, color) {
+    lastStatusMsg = msg;
     const bar = document.getElementById('statusBar');
     bar.textContent = msg;
-    bar.style.color = color || '#888';
+    bar.style.color = color || '';
 }
 
 async function sendMessage() {
     if (isStreaming) return;
 
     const caseCodeVal = document.getElementById('caseCodeInput').value.trim();
-    const msgVal      = document.getElementById('userInput').value.trim();
+    const msgVal = document.getElementById('userInput').value.trim();
 
     if (!caseCodeVal || caseCodeVal === '00000000-0000-0000-0000-000000000000') {
         setStatus('Introduce un CaseCode válido.', '#c5221f');
@@ -149,20 +337,27 @@ async function sendMessage() {
         return;
     }
 
-    // Mostrar mensaje del usuario
+    // Mensaje del usuario
     const { textBlock: userText } = createMessageBubble('user');
     userText.textContent = msgVal;
     document.getElementById('userInput').value = '';
     scrollToBottom();
 
-    // Crear burbuja de respuesta del asistente (T5: incluye toolsContainer)
-    const { thinkingBlock, textBlock: assistantText, toolsContainer } = createMessageBubble('assistant');
-    assistantText.textContent = '';
+    // Burbuja de respuesta del asistente (con indicador "escribiendo…")
+    const { thinkingBlock, textBlock: assistantText, toolsContainer, typing } = createMessageBubble('assistant');
     scrollToBottom();
+
+    // Quita el indicador animado y deja la burbuja lista para texto.
+    let typingRemoved = false;
+    function removeTyping() {
+        if (!typingRemoved && typing) { typing.remove(); typingRemoved = true; }
+    }
 
     isStreaming = true;
     document.getElementById('sendBtn').disabled = true;
-    setStatus('Conectando con el modelo…', '#888');
+    document.querySelectorAll('.st-sugerida').forEach(c => c.classList.add('is-disabled'));
+    setStatus('Conectando con el modelo…');
+    startElapsed();
 
     try {
         const resp = await fetch('/Studio/Chat/Stream', {
@@ -176,9 +371,9 @@ async function sendMessage() {
             return;
         }
 
-        const reader  = resp.body.getReader();
+        const reader = resp.body.getReader();
         const decoder = new TextDecoder();
-        let buffer    = '';
+        let buffer = '';
 
         setStatus('Recibiendo respuesta…', '#1a73e8');
 
@@ -188,18 +383,17 @@ async function sendMessage() {
 
             buffer += decoder.decode(value, { stream: true });
 
-            // Procesar frames SSE completos (terminan en \n\n)
             let boundary;
             while ((boundary = buffer.indexOf('\n\n')) !== -1) {
                 const frame = buffer.slice(0, boundary);
                 buffer = buffer.slice(boundary + 2);
 
                 let eventType = 'message';
-                let dataLine  = '';
+                let dataLine = '';
 
                 for (const line of frame.split('\n')) {
                     if (line.startsWith('event: ')) eventType = line.slice(7).trim();
-                    else if (line.startsWith('data: '))  dataLine  = line.slice(6).trim();
+                    else if (line.startsWith('data: ')) dataLine = line.slice(6).trim();
                 }
 
                 if (!dataLine) continue;
@@ -207,59 +401,59 @@ async function sendMessage() {
                 try {
                     const payload = JSON.parse(dataLine);
 
-                    if (eventType === 'thinking' && thinkingBlock) {
-                        thinkingBlock.details.style.display = '';   // hacer visible
-                        thinkingBlock.content.textContent   += payload.delta || '';
+                    if (eventType === 'status') {
+                        // Progreso emitido por el servidor (p. ej. "Agente X analizando…")
+                        setStatus(payload.message || 'Procesando…', '#1a73e8');
+
+                    } else if (eventType === 'thinking' && thinkingBlock) {
+                        thinkingBlock.details.style.display = '';
+                        thinkingBlock.content.textContent += payload.delta || '';
+                        setStatus('El agente está razonando…', '#4b5e82');
                         scrollToBottom();
                     } else if (eventType === 'text') {
+                        removeTyping();
                         assistantText.textContent += payload.delta || '';
                         scrollToBottom();
 
-                    // ── REQ-019 T5: chips de herramienta ──────────────────
                     } else if (eventType === 'tool_use') {
-                        // Chip azul: el modelo invocó una tool
                         const chip = document.createElement('span');
+                        chip.className = 'st-chip';
                         chip.dataset.toolName = payload.toolName || '';
-                        chip.style.cssText =
-                            'display:inline-flex; align-items:center; gap:4px; ' +
-                            'background:#e8f0fe; color:#1a73e8; border:1px solid #aecbfa; ' +
-                            'border-radius:14px; padding:3px 10px; font-size:0.8em; ' +
-                            'font-weight:600; white-space:nowrap;';
                         chip.title = payload.inputSummary || '';
-                        chip.innerHTML = `<span style="font-size:0.9em">⚙</span> ${payload.toolName || 'tool'}…`;
+                        chip.innerHTML = '<i class="fa fa-cog"></i> ' + (payload.toolName || 'tool') + '…';
                         toolsContainer.appendChild(chip);
                         scrollToBottom();
                         setStatus(`Invocando tool: ${payload.toolName}…`, '#1a73e8');
 
                     } else if (eventType === 'tool_result') {
-                        // Actualizar el chip con el resultado (ok = verde, error = rojo)
                         const toolName = payload.toolName || '';
                         const isOk = payload.resultStatus === 'ok';
-                        // Buscar el chip pendiente más reciente para esta tool
                         const chips = Array.from(toolsContainer.querySelectorAll('span[data-tool-name]'));
                         const pending = chips.reverse().find(c =>
-                            c.dataset.toolName === toolName && c.innerHTML.endsWith('…</span>') === false
-                            || c.innerHTML.includes('…'));
+                            c.dataset.toolName === toolName && c.innerHTML.includes('…'));
                         if (pending) {
-                            pending.style.background = isOk ? '#e6f4ea' : '#fce8e6';
-                            pending.style.color      = isOk ? '#137333' : '#c5221f';
-                            pending.style.borderColor = isOk ? '#81c995' : '#f28b82';
-                            pending.innerHTML = (isOk ? '✓' : '✗') + ' ' + toolName;
+                            pending.classList.add(isOk ? 'is-ok' : 'is-err');
+                            pending.innerHTML = (isOk ? '<i class="fa fa-check"></i> ' : '<i class="fa fa-times"></i> ') + toolName;
                         }
-                        setStatus(isOk
-                            ? `Tool ${toolName}: completada`
-                            : `Tool ${toolName}: error`, isOk ? '#137333' : '#c5221f');
+                        setStatus(isOk ? `Tool ${toolName}: completada` : `Tool ${toolName}: error`,
+                                  isOk ? '#137333' : '#c5221f');
 
-                    // ── Fin chips ──────────────────────────────────────────
                     } else if (eventType === 'done') {
-                        const pt  = payload.promptTokens     ?? 0;
-                        const ct  = payload.completionTokens ?? 0;
-                        const tt  = payload.thinkingTokens;
-                        const tkInfo = tt != null
-                            ? `Tokens: ${pt} entrada / ${ct} salida / ${tt} thinking`
-                            : `Tokens: ${pt} entrada / ${ct} salida`;
-                        setStatus(tkInfo, '#137333');
+                        removeTyping();
+                        stopElapsed();
+                        // La respuesta ya esta completa: si es JSON se re-pinta
+                        // como fichas legibles en vez de dejar el volcado crudo.
+                        chatRenderFinal(assistantText);
+                        const pt = payload.promptTokens ?? 0;
+                        const ct = payload.completionTokens ?? 0;
+                        const tt = payload.thinkingTokens;
+                        setStatus(tt != null
+                            ? `Listo ✓ — Tokens: ${pt} entrada / ${ct} salida / ${tt} thinking`
+                            : `Listo ✓ — Tokens: ${pt} entrada / ${ct} salida`, '#137333');
                     } else if (eventType === 'error') {
+                        removeTyping();
+                        stopElapsed();
+                        assistantText.textContent = 'No se pudo completar la respuesta. ' + (payload.message || '');
                         setStatus(`Error del modelo: ${payload.message}`, '#c5221f');
                     }
                 } catch (_) {
@@ -268,10 +462,14 @@ async function sendMessage() {
             }
         }
     } catch (err) {
+        removeTyping();
         setStatus(`Error de red: ${err.message}`, '#c5221f');
     } finally {
+        stopElapsed();
+        removeTyping();
         isStreaming = false;
         document.getElementById('sendBtn').disabled = false;
+        document.querySelectorAll('.st-sugerida').forEach(c => c.classList.remove('is-disabled'));
         scrollToBottom();
     }
 }
@@ -280,4 +478,21 @@ async function sendMessage() {
 document.getElementById('userInput').addEventListener('keydown', function (e) {
     if (e.ctrlKey && e.key === 'Enter') sendMessage();
 });
+
+// Preguntas sugeridas: clic → se envía directamente
+document.querySelectorAll('.st-sugerida').forEach(function (chip) {
+    chip.addEventListener('click', function () {
+        if (isStreaming) return;
+        document.getElementById('userInput').value = chip.textContent.trim();
+        sendMessage();
+    });
+});
+
+// Pregunta precargada por deep-link "Preguntar sobre este documento" (no se auto-envía)
+@if (!string.IsNullOrWhiteSpace(Model.PreguntaInicial))
+{
+    @:document.getElementById('userInput').value = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.PreguntaInicial));
+    @:try { document.getElementById('userInput').focus(); } catch (e) {}
+}
 </script>
+}

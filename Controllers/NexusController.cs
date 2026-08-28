@@ -310,7 +310,7 @@ namespace SmartAdmin.Web.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> DownloadCaseDocument(Guid caseCode, int fileId)
+        public async Task<IActionResult> DownloadCaseDocument(Guid caseCode, int fileId, bool inline = false)
         {
             if (caseCode == Guid.Empty || fileId <= 0)
                 return BadRequest(new { success = false, message = "caseCode y fileId son requeridos." });
@@ -337,8 +337,29 @@ namespace SmartAdmin.Web.Controllers
             var extension = Path.GetExtension(originalName)?.ToLowerInvariant() ?? string.Empty;
             var contentType = download.ContentType;
 
-            if (string.IsNullOrWhiteSpace(contentType))
-                contentType = GetContentTypeForExtension(extension);
+            // El Blob de M-Files/Azure suele venir como "application/octet-stream": con
+            // ese MIME el navegador NO puede renderizar el PDF en un <iframe> (marco en
+            // blanco + descarga forzada). Cuando la extensión nos dice qué es, manda la
+            // extensión sobre el genérico del storage.
+            var porExtension = GetContentTypeForExtension(extension);
+            if (string.IsNullOrWhiteSpace(contentType)
+                || contentType.StartsWith("application/octet-stream", StringComparison.OrdinalIgnoreCase))
+            {
+                contentType = porExtension;
+            }
+
+            if (inline)
+            {
+                // Visor embebido: 'inline' + nombre para que el visor nativo del navegador
+                // lo abra en el marco en vez de descargarlo.
+                Response.Headers["Content-Disposition"] =
+                    new System.Net.Mime.ContentDisposition
+                    {
+                        Inline = true,
+                        FileName = originalName
+                    }.ToString();
+                return File(download.Bytes, contentType);
+            }
 
             return File(download.Bytes, contentType, originalName);
         }

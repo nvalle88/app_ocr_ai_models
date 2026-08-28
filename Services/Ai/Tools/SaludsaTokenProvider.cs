@@ -161,8 +161,39 @@ public sealed class SaludsaTokenProvider : ISaludsaTokenProvider
             new KeyValuePair<string, string>("client_id",  clientId)
         });
 
-        using var response = await httpClient.PostAsync(tokenUrl, formData, ct).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        // Un fallo de TRANSPORTE (conexión cerrada, socket muerto del pool) no es
+        // un error de negocio: es un parpadeo. Sin reintento, ese parpadeo tira
+        // la solicitud del afiliado y le obliga a empezar de cero.
+        //
+        // Se reintenta UNA vez y sólo ante HttpRequestException: un 401 o un 400
+        // son respuestas del servidor y repetirlas no arregla nada — esas suben
+        // por EnsureSuccessStatusCode y no entran aquí.
+        HttpResponseMessage response;
+        try
+        {
+            response = await httpClient.PostAsync(tokenUrl, formData, ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "[T5 B2] La conexión con el endpoint de token se cortó; se reintenta una vez. " + ex.Message);
+
+            // El contenido se consume al enviarlo: hay que rehacerlo.
+            var reintento = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("grant_type", "password"),
+                new KeyValuePair<string, string>("username",   username),
+                new KeyValuePair<string, string>("password",   password),
+                new KeyValuePair<string, string>("client_id",  clientId)
+            });
+
+            await Task.Delay(TimeSpan.FromMilliseconds(400), ct).ConfigureAwait(false);
+            response = await httpClient.PostAsync(tokenUrl, reintento, ct).ConfigureAwait(false);
+        }
+
+        using (response)
+        {
+            response.EnsureSuccessStatusCode();
 
         var tokenResponse = await response.Content
             .ReadFromJsonAsync<TokenResponse>(cancellationToken: ct)
@@ -172,11 +203,13 @@ public sealed class SaludsaTokenProvider : ISaludsaTokenProvider
         if (string.IsNullOrWhiteSpace(tokenResponse.AccessToken))
             throw new InvalidOperationException("[T5 B2] Token OAuth2 recibido está vacío.");
 
-        var expiry = DateTimeOffset.UtcNow.AddSeconds(tokenResponse.ExpiresIn > 0
-            ? tokenResponse.ExpiresIn
-            : 3600); // fallback 1 hora si expires_in no viene
+            var expiry = DateTimeOffset.UtcNow.AddSeconds(tokenResponse.ExpiresIn > 0
+                ? tokenResponse.ExpiresIn
+                : 3600); // fallback 1 hora si expires_in no viene
 
-        return (tokenResponse.AccessToken, expiry);
+            return (tokenResponse.AccessToken, expiry);
+
+        }
     }
 
     // ── DTO para deserializar la respuesta del endpoint de token ──────────

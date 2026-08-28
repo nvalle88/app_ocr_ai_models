@@ -1,0 +1,937 @@
+@using app_ocr_ai_models.Areas.Studio.Models
+@model ClasificacionViewModel
+@{
+    ViewData["Title"] = "Tipificación del sobre";
+    var _embed = (ViewData["Embed"] as bool?) == true;
+    var c = Model.Clasificacion;
+    string M(decimal v) => v.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-EC"));
+
+    // Anclaje de evidencia: la lupa lleva al trozo del documento y "segmento"
+    // muestra su recorte aquí mismo. Solo se pinta si hay texto que buscar.
+    // Los nombres de fichero del sobre son largos; en una celda estrecha hay que
+    // recortarlos por el medio para que se siga reconociendo el documento.
+    Func<string?, int, string> Recortar = (txt, max) =>
+    {
+        if (string.IsNullOrWhiteSpace(txt)) return "(sin nombre)";
+        var t = txt!.Trim();
+        if (t.Length <= max) return t;
+        var cab = Math.Max(4, (max - 3) / 2);
+        return t[..cab] + "…" + t[^Math.Max(4, max - 3 - cab)..];
+    };
+
+    Func<int, int?, string?, string?, Microsoft.AspNetCore.Html.IHtmlContent> Evid =
+        (docId, pagina, texto, nombre) =>
+    {
+        if (string.IsNullOrWhiteSpace(texto) || texto!.Trim().Length < 3)
+            return new Microsoft.AspNetCore.Html.HtmlString(string.Empty);
+
+        var t = System.Text.Json.JsonSerializer.Serialize(texto.Trim());
+        var n = System.Text.Json.JsonSerializer.Serialize(nombre ?? string.Empty);
+        var pg = pagina?.ToString() ?? "null";
+        return new Microsoft.AspNetCore.Html.HtmlString(
+            $@"<span class=""st-evid"">
+                 <button type=""button"" class=""st-evid-btn"" title=""Ver en el documento, resaltado""
+                         onclick='evidVer({docId}, {pg}, {t}, {n})'><i class=""fa fa-search""></i></button>
+                 <button type=""button"" class=""st-evid-btn is-seg"" title=""Ver el recorte del documento aquí""
+                         onclick='evidSegmento(this, {docId}, {pg}, {t})'>segmento</button>
+               </span>");
+    };
+
+}
+
+<div class="st-head" style="@(_embed ? "display:none" : "")">
+    <div class="st-head-main">
+        <div class="st-crumbs">
+            Studio /
+            <a asp-area="Studio" asp-controller="Sobres" asp-action="Caso" asp-route-caseCode="@Model.CaseCode">Caso</a> /
+            Tipificación
+        </div>
+        <h1 class="st-title"><i class="fa fa-tags"></i>Tipificación del sobre</h1>
+        <p class="st-sub">Qué tipo de reembolso es cada documento y cada página, ítem por ítem.</p>
+    </div>
+</div>
+
+<div style="margin-bottom:12px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+    <small class="text-muted">
+        @Model.TotalDocumentos documento(s) · @Model.DocumentosConPaginas con OCR por página
+        @if (Model.DocumentosConPaginas < Model.TotalDocumentos)
+        {
+            <span class="text-warning" title="Los documentos importados antes del cambio de OCR se clasifican como una sola página">
+                <i class="fa fa-info-circle"></i> algunos sin desglose de páginas
+            </span>
+        }
+    </small>
+    <span style="flex:1;"></span>
+    @if (Model.Generada)
+    {
+        <small class="text-muted">Clasificado: @(Model.GeneradoEn?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "—")</small>
+    }
+    <form asp-area="Studio" asp-controller="Clasificacion" asp-action="Generar" method="post" style="display:inline;" data-st-progreso data-st-titulo="Tipificando sus documentos" data-st-etapas="Leyendo el texto de cada hoja|Decidiendo que es cada documento y cada pagina|Cruzando los procedimientos con el catalogo|Guardando la tipificacion" data-st-nota="El modelo lee todas las hojas del sobre. Suele tardar 1-2 minutos." data-st-segundos="18">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+        <input type="hidden" name="embed" value="@(_embed ? "true" : "false")" />
+        <button type="submit" class="btn btn-xs @(Model.Generada ? "btn-default" : "btn-ia btn-lg")">
+            <i class="fa @(Model.Generada ? "fa-refresh" : "fa-tags")"></i>
+            @(Model.Generada ? "Reclasificar" : "Clasificar documentos")
+        </button>
+    </form>
+</div>
+
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-warning"><i class="fa fa-exclamation-triangle"></i> @TempData["Error"]</div>
+}
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-warning"><i class="fa fa-exclamation-triangle"></i> @Model.Error</div>
+}
+
+@if (!Model.Generada || c == null)
+{
+    <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+        <header><span class="widget-icon"><i class="fa fa-tags"></i></span><h2>Clasificar el sobre</h2></header>
+        <div>
+            <div class="widget-body">
+                <p class="text-muted" style="font-size:13px;">
+                    El clasificador determina, por cada documento y <strong>por cada página</strong>: si es
+                    <strong>factura válida</strong> (nº + clave de acceso), su <strong>tipo</strong>
+                    (medicina, hospitalización, procedimientos, consulta, laboratorio, imagen, terapias,
+                    beneficio adicional), los <strong>ítems por rubro</strong> con su valor, los
+                    <strong>diagnósticos CIE10</strong> y el <strong>split del reembolso por tipo</strong>.
+                    Un mismo sobre puede dividirse en varios tipos a la vez.
+                </p>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    @* ── Visor embebido (PDF.js): se abre al pulsar una página y salta a esa hoja ── *@
+    <div id="tipViewer" class="st-viewer" style="display:none; margin-bottom:16px;">
+        <div class="st-viewer-head">
+            <span class="st-viewer-file" id="tipViewerFile"></span>
+            <span style="white-space:nowrap;">
+                <a id="tipViewerDl" href="#" title="Descargar el documento">
+                    <i class="fa fa-download"></i> Descargar
+                </a>
+                <button type="button" onclick="tipCerrar()" title="Cerrar el visor">
+                    <i class="fa fa-times"></i>
+                </button>
+            </span>
+        </div>
+        @* Aquí monta el componente su barra (hojas, zoom, búsqueda) y el lienzo *@
+        <div id="tipViewerHost"></div>
+    </div>
+
+    // Tags de cada hoja, para que el visor los muestre en su barra al saltar.
+    var _tagsPorDoc = new Dictionary<string, Dictionary<string, List<object>>>();
+    foreach (var _f in c.Ficheros)
+    {
+        var _porPag = new Dictionary<string, List<object>>();
+        foreach (var _p in _f.Paginas)
+        {
+            var _l = new List<object>();
+            if (!string.IsNullOrWhiteSpace(_p.Tipo))
+            {
+                _l.Add(new { texto = _p.Tipo, clase = TipoReembolsoUi.Css(_p.Tipo) });
+            }
+            if (!string.IsNullOrWhiteSpace(_p.TipoSoporte) && _p.TipoSoporte != "FACTURA_MEDICA")
+            {
+                _l.Add(new { texto = _p.TipoSoporte.Replace('_', ' '), clase = "fam-ate-hos" });
+            }
+            foreach (var _t in _p.Tags.Take(8))
+            {
+                _l.Add(new { texto = _t, clase = "fam-general" });
+            }
+            if (_p.ValorDetectado is > 0)
+            {
+                _l.Add(new { texto = M(_p.ValorDetectado.Value), clase = "fam-med" });
+            }
+            _porPag[_p.Pagina.ToString()] = _l;
+        }
+        _tagsPorDoc[_f.DocId.ToString()] = _porPag;
+    }
+    <script id="tipTagsJson" type="application/json">@Html.Raw(System.Text.Json.JsonSerializer.Serialize(_tagsPorDoc))</script>
+
+    @* ── Tipo de atencion del sobre + los indicadores que lo sustentan ── *@
+    @if (!string.IsNullOrWhiteSpace(c.TipoAtencion))
+    {
+        var _at = c.TipoAtencion!;
+        var _atCss = _at switch
+        {
+            "HOSPITALARIO" => "is-hosp",
+            "HOSPITAL_DIA" => "is-hdia",
+            "AMBULATORIO"  => "is-amb",
+            _              => "is-desc"
+        };
+        var _atIcono = _at switch
+        {
+            "HOSPITALARIO" => "fa-hospital-o",
+            "HOSPITAL_DIA" => "fa-clock-o",
+            "AMBULATORIO"  => "fa-street-view",
+            _              => "fa-question-circle"
+        };
+        var _atNombre = _at switch
+        {
+            "HOSPITALARIO" => "Hospitalario",
+            "HOSPITAL_DIA" => "Hospital del Día",
+            "AMBULATORIO"  => "Ambulatorio",
+            _              => "Desconocido"
+        };
+        var _enTrue = c.IndicadoresAtencion.Count(x => x.Presente);
+
+        <div class="st-atencion @_atCss">
+            <div class="st-atencion-head">
+                <span class="st-atencion-icono"><i class="fa @_atIcono"></i></span>
+                <div>
+                    <div class="st-atencion-tipo">@_atNombre</div>
+                    <div class="st-atencion-sub">
+                        Tipo de atención del sobre &middot; @_enTrue de @c.IndicadoresAtencion.Count indicadores presentes
+                    </div>
+                </div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(c.JustificacionAtencion))
+            {
+                <p class="st-atencion-just">@c.JustificacionAtencion</p>
+            }
+            @if (c.IndicadoresAtencion.Count > 0)
+            {
+                <div class="st-indicadores">
+                    @foreach (var ind in c.IndicadoresAtencion)
+                    {
+                        <span class="st-indicador @(ind.Presente ? "is-si" : "is-no")"
+                              title="@(ind.DocId.HasValue ? $"Visto en el documento {ind.DocId}" : "")">
+                            <i class="fa @(ind.Presente ? "fa-check" : "fa-times")"></i>
+                            @(ind.Nombre?.Replace('_', ' ').ToLowerInvariant())
+                        </span>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @* ── Tipo predominante + split por tipo ── *@
+    <div class="st-reso-head" style="--reso:var(--st-accent); --reso-bg:var(--st-bg-soft);">
+        <span class="st-reso-light"><i class="fa @Model.TipoPredominanteIcono"></i></span>
+        <div class="st-reso-body">
+            <div class="st-reso-estado">@Model.TipoPredominanteNombre</div>
+            <div class="st-reso-desc">
+                Tipo predominante del sobre — <code>@c.TipoPredominante</code>
+                @if (c.SplitPorTipo.Count > 1) { <text>· el sobre se divide en @c.SplitPorTipo.Count tipos</text> }
+            </div>
+        </div>
+        <div class="st-reso-total">
+            <div class="v">@M(c.TotalSobre)</div>
+            <div class="l">Total del sobre</div>
+        </div>
+    </div>
+
+    @if (c.SplitPorTipo.Count > 0)
+    {
+        <div class="st-kpis">
+            @foreach (var (s, pct) in Model.SplitConPorcentaje())
+            {
+                <div class="st-kpi" style="border-left-color: var(--fam, var(--st-accent));">
+                    <div class="st-tipo-chip @TipoReembolsoUi.Css(s.Tipo)" style="margin-bottom:6px;">
+                        <i class="fa @TipoReembolsoUi.Icono(s.Tipo)"></i> @TipoReembolsoUi.Nombre(s.Tipo)
+                    </div>
+                    <div class="st-kpi-value" style="font-size:20px;">@M(s.Valor)</div>
+                    <div class="st-kpi-label">@pct.ToString("N1")% · @s.Documentos.Count doc(s)</div>
+                </div>
+            }
+        </div>
+    }
+
+    @if (c.Alertas.Count > 0)
+    {
+        <div class="alert alert-warning">
+            <strong><i class="fa fa-exclamation-triangle"></i> Alertas de clasificación:</strong>
+            <ul style="margin:6px 0 0; padding-left:18px;">
+                @foreach (var al in c.Alertas)
+                {
+                    <li>
+                        @if (!string.IsNullOrWhiteSpace(al.Codigo)) { <code>@al.Codigo</code> }
+                        @al.Mensaje
+                        @if (al.DocId != null) { <small class="text-muted">(doc @al.DocId@(al.Pagina != null ? $", pág. {al.Pagina}" : ""))</small> }
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+
+
+@* ── Documentos con su tipo, páginas e ítems ── *@
+    <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+        <header><span class="widget-icon"><i class="fa fa-files-o"></i></span><h2>Documentos tipificados (@c.Ficheros.Count)</h2></header>
+        <div>
+            <div class="widget-body">
+                @foreach (var f in c.Ficheros.OrderByDescending(x => x.ValorTotal))
+                {
+                    <div class="st-doc-card" style="--doc: var(--st-accent); display:block; margin-bottom:12px;">
+                        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px;">
+                            <span class="st-tipo-chip @TipoReembolsoUi.Css(f.TipoArchivo)">
+                                <i class="fa @TipoReembolsoUi.Icono(f.TipoArchivo)"></i> @f.TipoArchivo
+                            </span>
+                            <strong class="st-doc-titulo" style="flex:1; min-width:180px;">@f.Nombre</strong>
+                            @if (f.EsFacturaValida)
+                            {
+                                <span class="st-chip is-ok" title="Factura válida (nº + autorización/clave)">
+                                    <i class="fa fa-check"></i> Factura @f.NumeroFactura
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="st-chip" title="Documento de soporte: no suma valores"><i class="fa fa-paperclip"></i> Soporte</span>
+                            }
+                            <strong style="color:var(--st-blue);">@M(f.ValorTotal)</strong>
+                        </div>
+
+                        @* ── De QUIEN es y QUE es: lo que el operador necesita del documento ── *@
+                        @if (f.Emisor != null || f.Factura != null || !string.IsNullOrWhiteSpace(f.TipoSoporte))
+                        {
+                            <div class="st-docmeta">
+                                @if (f.Emisor != null && (!string.IsNullOrWhiteSpace(f.Emisor.Nombre) || !string.IsNullOrWhiteSpace(f.Emisor.Ruc)))
+                                {
+                                    <div class="st-docmeta-grupo">
+                                        <span class="st-docmeta-lbl">Prestador que emite</span>
+                                        <span class="st-docmeta-val">@(f.Emisor.Nombre ?? "—")</span>@Evid(f.DocId, 1, f.Emisor.Nombre, f.Nombre)
+                                        <span class="st-docmeta-sub">
+                                            @if (!string.IsNullOrWhiteSpace(f.Emisor.Ruc)) { <text>RUC @f.Emisor.Ruc</text> @Evid(f.DocId, 1, f.Emisor.Ruc, f.Nombre) }
+                                            @if (!string.IsNullOrWhiteSpace(f.Emisor.TipoEstablecimiento)) { <text> &middot; @f.Emisor.TipoEstablecimiento.Replace('_',' ')</text> }
+                                            @if (!string.IsNullOrWhiteSpace(f.Emisor.Ciudad)) { <text> &middot; @f.Emisor.Ciudad</text> }
+                                            @if (!string.IsNullOrWhiteSpace(f.Emisor.Pais)) { <text> &middot; @f.Emisor.Pais</text> }
+                                        </span>
+                                    </div>
+                                }
+                                @if (f.Factura != null)
+                                {
+                                    <div class="st-docmeta-grupo">
+                                        <span class="st-docmeta-lbl">Factura</span>
+                                        <span class="st-docmeta-val">@(f.Factura.Numero ?? "—")</span>@Evid(f.DocId, 1, f.Factura.Numero, f.Nombre)
+                                        <span class="st-docmeta-sub">
+                                            @if (!string.IsNullOrWhiteSpace(f.Factura.FechaEmision)) { <text>emitida @f.Factura.FechaEmision</text> }
+                                            @if (f.Factura.Subtotal.HasValue) { <text> &middot; subtotal @M(f.Factura.Subtotal.Value)</text> }
+                                            @if (f.Factura.Iva.HasValue) { <text> &middot; IVA @M(f.Factura.Iva.Value)</text> }
+                                        </span>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(f.Factura.NumeroAutorizacion) || !string.IsNullOrWhiteSpace(f.Factura.ClaveAcceso))
+                                    {
+                                        <div class="st-docmeta-grupo">
+                                            <span class="st-docmeta-lbl">Autorización</span>
+                                            <span class="st-docmeta-val st-mono">@(f.Factura.NumeroAutorizacion ?? f.Factura.ClaveAcceso)</span>@Evid(f.DocId, 1, f.Factura.NumeroAutorizacion ?? f.Factura.ClaveAcceso, f.Nombre)
+                                            @if (!string.IsNullOrWhiteSpace(f.Factura.ClaveAcceso)
+                                                 && f.Factura.ClaveAcceso != f.Factura.NumeroAutorizacion)
+                                            {
+                                                <span class="st-docmeta-sub st-mono">clave @f.Factura.ClaveAcceso</span>
+                                            }
+                                        </div>
+                                    }
+                                }
+                                @if (f.MedicoTratante != null && !string.IsNullOrWhiteSpace(f.MedicoTratante.Nombre))
+                                {
+                                    <div class="st-docmeta-grupo">
+                                        <span class="st-docmeta-lbl">Médico tratante</span>
+                                        <span class="st-docmeta-val">@f.MedicoTratante.Nombre</span>@Evid(f.DocId, null, f.MedicoTratante.Nombre, f.Nombre)
+                                        <span class="st-docmeta-sub">
+                                            @if (!string.IsNullOrWhiteSpace(f.MedicoTratante.Especialidad)) { <text>@f.MedicoTratante.Especialidad</text> }
+                                            @if (!string.IsNullOrWhiteSpace(f.MedicoTratante.Registro)) { <text> &middot; reg. @f.MedicoTratante.Registro</text> }
+                                        </span>
+                                    </div>
+                                }
+                                @if (f.Paciente != null && (f.Paciente.Edad.HasValue || !string.IsNullOrWhiteSpace(f.Paciente.Sexo)))
+                                {
+                                    <div class="st-docmeta-grupo">
+                                        <span class="st-docmeta-lbl">Paciente</span>
+                                        <span class="st-docmeta-val">
+                                            @(f.Paciente.Edad.HasValue ? f.Paciente.Edad + " años" : "edad n/d")
+                                            @if (!string.IsNullOrWhiteSpace(f.Paciente.Sexo)) { <text> &middot; @f.Paciente.Sexo</text> }
+                                        </span>
+                                        <span class="st-docmeta-sub">
+                                            @(f.Paciente.EsTitular == true ? "es el titular" : f.Paciente.EsTitular == false ? "dependiente" : "")
+                                        </span>
+                                    </div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(f.FechaAtencion))
+                                {
+                                    <div class="st-docmeta-grupo">
+                                        <span class="st-docmeta-lbl">Atención</span>
+                                        <span class="st-docmeta-val">@f.FechaAtencion</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @* ── Pie fiscal completo de la factura (REQ-019y) ──────────────
+                           Cada linea del pie pesa distinto al liquidar: los servicios de
+                           salud caen en "no objeto de IVA", el descuento se resta antes de
+                           cubrir y el servicio/propina no es gasto medico. Solo se pintan
+                           las lineas que la factura declara: un rotulo ausente y un rotulo
+                           en cero no son lo mismo. *@
+                        @if (f.Factura != null && f.EsFacturaValida)
+                        {
+                            var pie = new List<(string Etiqueta, decimal Valor, bool Resta, string? Nota)>();
+                            if (f.Factura.SubtotalSinImpuestos.HasValue) pie.Add(("Subtotal sin impuestos", f.Factura.SubtotalSinImpuestos.Value, false, null));
+                            if (f.Factura.Subtotal15.HasValue)           pie.Add(("Subtotal 15%",           f.Factura.Subtotal15.Value,           false, null));
+                            if (f.Factura.Subtotal5.HasValue)            pie.Add(("Subtotal 5%",            f.Factura.Subtotal5.Value,            false, null));
+                            if (f.Factura.Subtotal0.HasValue)            pie.Add(("Subtotal 0%",            f.Factura.Subtotal0.Value,            false, null));
+                            if (f.Factura.SubtotalNoObjetoIva.HasValue)  pie.Add(("Subtotal no objeto de IVA", f.Factura.SubtotalNoObjetoIva.Value, false, "los servicios de salud suelen declararse aqui"));
+                            if (f.Factura.SubtotalExentoIva.HasValue)    pie.Add(("Subtotal exento de IVA", f.Factura.SubtotalExentoIva.Value,     false, null));
+                            if (f.Factura.Descuentos.HasValue)           pie.Add(("Descuentos",             f.Factura.Descuentos.Value,           true,  "se resta antes de cubrir"));
+                            if (f.Factura.Ice.HasValue)                  pie.Add(("ICE",                    f.Factura.Ice.Value,                  false, null));
+                            if (f.Factura.Iva15.HasValue)                pie.Add(("IVA 15%",                f.Factura.Iva15.Value,                false, null));
+                            if (f.Factura.Iva5.HasValue)                 pie.Add(("IVA 5%",                 f.Factura.Iva5.Value,                 false, null));
+                            if (f.Factura.ServicioValor.HasValue)        pie.Add((f.Factura.ServicioPorcentaje.HasValue ? $"Servicio {f.Factura.ServicioPorcentaje.Value:0.##}%" : "Servicio", f.Factura.ServicioValor.Value, false, "no es gasto medico"));
+                            if (f.Factura.Propina.HasValue)              pie.Add(("Propina",                f.Factura.Propina.Value,              false, "no es gasto medico"));
+
+                            if (pie.Count > 0)
+                            {
+                                <div class="st-fiscal">
+                                    <div class="st-fiscal-tit">
+                                        <i class="fa fa-calculator"></i> Desglose de la factura
+                                        @if (f.Factura.PieCuadra == true)
+                                        {
+                                            <span class="st-chip is-ok" title="La suma de las partes coincide con el total declarado">cuadra</span>
+                                        }
+                                        else if (f.Factura.PieCuadra == false)
+                                        {
+                                            <span class="st-chip is-warn" title="La suma de las partes no coincide con el total; revisar la lectura del pie">no cuadra</span>
+                                        }
+                                    </div>
+                                    <table class="st-fiscal-tabla">
+                                        <tbody>
+                                            @foreach (var linea in pie)
+                                            {
+                                                <tr class="@(linea.Resta ? "is-resta" : "")">
+                                                    <td class="lbl">
+                                                        @linea.Etiqueta
+                                                        @if (linea.Nota != null)
+                                                        {
+                                                            <span class="st-fiscal-nota">@linea.Nota</span>
+                                                        }
+                                                    </td>
+                                                    <td class="val">@(linea.Resta && linea.Valor > 0 ? "−" : "")@M(linea.Valor)</td>
+                                                    <td class="ev">@Evid(f.DocId, null, linea.Etiqueta, f.Nombre)</td>
+                                                </tr>
+                                            }
+                                            <tr class="is-total">
+                                                <td class="lbl">Valor total</td>
+                                                <td class="val">@M(f.Factura.Total ?? f.ValorTotal)</td>
+                                                <td class="ev"></td>
+                                            </tr>
+                                            @if (f.Factura.BaseCubrible.HasValue
+                                                 && f.Factura.BaseCubrible.Value != (f.Factura.Total ?? f.ValorTotal))
+                                            {
+                                                <tr class="is-base">
+                                                    <td class="lbl">
+                                                        Base cubrible
+                                                        <span class="st-fiscal-nota">lo facturado menos descuentos y servicio</span>
+                                                    </td>
+                                                    <td class="val">@M(f.Factura.BaseCubrible.Value)</td>
+                                                    <td class="ev"></td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        }
+
+                        @* ── Por que se decidio este tipo (REQ-019y) ───────────────────
+                           Un veredicto sin expediente no es auditable: aqui queda el
+                           razonamiento, las senales concretas del documento y la
+                           alternativa que estuvo mas cerca de ganar. *@
+                        @if (!string.IsNullOrWhiteSpace(f.JustificacionTipo)
+                             || f.SenalesTipo.Count > 0
+                             || !string.IsNullOrWhiteSpace(f.JustificacionFactura))
+                        {
+                            <details class="st-porque">
+                                <summary>
+                                    <i class="fa fa-lightbulb-o"></i>
+                                    Por que se decidio <strong>@f.TipoArchivo</strong>
+                                    @if (f.SenalesTipo.Count > 0)
+                                    {
+                                        <span class="st-porque-n">@f.SenalesTipo.Count senal@(f.SenalesTipo.Count == 1 ? "" : "es")</span>
+                                    }
+                                </summary>
+                                <div class="st-porque-cuerpo">
+                                    @if (!string.IsNullOrWhiteSpace(f.JustificacionTipo))
+                                    {
+                                        <p class="st-porque-txt">@f.JustificacionTipo</p>
+                                    }
+
+                                    @if (f.SenalesTipo.Count > 0)
+                                    {
+                                        <div class="st-porque-bloque">
+                                            <span class="st-porque-lbl">Lo que se vio en el documento</span>
+                                            <div class="st-porque-senales">
+                                                @foreach (var senal in f.SenalesTipo)
+                                                {
+                                                    <span class="st-senal">
+                                                        @senal@Evid(f.DocId, null, senal, f.Nombre)
+                                                    </span>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(f.TipoDescartado))
+                                    {
+                                        <div class="st-porque-bloque">
+                                            <span class="st-porque-lbl">Se descarto <code>@f.TipoDescartado</code></span>
+                                            <p class="st-porque-txt">@f.JustificacionDescarte</p>
+                                        </div>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(f.JustificacionFactura))
+                                    {
+                                        <div class="st-porque-bloque">
+                                            <span class="st-porque-lbl">
+                                                @(f.EsFacturaValida ? "Por que cuenta como factura" : "Por que NO cuenta como factura")
+                                            </span>
+                                            <p class="st-porque-txt">@f.JustificacionFactura</p>
+                                        </div>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(f.JustificacionSoporte))
+                                    {
+                                        <div class="st-porque-bloque">
+                                            <span class="st-porque-lbl">Por que ese tipo de soporte</span>
+                                            <p class="st-porque-txt">@f.JustificacionSoporte</p>
+                                        </div>
+                                    }
+                                </div>
+                            </details>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(f.TipoSoporte) && f.TipoSoporte != "FACTURA_MEDICA")
+                        {
+                            <div class="st-soporte-tipo">
+                                <span class="st-chip is-soporte"><i class="fa fa-file-text-o"></i> @f.TipoSoporte.Replace('_', ' ')</span>
+                                @if (!string.IsNullOrWhiteSpace(f.ResumenSoporte))
+                                {
+                                    <span class="st-soporte-res">@f.ResumenSoporte</span>
+                                }
+                            </div>
+                        }
+
+                        @if (f.ListaTipoArchivo.Count > 0)
+                        {
+                            <div class="st-tipos-lista">
+                                @foreach (var t in f.ListaTipoArchivo.Distinct())
+                                {
+                                    <span class="st-tipo-chip @TipoReembolsoUi.Css(t)">@t</span>
+                                }
+                            </div>
+                        }
+
+                        @if (f.Paginas.Count > 0)
+                        {
+                            <div class="st-paginas">
+                                @foreach (var p in f.Paginas)
+                                {
+                                    <div class="st-pagina" data-doc="@f.DocId" data-pag="@p.Pagina" data-nombre="@(f.Nombre ?? "")" data-total="@f.Paginas.Count" data-evidencia="@(p.ValorDetectado is > 0 ? p.ValorDetectado.Value.ToString("F2") : "")" title="Abrir esta página en el visor">
+                                        <span class="st-pagina-num">pág. @p.Pagina</span>
+                                        @if (!string.IsNullOrWhiteSpace(p.Tipo))
+                                        {
+                                            <span class="st-tipo-chip @TipoReembolsoUi.Css(p.Tipo)">@p.Tipo</span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(p.TipoSoporte) && p.TipoSoporte != "FACTURA_MEDICA")
+                                        {
+                                            <span class="st-tag-mini is-soporte">@p.TipoSoporte.Replace('_', ' ')</span>
+                                        }
+                                        @foreach (var t in p.Tags.Take(6))
+                                        {
+                                            <span class="st-tag-mini">@t</span>
+                                        }
+                                        @if (p.ValorDetectado is > 0)
+                                        {
+                                            <span class="st-tag-mini is-total">@M(p.ValorDetectado.Value)</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (f.Procedimientos.Count > 0)
+                        {
+                            <details style="margin-top:8px;" open>
+                                <summary style="cursor:pointer; color:var(--st-accent); font-size:12.5px;">
+                                    @f.Procedimientos.Count procedimiento(s) detectado(s)
+                                    @{
+                                        var _conCod = f.Procedimientos.Count(x => !string.IsNullOrWhiteSpace(x.CodigoLiquidacion));
+                                    }
+                                    @if (_conCod > 0) { <text>&mdash; @_conCod con código de liquidación</text> }
+                                </summary>
+                                <div class="table-responsive" style="margin-top:6px;">
+                                    <table class="st-liq">
+                                        <thead>
+                                            <tr>
+                                                <th>Item de la factura</th>
+                                                <th>Procedimiento Saludsa (Lr05)</th>
+                                                <th>Correlación dx (Lr46)</th>
+                                                <th>Rubro liquidación</th><th>Pág.</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var pr in f.Procedimientos)
+                                            {
+                                                <tr>
+                                                    <td>
+                                                        @pr.Descripcion
+                                                        @Evid(f.DocId, pr.Pagina, pr.Descripcion, f.Nombre)
+                                                        @if (!string.IsNullOrWhiteSpace(pr.CodigoCpt))
+                                                        {
+                                                            <br /><small class="text-muted st-mono">CPT @pr.CodigoCpt</small>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        @if (pr.NumeroProcedimiento.HasValue)
+                                                        {
+                                                            <span class="st-chip @(pr.HomologacionAmbigua == true ? "is-sugerido" : "is-ok") st-mono"
+                                                                  title="@(pr.HomologacionAmbigua == true ? "Hubo empate al homologar: validándolo" : "Homologado contra Salud.dbo.Lr05")">
+                                                                #@pr.NumeroProcedimiento
+                                                            </span>
+                                                            <div style="font-size:12px; margin-top:3px;">@pr.NombreLr05</div>
+                                                            <small class="text-muted">
+                                                                @pr.CodigoBeneficio
+                                                                @if (pr.EsMedicina == true)
+                                                                {
+                                                                    <text> · medicina</text>
+                                                                    @if (!string.IsNullOrWhiteSpace(pr.TipoMedicina))
+                                                                    {
+                                                                        <span class="st-tag-mini" title="A010 = marca, A011 = genérica: la cobertura difiere">@pr.TipoMedicina.ToLowerInvariant()</span>
+                                                                    }
+                                                                }
+                                                                else
+                                                                {
+                                                                    <text> · procedimiento</text>
+                                                                }
+                                                                @if (pr.ScoreHomologacion.HasValue)
+                                                                {
+                                                                    <text> · score @pr.ScoreHomologacion.Value.ToString("0.00")</text>
+                                                                }
+                                                            </small>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="text-muted" title="No se pudo homologar el texto contra el catálogo Lr05">no homologado</span>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        @if (pr.EstadoCorrelacion == "CORRELACIONA")
+                                                        {
+                                                            <span class="st-corr is-si" title="Umbral aplicado: @pr.UmbralAplicado%">
+                                                                <i class="fa fa-check"></i> correlaciona
+                                                                @if (pr.CorrelacionProb.HasValue) { <text>@pr.CorrelacionProb%</text> }
+                                                            </span>
+                                                            @if (!string.IsNullOrWhiteSpace(pr.CorrelacionDx))
+                                                            {
+                                                                <br /><small class="text-muted">dx @pr.CorrelacionDx@(pr.CorrelacionConfirmada == true ? " · confirmada" : "")</small>
+                                                            }
+                                                        }
+                                                        else if (pr.EstadoCorrelacion == "NO_CORRELACIONA")
+                                                        {
+                                                            <span class="st-corr is-no" title="Está en Lr46 pero no para este diagnóstico, o bajo el umbral de @pr.UmbralAplicado%">
+                                                                <i class="fa fa-times"></i> no correlaciona
+                                                                @if (pr.CorrelacionProb.HasValue) { <text>(@pr.CorrelacionProb%)</text> }
+                                                            </span>
+                                                        }
+                                                        else if (pr.EstadoCorrelacion == "SIN_VALIDAR")
+                                                        {
+                                                            <span class="st-corr is-sv" title="El procedimiento no está en Lr46 bajo ningún diagnóstico: no hay con qué validar. NO es una negativa.">
+                                                                <i class="fa fa-question"></i> sin validar
+                                                            </span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="text-muted">—</span>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        @if (!string.IsNullOrWhiteSpace(pr.CodigoLiquidacion))
+                                                        {
+                                                            <span class="st-mono">@pr.CodigoLiquidacion</span>
+                                                            <br /><small class="text-muted">@pr.RubroLiquidacion</small>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="text-muted">—</span>
+                                                        }
+                                                    </td>
+                                                    <td>@(pr.Pagina?.ToString() ?? "—")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </details>
+                        }
+
+                        @if (f.Items.Count > 0)
+                        {
+                            <details style="margin-top:8px;">
+                                <summary style="cursor:pointer; color:var(--st-accent); font-size:12.5px;">
+                                    Ver @f.Items.Count ítem(s) por rubro
+                                </summary>
+                                <div class="table-responsive" style="margin-top:6px;">
+                                    <table class="st-liq">
+                                        <thead>
+                                            <tr><th>Ítem</th><th>Rubro</th><th class="num">Cant.</th><th class="num">V. unitario</th><th class="num">Total</th><th>Pág.</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var it in f.Items)
+                                            {
+                                                <tr>
+                                                    <td>@it.Descripcion @Evid(f.DocId, it.Pagina, it.Descripcion, f.Nombre)</td>
+                                                    <td><span class="st-tipo-chip @TipoReembolsoUi.Css(it.TipoRubro) is-factura">@TipoReembolsoUi.Nombre(it.TipoRubro)</span></td>
+                                                    <td class="num">@(it.Cantidad?.ToString("N0") ?? "—")</td>
+                                                    <td class="num">@(it.ValorUnitario.HasValue ? M(it.ValorUnitario.Value) : "—")</td>
+                                                    <td class="num money-cubierto">@(it.ValorTotal.HasValue ? M(it.ValorTotal.Value) : "—")</td>
+                                                    <td>@(it.Pagina?.ToString() ?? "—")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </details>
+                        }
+
+                        @if (f.Diagnosticos.Count > 0)
+                        {
+                            <div class="st-doc-ents" style="margin-top:6px;">
+                                @foreach (var dx in f.Diagnosticos)
+                                {
+                                    <span class="st-ent"><b>@dx.Codigo</b> @dx.Descripcion</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* ── Resumen de diagnósticos ── *@
+    @if (c.ResumenDiagnosticos.Count > 0)
+    {
+        <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+            <header><span class="widget-icon"><i class="fa fa-stethoscope"></i></span><h2>Diagnósticos (CIE10) y valor asociado</h2></header>
+            <div>
+                <div class="widget-body">
+                    <table class="st-reglas">
+                        <thead>
+                            <tr>
+                                <th style="width:90px;">CIE10</th>
+                                <th>Descripción</th>
+                                <th style="width:230px;">Dónde aparece</th>
+                                <th style="text-align:right; width:140px;">Valor facturado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var d in c.ResumenDiagnosticos.OrderByDescending(x => x.ValorTotal))
+                            {
+                                @* El diagnóstico se agrupa por código, pero conserva de qué
+                                   documentos salió: sin eso era el único bloque de la pantalla
+                                   que no podía llevar al PDF ni enseñar su segmento. *@
+                                var docDx = d.DocIds.FirstOrDefault();
+                                var fichDx = docDx > 0 ? c.Ficheros.FirstOrDefault(x => x.DocId == docDx) : null;
+                                <tr>
+                                    <td><code>@d.Codigo</code></td>
+                                    <td>@d.Descripcion</td>
+                                    <td>
+                                        @if (fichDx != null)
+                                        {
+                                            <span class="st-dx-doc" title="@fichDx.Nombre">
+                                                <i class="fa fa-file-o"></i> @Recortar(fichDx.Nombre, 22)
+                                            </span>
+                                            @* Se busca por el código y, si no aparece rotulado,
+                                               el visor reintenta con la descripción. *@
+                                            @Evid(docDx, null, d.Codigo, fichDx.Nombre)
+                                            @if (d.DocIds.Count > 1)
+                                            {
+                                                <span class="st-dx-mas" title="También aparece en otros documentos">
+                                                    +@(d.DocIds.Count - 1)
+                                                </span>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">—</span>
+                                        }
+                                    </td>
+                                    <td style="text-align:right;">@M(d.ValorTotal)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <small class="text-muted">
+                        Regla: a cada diagnóstico del archivo se le asigna el valor total de ese archivo; luego se agrupa por código.
+                        La columna <em>Dónde aparece</em> lleva al documento de origen y el botón <em>segmento</em> enseña el recorte sin salir de aquí.
+                    </small>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/app/st-pdf-viewer.css" asp-append-version="true" />
+}
+
+@await Component.InvokeAsync("ToolsUsadas", new { caseCode = Model.CaseCode, modelo = "AGENTE_CLASIFICADOR_DOC" })
+
+@section Scripts {
+    <script src="~/js/app/st-progreso.js" asp-append-version="true"></script>
+    @* PDF.js servido desde el propio sitio (sin CDN): funciona en la red interna *@
+    <script src="~/lib/pdfjs/pdf.min.js"></script>
+    <script src="~/js/app/st-pdf-viewer.js" asp-append-version="true"></script>
+    <script>
+        // ====================================================================
+        // Tipificación → visor: pulsar una hoja la ABRE aquí mismo, en esa hoja.
+        //
+        // El documento se pinta con PDF.js sobre <canvas>, no con el visor
+        // nativo del navegador: así el salto a la hoja es exacto, funciona
+        // aunque el usuario tenga Chrome configurado para descargar los PDF, y
+        // podemos mostrar los tags de la hoja dentro de la barra del visor.
+        // ====================================================================
+        var TIP_BASE = '@Url.Action("DownloadCaseDocument", "Nexus", new { area = "", caseCode = Model.CaseCode })';
+        var TIP_TAGS = JSON.parse(document.getElementById('tipTagsJson').textContent || '{}');
+        var tipVisor = null;
+
+        function tipUrl(docId, inline) {
+            return TIP_BASE + '&fileId=' + docId + (inline ? '&inline=true' : '');
+        }
+
+        // El clic se engancha por DELEGACIÓN sobre .st-pagina leyendo sus data-*.
+        // (Nunca en un onclick inline con el nombre del archivo: las comillas
+        //  del nombre cerraban el atributo y el clic no hacía nada.)
+        document.addEventListener('click', function (ev) {
+            var fila = ev.target.closest ? ev.target.closest('.st-pagina') : null;
+            if (!fila) return;
+            document.querySelectorAll('.st-pagina.is-abierta')
+                    .forEach(function (x) { x.classList.remove('is-abierta'); });
+            fila.classList.add('is-abierta');
+            // Si la hoja trae un total detectado, se abre resaltando ese número:
+            // es el dato por el que esa hoja está marcada.
+            tipAbrirConEvidencia(fila.dataset.doc, parseInt(fila.dataset.pag, 10) || 1,
+                                 fila.dataset.nombre || '', fila.dataset.evidencia || null);
+        });
+
+        function tipAbrir(docId, pagina, nombre) {
+            var panel = document.getElementById('tipViewer');
+            panel.style.display = 'block';
+            document.getElementById('tipViewerFile').textContent = nombre || ('Documento ' + docId);
+            document.getElementById('tipViewerDl').href = tipUrl(docId, false);
+
+            if (!tipVisor) {
+                tipVisor = StPdfViewer.create(document.getElementById('tipViewerHost'), {});
+            }
+            tipVisor.abrir({
+                url: tipUrl(docId, true),
+                nombre: nombre,
+                pagina: pagina,
+                etiquetas: TIP_TAGS[docId] || {}
+            });
+
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // EVIDENCIA ANCLADA AL DOCUMENTO
+        //
+        // La lupa abre el visor en la hoja y RESALTA la frase, como un
+        // marcador sobre el papel. "segmento" trae el recorte de esa parte y
+        // lo muestra aquí mismo, sin abrir nada.
+        //
+        // Las coordenadas salen de la capa de texto del PDF en tiempo de
+        // render (PDF.js): no hace falta que el OCR las haya guardado. En un
+        // documento escaneado sin capa de texto no habrá dónde anclar, y eso
+        // se dice — no se finge un resultado.
+        // ════════════════════════════════════════════════════════════════
+
+        function evidVer(docId, pagina, texto, nombre) {
+            if (pagina) {
+                tipAbrirConEvidencia(docId, pagina, nombre || '', texto);
+                return;
+            }
+            // Sin página conocida (los diagnósticos vienen agrupados por código)
+            // se localiza primero en qué hoja está y se abre justo ahí. Si no
+            // aparece en ninguna, se abre por la primera y se deja el resaltado
+            // intentándolo, que es mejor que no abrir nada.
+            StPdfViewer.paginaDe(tipUrl(docId, true), texto).then(function (p) {
+                tipAbrirConEvidencia(docId, p || 1, nombre || '', texto);
+            });
+        }
+
+        function tipAbrirConEvidencia(docId, pagina, nombre, evidencia) {
+            var panel = document.getElementById('tipViewer');
+            panel.style.display = 'block';
+            document.getElementById('tipViewerFile').textContent = nombre || ('Documento ' + docId);
+            document.getElementById('tipViewerDl').href = tipUrl(docId, false);
+
+            if (!tipVisor) {
+                tipVisor = StPdfViewer.create(document.getElementById('tipViewerHost'), {});
+            }
+            tipVisor.abrir({
+                url: tipUrl(docId, true),
+                nombre: nombre,
+                pagina: pagina,
+                etiquetas: TIP_TAGS[docId] || {},
+                evidencia: evidencia || null
+            });
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // Recorte inline. Se cachea en el propio botón para no re-renderizar
+        // el PDF cada vez que se abre y se cierra.
+        function evidSegmento(btn, docId, pagina, texto) {
+            var cont = btn.closest('.st-evid');
+            var ya = cont.querySelector('.st-evid-recorte');
+            if (ya) {                       // segundo clic: se pliega
+                ya.parentNode.removeChild(ya);
+                btn.classList.remove('is-abierto');
+                return;
+            }
+
+            var caja = document.createElement('div');
+            caja.className = 'st-evid-recorte';
+            caja.innerHTML = '<span class="st-evid-cargando">buscando en el documento…</span>';
+            cont.appendChild(caja);
+            btn.classList.add('is-abierto');
+
+            StPdfViewer.miniatura(tipUrl(docId, true), pagina || null, texto, 460)
+                .then(function (res) {
+                    // REQ-020p: ahora devuelve { img, exacto } — con las fotos no
+                    // se puede señalar el punto y se enseña la hoja entera.
+                    var dataUrl = res && res.img ? res.img : null;
+                    if (!dataUrl) {
+                        caja.innerHTML = '<span class="st-evid-cargando">' +
+                            'No se pudo ubicar este dato en la hoja. ' +
+                            'Puede ser un documento escaneado sin capa de texto.</span>';
+                        return;
+                    }
+                    caja.innerHTML = '';
+                    var img = document.createElement('img');
+                    img.src = dataUrl;
+                    img.alt = 'Recorte del documento';
+                    img.title = 'Clic para abrir el documento en esta parte';
+                    img.onclick = function () { evidVer(docId, pagina, texto, ''); };
+                    caja.appendChild(img);
+
+                    var pie = document.createElement('div');
+                    pie.className = 'st-evid-pie';
+                    pie.textContent = 'pág. ' + (pagina || 1) + ' · clic para abrir el documento aquí';
+                    caja.appendChild(pie);
+                })
+                .catch(function (e) {
+                    caja.innerHTML = '<span class="st-evid-cargando">Error: ' + e.message + '</span>';
+                });
+        }
+
+        function tipCerrar() {
+            document.getElementById('tipViewer').style.display = 'none';
+            document.querySelectorAll('.st-pagina.is-abierta')
+                    .forEach(function (x) { x.classList.remove('is-abierta'); });
+        }
+    </script>
+}

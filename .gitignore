@@ -364,3 +364,6 @@ MigrationBackup/
 FodyWeavers.xsd
 
 *.idea
+
+# Claves de Data Protection: son material criptografico, no fuente.
+App_Data/

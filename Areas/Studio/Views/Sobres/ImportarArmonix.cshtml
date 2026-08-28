@@ -1,72 +1,73 @@
 @model ImportarSobreArmonixViewModel
 @{
-    ViewData["Title"] = "Importar desde Armonix";
+    ViewData["Title"] = "Buscar sobre";
 }
 
-<div class="studio-breadcrumb">
-    Studio / <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> / Armonix
+<div class="st-head">
+    <div class="st-head-main">
+        <div class="st-crumbs">
+            Studio / <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> / Buscar
+        </div>
+        <h1 class="st-title"><i class="fa fa-search"></i>Buscar sobre de reembolso</h1>
+        <p class="st-sub">Escribe el número de sobre, la cédula o el nombre del cliente — el sistema detecta qué es.</p>
+    </div>
 </div>
 
-<div class="studio-card">
-    <h4>Importar documentos desde Armonix</h4>
-    <p style="color:#555; font-size:0.9em;">
-        Ingresa el <strong>número de sobre</strong> o la <strong>cédula</strong> del afiliado.
-        El sistema buscará y resolverá automáticamente los identificadores del contrato.
-    </p>
+<ol class="st-steps">
+    <li class="st-step is-active"><span class="st-step-num">1</span> Buscar sobre</li>
+    <li class="st-step"><span class="st-step-num">2</span> Importar</li>
+    <li class="st-step"><span class="st-step-num">3</span> Revisar documentos</li>
+    <li class="st-step"><span class="st-step-num">4</span> Analizar con IA</li>
+</ol>
 
-    @if (!ViewData.ModelState.IsValid)
-    {
-        <div class="alert-error" style="margin-bottom:12px;">
-            @Html.ValidationSummary(false)
+<div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+    <header><span class="widget-icon"><i class="fa fa-search"></i></span><h2>Buscar en Armonix</h2></header>
+    <div>
+        <div class="widget-body">
+            @if (!ViewData.ModelState.IsValid)
+            {
+                <div class="alert alert-warning">
+                    <i class="fa fa-exclamation-triangle"></i> @Html.ValidationSummary(false)
+                </div>
+            }
+
+            <form asp-area="Studio" asp-controller="Sobres" asp-action="BuscarArmonix" method="post"
+                  onsubmit="mostrarLoadingPanel('content', 'Buscando sobres…');">
+                @Html.AntiForgeryToken()
+
+                <div class="form-group">
+                    <label class="control-label" for="Criterio">¿Qué buscas?</label>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; max-width:640px;">
+                        <input asp-for="Criterio" type="text" class="form-control input-lg"
+                               style="flex:1; min-width:280px;"
+                               placeholder="N° de sobre (NA-2612551), cédula o nombre del cliente"
+                               autofocus />
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fa fa-search"></i> Buscar
+                        </button>
+                    </div>
+                    <small class="text-muted">
+                        Ejemplos: <code>NA-2612551</code> (sobre) · <code>1701234567</code> (cédula) ·
+                        <code>Viteri Ramirez</code> (nombre, mín. 4 letras)
+                    </small>
+                </div>
+
+                <hr />
+
+                <div class="form-group">
+                    <label class="control-label">Proceso de destino <span class="text-danger">*</span></label>
+                    <select asp-for="ProcessCode" class="form-control" style="max-width:360px;">
+                        @foreach (var p in Model.ProcesosDisponibles)
+                        {
+                            <option value="@p.Code">@p.Name (@p.Code)</option>
+                        }
+                    </select>
+                    <small class="text-muted">
+                        Con qué agente/pasos se analizará el caso.
+                        Para el motor Claude con herramientas elige <strong>Analisis de sobre (Claude)</strong>.
+                    </small>
+                </div>
+            </form>
         </div>
-    }
-
-    <form asp-area="Studio" asp-controller="Sobres" asp-action="BuscarArmonix" method="post">
-        @Html.AntiForgeryToken()
-
-        <div style="margin-bottom: 14px;">
-            <label style="font-weight:600; display:block; margin-bottom:4px;">
-                Número de sobre
-            </label>
-            <input asp-for="NumeroSobre"
-                   type="text"
-                   class="form-control"
-                   style="max-width:320px;"
-                   placeholder="Ej: 20240001234" />
-            <small style="color:#888;">Deja en blanco si vas a buscar por cédula.</small>
-        </div>
-
-        <div style="margin-bottom: 14px;">
-            <label style="font-weight:600; display:block; margin-bottom:4px;">
-                Cédula del afiliado
-            </label>
-            <input asp-for="Cedula"
-                   type="text"
-                   class="form-control"
-                   style="max-width:320px;"
-                   placeholder="Ej: 1701234567" />
-            <small style="color:#888;">Deja en blanco si buscas por número de sobre.</small>
-        </div>
-
-        <div style="margin-bottom: 14px;">
-            <label style="font-weight:600; display:block; margin-bottom:4px;">
-                Proceso de destino <span style="color:#c00;">*</span>
-            </label>
-            <select asp-for="ProcessCode"
-                    class="form-control"
-                    style="max-width:320px;">
-                @foreach (var p in Model.ProcesosDisponibles)
-                {
-                    <option value="@p.Code">@p.Name (@p.Code)</option>
-                }
-            </select>
-            <small style="color:#888;">Define la plantilla de pasos y agentes que usará el caso.</small>
-        </div>
-
-        <button type="submit" class="btn-studio btn-primary-studio">Buscar en Armonix</button>
-        <a asp-area="Studio" asp-controller="Sobres" asp-action="Index"
-           class="btn-studio btn-secondary-studio" style="margin-left:8px;">
-            Volver a Zendesk
-        </a>
-    </form>
+    </div>
 </div>

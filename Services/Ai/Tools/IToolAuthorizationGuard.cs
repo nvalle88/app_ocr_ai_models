@@ -47,4 +47,19 @@ public interface IToolAuthorizationGuard
         string toolCode,
         IReadOnlyDictionary<string, object?> toolInput,
         string? caseIdentity);
+
+    /// <summary>
+    /// Igual que la anterior, pero contra la identidad COMPLETA del caso:
+    /// las cédulas del titular y de sus beneficiarios, los contratos y los
+    /// números de persona, cada clase comparada con la suya.
+    ///
+    /// Existe porque comparar un número de contrato contra una cédula es un
+    /// error de categoría que denegaba llamadas legítimas sin proteger de nada
+    /// (REQ-020d), y porque un contrato cubre a varias personas: consultar los
+    /// datos de un dependiente por su cédula es correcto, no un IDOR.
+    /// </summary>
+    bool IsAuthorized(
+        string toolCode,
+        IReadOnlyDictionary<string, object?> toolInput,
+        IdentidadCaso? identidad);
 }

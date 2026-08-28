@@ -101,6 +101,7 @@ public sealed class ZendeskDocumentProvider : IDocumentSourceProvider
 
                             string fileUrl;
                             string ocrText;
+                            List<PaginaOcr> paginasOcr = new();
 
                             try
                             {
@@ -115,7 +116,11 @@ public sealed class ZendeskDocumentProvider : IDocumentSourceProvider
                                     Extension = extension
                                 };
 
-                                (fileUrl, ocrText) = await _ingest.ProcessFileAsync(ocrFile).ConfigureAwait(false);
+                                // REQ-019: versión detallada → conserva el OCR por página
+                                var ocrRes = await _ingest.ProcessFileDetailedAsync(ocrFile).ConfigureAwait(false);
+                                fileUrl    = ocrRes.Url;
+                                ocrText    = ocrRes.Text;
+                                paginasOcr = ocrRes.Paginas;
                             }
                             catch (Exception ocrEx)
                             {
@@ -139,6 +144,14 @@ public sealed class ZendeskDocumentProvider : IDocumentSourceProvider
                             db.DataFile.Add(dataFile);
                             await db.SaveChangesAsync(ct).ConfigureAwait(false);
                             dataFileIds.Add(dataFile.Id);
+
+                            // REQ-019: OCR POR PÁGINA
+                            var paginas = OcrPaginaPersistencia.Materializar(dataFile.Id, paginasOcr);
+                            if (paginas.Count > 0)
+                            {
+                                db.DataFilePage.AddRange(paginas);
+                                await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                            }
                         }
                         catch (Exception ex)
                         {

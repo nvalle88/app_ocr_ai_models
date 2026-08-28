@@ -57,4 +57,24 @@ public sealed class ToolBindingConfig
     /// <summary>Campo de respuesta que contiene datos binarios en base64 (ej: <c>Contenido</c>).</summary>
     [JsonPropertyName("binaryField")]
     public string? BinaryField { get; init; }
+
+    // ── REQ-019: BindingType "Sql" — consulta read-only a BD de negocio ──
+
+    /// <summary>
+    /// Nombre de la cadena de conexión (sección <c>ConnectionStrings</c>) que usa
+    /// la tool cuando <c>BindingType = "Sql"</c>. Ej: <c>SaludConsultas</c>.
+    /// </summary>
+    [JsonPropertyName("connection")]
+    public string? Connection { get; init; }
+
+    /// <summary>
+    /// Consulta SELECT parametrizada (solo lectura) para <c>BindingType = "Sql"</c>.
+    /// Los parámetros <c>@nombre</c> se toman del input de la tool por nombre.
+    /// </summary>
+    [JsonPropertyName("query")]
+    public string? Query { get; init; }
+
+    /// <summary>Máximo de filas devueltas por una tool SQL (default 50).</summary>
+    [JsonPropertyName("maxRows")]
+    public int MaxRows { get; init; } = 50;
 }

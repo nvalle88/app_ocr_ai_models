@@ -67,11 +67,19 @@ public sealed class ChatController : Controller
     /// </summary>
     /// <param name="caseCode">CaseCode del caso (opcional desde query string).</param>
     [HttpGet]
-    public IActionResult Index(Guid? caseCode)
+    public IActionResult Index(Guid? caseCode, string? q = null, string? doc = null, bool embed = false)
     {
+        ViewData["Embed"] = embed;
+
+        // Pregunta inicial precargada (deep-link "Preguntar sobre este documento").
+        string? pregunta = q;
+        if (string.IsNullOrWhiteSpace(pregunta) && !string.IsNullOrWhiteSpace(doc))
+            pregunta = $"Sobre el documento «{doc}»: resume su contenido e indícame qué datos aporta (montos, fechas, diagnóstico, prestador).";
+
         var vm = new ChatIndexViewModel
         {
-            CaseCode = caseCode ?? Guid.Empty
+            CaseCode = caseCode ?? Guid.Empty,
+            PreguntaInicial = pregunta
         };
         return View(vm);
     }
@@ -111,9 +119,10 @@ public sealed class ChatController : Controller
             return;
         }
 
-        // ── 1. Cargar caso + DataFiles ────────────────────────────────────
+        // ── 1. Cargar caso + DataFiles + Notas (contexto estructurado del sobre) ──
         var processCase = await _db.ProcessCase
             .Include(pc => pc.DataFile)
+            .Include(pc => pc.Notes)
             .FirstOrDefaultAsync(pc => pc.CaseCode == request.CaseCode, ct);
 
         if (processCase == null)
@@ -154,9 +163,13 @@ public sealed class ChatController : Controller
         // ── 3. Construir prompt de sistema ───────────────────────────────
         var systemPrompt = ResolveSystemPrompt(agent);
 
-        // ── 4. Construir mensaje del usuario: contexto OCR + pregunta ────
+        // ── 4. Construir mensaje del usuario: contexto del sobre + OCR + pregunta ──
+        //   REQ-019: el contexto estructurado (sobre/contrato/producto/región/persona)
+        //   viaja SIEMPRE al modelo — el agente ya no adivina esos datos del OCR.
+        var caseContext = OcrPromptHelper.BuildCaseContext(processCase.Notes);
+        var caseCedula  = OcrPromptHelper.ExtractCedulaFromCaseContext(processCase.Notes);
         var ocrContext  = BuildOcrContext(processCase.DataFile);
-        var userMessage = BuildUserMessage(ocrContext, request.Message);
+        var userMessage = BuildUserMessage(caseContext, ocrContext, request.Message);
 
         var aiRequest = new AiCompletionRequest
         {
@@ -202,6 +215,24 @@ public sealed class ChatController : Controller
             await writer.FlushAsync(ct);
         }
 
+        // ── REQ-019 UX: primer frame INMEDIATO ────────────────────────────
+        //   Sin esto, con tools + thinking el primer byte puede tardar 30-90s
+        //   y el navegador se queda en "Conectando…" sin ninguna señal de vida.
+        //   Este status resuelve el fetch al instante y da feedback real.
+        try
+        {
+            await EmitSseAsync("status", JsonSerializer.Serialize(new
+            {
+                message = hasTools
+                    ? $"Agente '{agent.Name}' analizando el caso — puede consultar {enabledTools.Count} herramientas (contrato, coberturas, deducible…). Esto toma 1-2 minutos."
+                    : $"Agente '{agent.Name}' analizando el caso…"
+            }));
+        }
+        catch (Exception flushEx)
+        {
+            _logger.LogWarning(flushEx, "No se pudo emitir el status inicial SSE.");
+        }
+
         try
         {
             if (hasTools)
@@ -212,7 +243,8 @@ public sealed class ChatController : Controller
                 {
                     CaseCode       = processCase.CaseCode,
                     StepOrder      = 0,        // chat ad-hoc
-                    DataFileId     = processCase.DataFile.FirstOrDefault()?.Id ?? 0,
+                    // Sin documentos no se inventa uno: la columna admite null (REQ-020b).
+                    DataFileId     = processCase.DataFile.FirstOrDefault()?.Id,
                     ModelCode      = agent.Code,
                     RequestContent = userMessage,
                     Status         = "Running",
@@ -239,7 +271,9 @@ public sealed class ChatController : Controller
                     AvailableTools      = enabledTools,
                     AgentCode           = agent.Code,
                     ExecutionId         = execution.ExecutionId,
-                    CaseIdentity        = null,   // sin identidad de caso en chat (se resuelve por la tool)
+                    // REQ-019: cédula del contexto del sobre (si se conoce) → activa
+                    // el guardián anti-IDOR D4 con identidad real.
+                    CaseIdentity        = caseCedula,
                     ToolChoice          = agent.ToolChoice ?? "auto",
                     StreamEventCallback = OnToolEvent
                 };
@@ -353,18 +387,27 @@ public sealed class ChatController : Controller
     private static string BuildOcrContext(IEnumerable<DataFile> files)
         => OcrPromptHelper.BuildOcrContext(files);
 
-    private static string BuildUserMessage(string ocrContext, string userQuestion)
+    private static string BuildUserMessage(string caseContext, string ocrContext, string userQuestion)
     {
-        if (string.IsNullOrWhiteSpace(ocrContext))
+        var sb = new StringBuilder();
+
+        if (!string.IsNullOrWhiteSpace(caseContext))
+            sb.AppendLine("## Datos estructurados del sobre (fuente: importación — usar como verdad para las herramientas)")
+              .AppendLine(caseContext)
+              .AppendLine();
+
+        if (!string.IsNullOrWhiteSpace(ocrContext))
+            sb.AppendLine("## Documentos OCR del caso")
+              .AppendLine(ocrContext)
+              .AppendLine();
+
+        if (sb.Length == 0)
             return userQuestion.Trim();
 
-        return new StringBuilder()
-            .AppendLine("## Documentos OCR del caso")
-            .AppendLine(ocrContext)
-            .AppendLine("## Pregunta del usuario")
-            .AppendLine(userQuestion.Trim())
-            .ToString()
-            .Trim();
+        sb.AppendLine("## Pregunta del usuario")
+          .AppendLine(userQuestion.Trim());
+
+        return sb.ToString().Trim();
     }
 
     private async Task PersistChatResultAsync(

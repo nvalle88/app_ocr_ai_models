@@ -1,0 +1,23 @@
+-- ============================================================
+-- REQ-019i: resolver_contrato_por_cedula → ObtenerContratoPorDocumento
+-- BD: db-nexus-test | YA APLICADO vía SqlClient parametrizado (2026-08-15)
+-- Este archivo documenta el cambio para reproducibilidad.
+--
+-- Motivo (decisión del responsable): para consultas de contratos se usa
+-- api-contrato GET /api/contrato/ObtenerContratoPorDocumento
+-- (tipoDocumento + numeroDocumento; contratos ACTIVOS; SIN año de nacimiento),
+-- en lugar de ObtenerContratosPorDocumentoChatBot (que exige anioNacimiento).
+-- Verificado en vivo (pruebas): HTTP 200 con envelope {Estado, Datos, Mensajes}.
+-- Nota: ObtenerContratoCobertura (POST) exige convenio>0 → orientado al flujo
+-- por convenio/prestador; no se usa para el reembolso del afiliado.
+--
+-- Cambios aplicados:
+-- 1) OPAITool 'resolver_contrato_por_cedula':
+--    InputSchema  = { numeroDocumento (req), tipoDocumento (req, default CEDULA) }
+--    BindingConfig= { baseUrl:"{api-contrato}", method:"GET",
+--                     path:"/api/contrato/ObtenerContratoPorDocumento",
+--                     paramMap:{tipoDocumento, numeroDocumento}, authMode:"saludsa-oauth" }
+-- 2) OPAIPrompt 'SKILL_METODOLOGIA_SOBRE': se elimina la exigencia de año de nacimiento.
+-- 3) Código: ArmonixDocumentProvider.ResolverContratosPorCedulaAsync usa el mismo
+--    endpoint (búsqueda de sobres por cédula en la UI ya no pide año).
+-- ============================================================

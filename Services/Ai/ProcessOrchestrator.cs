@@ -1,5 +1,6 @@
 using app_ocr_ai_models.Data;
 using app_tramites.Models.ModelAi;
+using app_tramites.Services.Ai.Tools;   // REQ-019: IToolExecutor / ToolsContext para el tool-loop
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
@@ -33,6 +34,9 @@ public sealed class ProcessOrchestrator : IProcessOrchestrator
     private readonly OCRDbContext _db;
     private readonly AiCompletionServiceFactory _factory;
     private readonly ILogger<ProcessOrchestrator> _logger;
+    // REQ-019: ejecutor de tools hacia APIs internas. Opcional (null si B1/B2 no está
+    // desplegado) — igual que en ChatController; si es null, cada paso corre sin tools.
+    private readonly IToolExecutor? _toolExecutor;
 
     /// <summary>
     /// Inicializa el orquestador con sus dependencias.
@@ -40,14 +44,17 @@ public sealed class ProcessOrchestrator : IProcessOrchestrator
     /// <param name="db">Contexto EF de la BD OCR.</param>
     /// <param name="factory">Factory de servicios de completado IA.</param>
     /// <param name="logger">Logger.</param>
+    /// <param name="toolExecutor">Ejecutor de tools hacia APIs internas (opcional; null si B1/B2 no está listo).</param>
     public ProcessOrchestrator(
         OCRDbContext db,
         AiCompletionServiceFactory factory,
-        ILogger<ProcessOrchestrator> logger)
+        ILogger<ProcessOrchestrator> logger,
+        IToolExecutor? toolExecutor = null)
     {
         _db      = db      ?? throw new ArgumentNullException(nameof(db));
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _logger  = logger  ?? throw new ArgumentNullException(nameof(logger));
+        _toolExecutor = toolExecutor; // null si B1/B2 no disponibles (DI ya lo registra)
     }
 
     /// <inheritdoc />
@@ -57,17 +64,20 @@ public sealed class ProcessOrchestrator : IProcessOrchestrator
         string? processCodeOverride = null,
         CancellationToken cancellationToken = default)
     {
-        // ── 1. Cargar el caso ─────────────────────────────────────────────
+        // ── 1. Cargar el caso (con Notas: contexto estructurado del sobre) ──
         var processCase = await _db.ProcessCase
             .Include(pc => pc.DataFile)
+            .Include(pc => pc.Notes)
             .Include(pc => pc.DefinitionCodeNavigation)
             .FirstOrDefaultAsync(pc => pc.CaseCode == caseCode, cancellationToken);
 
         if (processCase == null)
             return Failed(caseCode, $"Caso {caseCode} no encontrado.");
 
-        // ── 2. Construir contexto OCR ─────────────────────────────────────
-        var ocrContext = BuildOcrContext(processCase.DataFile);
+        // ── 2. Construir contexto OCR + contexto estructurado del sobre ──
+        var ocrContext  = BuildOcrContext(processCase.DataFile);
+        var caseContext = OcrPromptHelper.BuildCaseContext(processCase.Notes);
+        var caseCedula  = OcrPromptHelper.ExtractCedulaFromCaseContext(processCase.Notes);
 
         // ── 3. Obtener agentes permitidos (autorización existente) ────────
         var allowedAgentCodes = await GetAllowedAgentCodesAsync(user, processCase.DefinitionCode);
@@ -102,6 +112,12 @@ public sealed class ProcessOrchestrator : IProcessOrchestrator
                 .ThenInclude(s => s.ModelCodeNavigation)
                     .ThenInclude(a => a.OPAIModelPrompt)
                     .ThenInclude(op => op.PromptCodeNavigation)
+            // REQ-019: cargar también las tools habilitadas del agente de cada paso
+            // (mismo eager-load que ChatController) para poder entrar al tool-use loop.
+            .Include(p => p.ProcessStep)
+                .ThenInclude(s => s.ModelCodeNavigation)
+                    .ThenInclude(a => a.OPAIModelTool)
+                        .ThenInclude(mt => mt.ToolCodeNavigation)
             .FirstOrDefaultAsync(p => p.Code == processCode, cancellationToken);
 
         if (process == null)
@@ -155,9 +171,9 @@ public sealed class ProcessOrchestrator : IProcessOrchestrator
             // Prompt del sistema
             var systemPrompt = ResolveSystemPrompt(agent, step);
 
-            // Texto de usuario según SourceType del paso
+            // Texto de usuario según SourceType del paso (+ contexto del sobre)
             var userMessage = BuildUserMessage(
-                step, ocrContext, previousResponses, classificationText);
+                step, caseContext, ocrContext, previousResponses, classificationText);
 
             var aiRequest = new AiCompletionRequest
             {
@@ -169,7 +185,12 @@ public sealed class ProcessOrchestrator : IProcessOrchestrator
             };
 
             // ── Persistir StepExecution BEFORE (para obtener ExecutionId) ─
-            var dataFileId = processCase.DataFile.FirstOrDefault()?.Id ?? 0;
+            // Sin documentos no se inventa uno: la columna admite null (REQ-020b).
+            // El "?? 0" que había aquí escribía un Id que no existe en DataFile y
+            // violaba FK_StepExecution_DataFile en cuanto un caso llegaba vacío
+            // — el escenario del portal del afiliado, que abre el caso antes de
+            // que la persona suba nada y luego pasa por Analizar o Resolución.
+            var dataFileId = processCase.DataFile.FirstOrDefault()?.Id;
             var execution  = new StepExecution
             {
                 CaseCode       = caseCode,
@@ -189,10 +210,48 @@ public sealed class ProcessOrchestrator : IProcessOrchestrator
             var stepStatus               = "Completed";
             string responseText          = string.Empty;
 
+            // ── Tools habilitadas para este paso (mismo filtro que ChatController) ──
+            var enabledTools = agent.OPAIModelTool
+                .Where(mt => mt.IsEnabled && mt.ToolCodeNavigation?.IsActive == true)
+                .Select(mt => mt.ToolCodeNavigation!)
+                .ToList();
+
+            // El tool-use loop solo se activa si: el agente tiene tools habilitadas,
+            // hay ejecutor de tools inyectado (B1/B2) y el proveedor es Anthropic (Claude).
+            var hasTools = enabledTools.Count > 0
+                           && _toolExecutor != null
+                           && string.Equals(config.Provider, "Anthropic", StringComparison.OrdinalIgnoreCase);
+
             try
             {
                 var completionService = _factory.Create(config);
-                aiResult    = await completionService.CompleteAsync(aiRequest, cancellationToken);
+
+                if (hasTools)
+                {
+                    // Runner sin SSE → StreamEventCallback = null.
+                    // CaseIdentity = null → el ToolAuthorizationGuard hace bypass seguro
+                    // (no hay identidad estructurada fiable del caso; ver deuda D4-hardening).
+                    var toolsContext = new ToolsContext
+                    {
+                        AvailableTools      = enabledTools,
+                        AgentCode           = agent.Code,
+                        ExecutionId         = execution.ExecutionId,
+                        // REQ-019: cédula del contexto del sobre (si se conoce) → guard D4 real.
+                        CaseIdentity        = caseCedula,
+                        ToolChoice          = agent.ToolChoice,
+                        StreamEventCallback = null
+                    };
+
+                    aiResult = await completionService.CompleteWithToolsAsync(
+                        aiRequest, toolsContext, _toolExecutor!, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    aiResult = await completionService.CompleteAsync(aiRequest, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
                 responseText = aiResult.Text;
             }
             catch (Exception ex)
@@ -340,6 +399,7 @@ public sealed class ProcessOrchestrator : IProcessOrchestrator
 
     private static string BuildUserMessage(
         ProcessStep step,
+        string caseContext,
         string ocrContext,
         IReadOnlyList<string> previousResponses,
         string classificationText)
@@ -348,6 +408,11 @@ public sealed class ProcessOrchestrator : IProcessOrchestrator
 
         var includeOriginal = step.SourceType is InputSourceType.Original or InputSourceType.Both;
         var includePrevious = step.SourceType is InputSourceType.PreviousSteps or InputSourceType.Both;
+
+        // REQ-019: el contexto estructurado del sobre viaja siempre con el original.
+        if (includeOriginal && !string.IsNullOrWhiteSpace(caseContext))
+            sb.AppendLine("## Datos estructurados del sobre (fuente: importación — usar como verdad para las herramientas)")
+              .AppendLine(caseContext);
 
         if (includeOriginal)
             sb.AppendLine("## Documentos OCR del caso").AppendLine(ocrContext);

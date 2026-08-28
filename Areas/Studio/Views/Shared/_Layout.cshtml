@@ -1,57 +1,97 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="utf-8" />
-    <title>Studio — @ViewData["Title"]</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="shortcut icon" href="~/img/logo_saludsa_home.svg" type="image/x-icon" />
-    @{ await Html.RenderPartialAsync("~/Views/Shared/_StylesheetsPartial.cshtml"); }
-    <style>
-        .studio-header { background: #003366; color: #fff; padding: 12px 24px; }
-        .studio-header a { color: #fff; text-decoration: none; font-weight: 600; }
-        .studio-content { padding: 24px; }
-        .studio-breadcrumb { font-size: 0.9em; color: #666; margin-bottom: 16px; }
-        .studio-card { background: #fff; border: 1px solid #dde; border-radius: 6px; padding: 20px; margin-bottom: 20px; }
-        .studio-card h4 { margin-top: 0; color: #003366; }
-        .badge-cuenta { display: inline-block; padding: 2px 8px; border-radius: 10px;
-                        background: #e8f0fe; color: #174ea6; font-size: 0.8em; font-weight: 600; }
-        .badge-estado { display: inline-block; padding: 2px 8px; border-radius: 10px;
-                        background: #e6f4ea; color: #137333; font-size: 0.8em; font-weight: 600; }
-        .table-studio { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-        .table-studio th { background: #f0f4f8; padding: 8px 12px; text-align: left; border-bottom: 2px solid #ccc; }
-        .table-studio td { padding: 8px 12px; border-bottom: 1px solid #eee; vertical-align: top; }
-        .ocr-preview { max-height: 120px; overflow: hidden; color: #555; font-size: 0.85em;
-                       background: #fafafa; padding: 6px; border-left: 3px solid #ccc; }
-        .alert-warn { background: #fff3cd; border: 1px solid #ffc107; color: #856404;
-                      padding: 10px 16px; border-radius: 4px; margin-bottom: 12px; }
-        .alert-error { background: #f8d7da; border: 1px solid #f5c2c7; color: #842029;
-                       padding: 10px 16px; border-radius: 4px; margin-bottom: 12px; }
-        .btn-studio { display: inline-block; padding: 8px 18px; border-radius: 4px;
-                      font-size: 0.9em; cursor: pointer; border: none; text-decoration: none; }
-        .btn-primary-studio { background: #003366; color: #fff; }
-        .btn-primary-studio:hover { background: #004a99; color: #fff; }
-        .btn-secondary-studio { background: #e0e4ea; color: #333; }
-        .btn-secondary-studio:hover { background: #c8cdd6; color: #333; }
-        .btn-success-studio { background: #137333; color: #fff; }
-        .btn-success-studio:hover { background: #1a9146; color: #fff; }
-    </style>
-</head>
-<body class="fixed-navigation">
-    <header class="studio-header">
-        <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Studio — Nexus IA</a>
-        <span style="margin: 0 8px; opacity: 0.5;">|</span>
-        <a asp-controller="Home" asp-action="Index" asp-area="">Inicio</a>
-        <span style="float:right; font-size: 0.85em; opacity: 0.8;">REQ-019</span>
-    </header>
+@*
+    REQ-019 — Layout del Área Studio (Nexus IA).
+    -------------------------------------------------------------------
+    Antes: este archivo era un layout completo (<html>/<head>/<body>) con
+    un <style> ad-hoc, por lo que Studio perdía el "chrome" de Nexus
+    (header con logo, skin, menú) y se veía como otra aplicación pegada.
 
-    <div class="studio-content">
-        @if (TempData["Error"] != null)
-        {
-            <div class="alert-error">@TempData["Error"]</div>
-        }
-        @RenderBody()
+    Ahora: es un WRAPPER delgado sobre el layout base de Nexus. Así el
+    Área hereda el header/logo Saludsa, el skin smart-style-4 y los
+    scripts globales, y se ve como el resto del producto.
+
+    - Carga studio.css (el sistema de diseño propio del Área) en TODAS
+      las vistas del Área, más lo que cada vista defina en @@section Styles.
+    - Muestra de forma centralizada TempData["Error"] (errores de flujo
+      que llegan por RedirectToAction).
+    - Reenvía @@section Scripts de la vista hija al layout base
+      (necesario para el chat SSE y el "adjuntar documentos" del Caso).
+*@
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+@* Alerta compartida del Área: errores de flujo propagados por TempData. *@
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger studio-alert">
+        <i class="fa fa-exclamation-triangle"></i>&nbsp; @TempData["Error"]
     </div>
+}
 
+@*
+    REQ-020 — Los dos roles del Studio, en todas las pantallas del Area.
+
+    El auditor de Saludsa revisa lo que llega; el afiliado presenta lo suyo. Es
+    la misma maquinaria contada en dos idiomas y desde aqui se pasa de una a
+    otra. Vive en el layout y no en cada vista porque, repetido en ocho sitios,
+    dentro de un mes habria pantallas sin el — que es exactamente lo que paso
+    cuando solo estaba en la bandeja.
+
+    Dentro de los iframes del caso no se pinta: saldria repetido en cada pestana.
+*@
+@{
+    var _rolEmbed  = (ViewData["Embed"] as bool?) == true;
+    var _rolCtrl   = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
+    var _rolEsCli  = string.Equals(_rolCtrl, "Cliente", StringComparison.OrdinalIgnoreCase);
+}
+@if (!_rolEmbed)
+{
+    <div class="st-rol">
+        @if (_rolEsCli)
+        {
+            <a class="st-rol-op" asp-area="Studio" asp-controller="Sobres" asp-action="Index">
+                <i class="fa fa-user-md"></i> Auditor Saludsa
+            </a>
+            <span class="st-rol-op is-activa"><i class="fa fa-user"></i> Cliente</span>
+        }
+        else
+        {
+            <span class="st-rol-op is-activa"><i class="fa fa-user-md"></i> Auditor Saludsa</span>
+            <a class="st-rol-op" asp-area="Studio" asp-controller="Cliente" asp-action="Index">
+                <i class="fa fa-user"></i> Cliente
+            </a>
+        }
+    </div>
+}
+
+@RenderBody()
+
+@* studio.css siempre, + reenvío de la sección Styles que defina la vista. *@
+@section Styles {
+    <link rel="stylesheet" href="~/css/app/studio.css" asp-append-version="true" />
+    @* st-portal.css trae el conmutador de rol y las pantallas del afiliado. *@
+    <link rel="stylesheet" href="~/css/app/st-portal.css" asp-append-version="true" />
+    @* El overlay de progreso: sirve a las dos caras, auditor y cliente. *@
+    <link rel="stylesheet" href="~/css/app/st-progreso.css" asp-append-version="true" />
+    @await RenderSectionAsync("Styles", required: false)
+}
+
+@* Reenvía la sección Scripts de la vista hija (Chat SSE, Caso adjuntar/visor). *@
+@section Scripts {
     @await RenderSectionAsync("Scripts", required: false)
-</body>
-</html>
+
+    <script>
+        // ── REQ-019: apagar el overlay de carga DEL PADRE ──────────────────
+        // Las pestañas del workspace viven en un iframe y muestran el spinner
+        // sobre la página padre (window.parent.mostrarLoadingPanel). Al terminar
+        // el POST el iframe se recarga, pero el padre NO: sin esto el "Cargando…"
+        // se queda pegado para siempre. Se apaga cuando la vista embebida termina.
+        (function () {
+            try {
+                if (window.parent && window.parent !== window && window.parent.jQuery) {
+                    window.parent.jQuery('#content').waitMe('hide');
+                }
+            } catch (e) { /* distinto origen: no hay nada que apagar */ }
+        })();
+    </script>
+}

@@ -67,70 +67,204 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
 
     /// <summary>
     /// Resuelve el/los sobre(s) consultando <c>bdd_Salud_Consultas.dbo.Sobre</c>.
-    /// La búsqueda por número de sobre es exacta; devuelve los identificadores
-    /// de contrato para la trazabilidad (M-Files solo requiere el número de sobre).
+    /// Soporta tres criterios (REQ-019 búsqueda unificada):
+    /// <list type="bullet">
+    ///   <item><b>Número de sobre</b> — igualdad exacta (p. ej. "NA-2612551").</item>
+    ///   <item><b>Nombre del cliente</b> — LIKE sobre <c>PersonaContacto</c> (mín. 4 caracteres).</item>
+    ///   <item><b>Cédula</b> — resuelve contratos vía api-contrato
+    ///     (<c>ObtenerContratosPorDocumentoChatBot</c>, requiere año de nacimiento)
+    ///     y trae los sobres de esos contratos.</item>
+    /// </list>
+    /// El estado se resuelve contra <c>dbo.EstadosSobre</c> (nombre real, no el id).
     /// </summary>
     /// <param name="numeroSobre">Número del sobre (p. ej. "NA-2612551").</param>
-    /// <param name="cedula">Cédula del afiliado (pendiente: por ahora se busca por número de sobre).</param>
+    /// <param name="cedula">Cédula del afiliado (requiere <paramref name="anioNacimiento"/>).</param>
+    /// <param name="nombre">Nombre (o parte) del cliente/titular.</param>
+    /// <param name="anioNacimiento">Año de nacimiento del titular (solo búsqueda por cédula).</param>
     /// <param name="ct">Token de cancelación.</param>
     public async Task<IReadOnlyList<ArmonixSobreResueltoDto>> BuscarSobresAsync(
         string? numeroSobre,
         string? cedula,
+        string? nombre = null,
+        int? anioNacimiento = null,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(numeroSobre) && string.IsNullOrWhiteSpace(cedula))
-            throw new ArgumentException("Debe informar al menos el número de sobre o la cédula.", nameof(numeroSobre));
+        if (!string.IsNullOrWhiteSpace(numeroSobre))
+        {
+            return await ConsultarSobresSqlAsync(
+                "s.NumeroSobre = @p0",
+                cmd => cmd.Parameters.Add(new SqlParameter("@p0", System.Data.SqlDbType.VarChar, 50)
+                    { Value = numeroSobre.Trim() }),
+                top: 20, ct).ConfigureAwait(false);
+        }
 
-        // La búsqueda por cédula requiere resolver persona→contrato→sobres en la BD
-        // Progress (fuera de bdd_Salud_Consultas). Se implementará en una iteración
-        // posterior; por ahora se guía al operador a usar el número de sobre.
-        if (string.IsNullOrWhiteSpace(numeroSobre))
-            throw new ArgumentException(
-                "La búsqueda por cédula estará disponible próximamente. " +
-                "Por ahora ingrese el número de sobre (p. ej. NA-2612551).");
+        if (!string.IsNullOrWhiteSpace(nombre))
+        {
+            var termino = nombre.Trim();
+            if (termino.Length < 4)
+                throw new ArgumentException(
+                    "Para buscar por nombre escribe al menos 4 caracteres (p. ej. un apellido).");
 
-        var connStr = ResolveSaludConsultasConnectionString();
-        var sobre   = numeroSobre.Trim();
+            // Escapar comodines de LIKE para que el término sea literal.
+            var like = "%" + termino
+                .Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]") + "%";
 
+            return await ConsultarSobresSqlAsync(
+                "s.PersonaContacto LIKE @p0",
+                cmd => cmd.Parameters.Add(new SqlParameter("@p0", System.Data.SqlDbType.NVarChar, 200)
+                    { Value = like }),
+                top: 30, ct).ConfigureAwait(false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(cedula))
+        {
+            // 1) cédula → contratos (api-contrato ObtenerContratoPorDocumento: solo cédula, sin año)
+            var contratos = await ResolverContratosPorCedulaAsync(cedula.Trim(), ct)
+                .ConfigureAwait(false);
+
+            if (contratos.Count == 0)
+                return Array.Empty<ArmonixSobreResueltoDto>();
+
+            // 2) contratos → sobres (IN parametrizado)
+            var paramNames = contratos.Select((_, i) => $"@p{i}").ToArray();
+            return await ConsultarSobresSqlAsync(
+                $"s.NumeroContrato IN ({string.Join(", ", paramNames)})",
+                cmd =>
+                {
+                    for (var i = 0; i < contratos.Count; i++)
+                        cmd.Parameters.Add(new SqlParameter($"@p{i}", System.Data.SqlDbType.Int)
+                            { Value = contratos[i] });
+                },
+                top: 50, ct).ConfigureAwait(false);
+        }
+
+        throw new ArgumentException(
+            "Debe informar el número de sobre, la cédula (+ año de nacimiento) o el nombre del cliente.");
+    }
+
+    /// <summary>
+    /// SELECT compartido de sobres con el nombre real del estado
+    /// (<c>dbo.EstadosSobre.NombreEstado</c>) y ordenado por recepción descendente.
+    /// </summary>
+    private async Task<IReadOnlyList<ArmonixSobreResueltoDto>> ConsultarSobresSqlAsync(
+        string whereClause,
+        Action<SqlCommand> bindParams,
+        int top,
+        CancellationToken ct)
+    {
+        var connStr    = ResolveSaludConsultasConnectionString();
         var resultados = new List<ArmonixSobreResueltoDto>();
 
-        const string sql = @"
-            SELECT TOP 20
-                   s.IdSobre, s.NumeroSobre, s.IdEstadoSobre, s.NumeroContrato,
+        var sql = $@"
+            SELECT TOP ({top})
+                   s.IdSobre, s.NumeroSobre, s.IdEstadoSobre, es.NombreEstado, s.NumeroContrato,
                    s.CodigoRegion, s.CodigoProducto, s.ValorPresentado,
                    s.PersonaContacto, s.FechaRecepcion
             FROM   dbo.Sobre s WITH (NOLOCK)
-            WHERE  s.NumeroSobre = @numeroSobre
-            ORDER BY s.IdSobre DESC;";
+            LEFT JOIN dbo.EstadosSobre es WITH (NOLOCK) ON es.IdEstadoSobre = s.IdEstadoSobre
+            WHERE  {whereClause}
+            ORDER BY s.FechaRecepcion DESC, s.IdSobre DESC;";
 
         await using var conn = new SqlConnection(connStr);
         await conn.OpenAsync(ct).ConfigureAwait(false);
 
         await using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.Add(new SqlParameter("@numeroSobre", System.Data.SqlDbType.VarChar, 50) { Value = sobre });
+        bindParams(cmd);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            var numContrato   = reader["NumeroContrato"]  == DBNull.Value ? (int?)null : Convert.ToInt32(reader["NumeroContrato"]);
-            var idEstado      = reader["IdEstadoSobre"]   == DBNull.Value ? 0          : Convert.ToInt32(reader["IdEstadoSobre"]);
-            var fechaRecep    = reader["FechaRecepcion"]  == DBNull.Value ? (DateTime?)null : Convert.ToDateTime(reader["FechaRecepcion"]);
-            var valor         = reader["ValorPresentado"] == DBNull.Value ? 0m         : Convert.ToDecimal(reader["ValorPresentado"]);
+            var numContrato = reader["NumeroContrato"]  == DBNull.Value ? (int?)null : Convert.ToInt32(reader["NumeroContrato"]);
+            var idEstado    = reader["IdEstadoSobre"]   == DBNull.Value ? 0          : Convert.ToInt32(reader["IdEstadoSobre"]);
+            var nombreEst   = reader["NombreEstado"]    == DBNull.Value ? null       : reader["NombreEstado"]?.ToString();
+            var fechaRecep  = reader["FechaRecepcion"]  == DBNull.Value ? (DateTime?)null : Convert.ToDateTime(reader["FechaRecepcion"]);
+            var valor       = reader["ValorPresentado"] == DBNull.Value ? (decimal?)null  : Convert.ToDecimal(reader["ValorPresentado"]);
 
             resultados.Add(new ArmonixSobreResueltoDto
             {
-                NumeroSobre           = reader["NumeroSobre"]?.ToString()    ?? sobre,
+                NumeroSobre           = reader["NumeroSobre"]?.ToString()    ?? string.Empty,
                 CodigoRegion          = reader["CodigoRegion"]?.ToString()   ?? string.Empty,
                 CodigoProducto        = reader["CodigoProducto"]?.ToString() ?? string.Empty,
-                NumeroContrato        = numContrato?.ToString()             ?? string.Empty,
+                NumeroContrato        = numContrato?.ToString()              ?? string.Empty,
                 NumeroPersonaPaciente = string.Empty, // M-Files no lo requiere para el filtro por sobre
                 NombreTitular         = reader["PersonaContacto"]?.ToString() ?? string.Empty,
-                EstadoSobre           = $"Estado {idEstado} · ${valor:N2}",
-                FechaRecepcion        = fechaRecep
+                EstadoSobre           = string.IsNullOrWhiteSpace(nombreEst) ? $"Estado {idEstado}" : nombreEst,
+                FechaRecepcion        = fechaRecep,
+                ValorPresentado       = valor
             });
         }
 
         return resultados;
+    }
+
+    /// <summary>
+    /// Resuelve los números de contrato de un afiliado por cédula llamando a
+    /// <c>GET {api-contrato}/api/contrato/ObtenerContratoPorDocumento</c>
+    /// (contratos activos; NO requiere año de nacimiento).
+    /// El parseo es tolerante: recorre la respuesta buscando <c>NumeroContrato</c>.
+    /// </summary>
+    private async Task<List<int>> ResolverContratosPorCedulaAsync(
+        string cedula, CancellationToken ct)
+    {
+        var baseUrl = _config["Saludsa:BaseUrls:ApiContrato"];
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            throw new InvalidOperationException(
+                "[T22 B1] 'Saludsa:BaseUrls:ApiContrato' no está configurada " +
+                "(necesaria para buscar sobres por cédula).");
+
+        var url = $"{baseUrl.TrimEnd('/')}/api/contrato/ObtenerContratoPorDocumento" +
+                  $"?tipoDocumento=CEDULA&numeroDocumento={Uri.EscapeDataString(cedula)}";
+
+        var authHeaders = await _tokenProvider.GetAuthHeadersAsync(ct).ConfigureAwait(false);
+
+        using var http = _httpClientFactory.CreateClient("SaludsaInternalApi");
+        using var msg  = new HttpRequestMessage(HttpMethod.Get, url);
+        foreach (var (name, value) in authHeaders)
+            msg.Headers.TryAddWithoutValidation(name, value);
+
+        using var response = await http.SendAsync(msg, ct).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException(
+                $"[T22] api-contrato respondió {(int)response.StatusCode} al resolver la cédula: {body}",
+                null, response.StatusCode);
+
+        // Parseo tolerante al shape (RespuestaGenericaServicio<RespuestaPaginado<Contrato>>):
+        // se recorre TODO el árbol recolectando cualquier propiedad "NumeroContrato".
+        var contratos = new List<int>();
+        using var doc = JsonDocument.Parse(body);
+        RecolectarNumerosContrato(doc.RootElement, contratos);
+        return contratos.Distinct().ToList();
+    }
+
+    /// <summary>Recorre recursivamente el JSON recolectando valores de "NumeroContrato".</summary>
+    private static void RecolectarNumerosContrato(JsonElement el, List<int> acc)
+    {
+        switch (el.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var prop in el.EnumerateObject())
+                {
+                    if (string.Equals(prop.Name, "NumeroContrato", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (prop.Value.ValueKind == JsonValueKind.Number && prop.Value.TryGetInt32(out var n))
+                            acc.Add(n);
+                        else if (prop.Value.ValueKind == JsonValueKind.String
+                                 && int.TryParse(prop.Value.GetString(), out var s))
+                            acc.Add(s);
+                    }
+                    else
+                    {
+                        RecolectarNumerosContrato(prop.Value, acc);
+                    }
+                }
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in el.EnumerateArray())
+                    RecolectarNumerosContrato(item, acc);
+                break;
+        }
     }
 
     // ── ListarDocumentos — M-Files /Objetos/Busqueda ──────────────────────
@@ -200,6 +334,7 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
 
                 string fileUrl;
                 string ocrText;
+                List<PaginaOcr> paginasOcr = new();
                 try
                 {
                     var ocrFile = new OcrFile
@@ -208,7 +343,11 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
                         Content   = contenidoB64,
                         Extension = extension
                     };
-                    (fileUrl, ocrText) = await _ingest.ProcessFileAsync(ocrFile).ConfigureAwait(false);
+                    // REQ-019: versión detallada → conserva el OCR por página
+                    var ocrRes = await _ingest.ProcessFileDetailedAsync(ocrFile).ConfigureAwait(false);
+                    fileUrl    = ocrRes.Url;
+                    ocrText    = ocrRes.Text;
+                    paginasOcr = ocrRes.Paginas;
                 }
                 catch (Exception ocrEx)
                 {
@@ -233,6 +372,14 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
                 db.DataFile.Add(dataFile);
                 await db.SaveChangesAsync(ct).ConfigureAwait(false);
                 dataFileIds.Add(dataFile.Id);
+
+                // REQ-019: OCR POR PÁGINA (habilita tags/clasificación por página)
+                var paginas = OcrPaginaPersistencia.Materializar(dataFile.Id, paginasOcr);
+                if (paginas.Count > 0)
+                {
+                    db.DataFilePage.AddRange(paginas);
+                    await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                }
             }
             catch (Exception ex)
             {

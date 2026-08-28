@@ -14,6 +14,9 @@ public sealed class ChatIndexViewModel
 
     /// <summary>Mensaje de error de inicialización, si aplica.</summary>
     public string? Error { get; init; }
+
+    /// <summary>Pregunta precargada en el input (deep-link "Preguntar sobre este documento"). No se auto-envía.</summary>
+    public string? PreguntaInicial { get; init; }
 }
 
 /// <summary>

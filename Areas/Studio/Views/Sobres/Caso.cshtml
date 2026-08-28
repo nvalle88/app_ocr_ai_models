@@ -1,22 +1,146 @@
 @model CasoImportadoViewModel
 @{
     ViewData["Title"] = $"Caso importado — {Model.Caso.CaseCode}";
+    // Código corto del caso para mostrar en la cabecera (el GUID completo va en metadatos).
+    var shortCode = Model.Caso.CaseCode.ToString().Split('-')[0];
+
+    // Extensiones que el visor embebido puede mostrar como imagen.
+    var imageExts = new HashSet<string> { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp" };
 }
 
-<div class="studio-breadcrumb">
-    Studio / <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> / Caso
+@* ================================================================== *@
+@* UN SOLO PROCESO, no siete pestanas sueltas.                        *@
+@*   1) Barra de cliente FIJA: el operador nunca pierde de quien es   *@
+@*      el sobre, en ningun paso.                                     *@
+@*   2) El proceso como PASOS con estado real (hecho / pendiente),    *@
+@*      que se pulsan para ir a ese paso.                             *@
+@*   3) Un solo boton que ejecuta de corrido lo que falte.            *@
+@*   4) Chat / Analisis IA quedan aparte: son herramientas, no pasos. *@
+@* ================================================================== *@
+@{
+    var cli = Model.Cliente;
+    string Money(decimal v) => v.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-EC"));
+}
+
+<div class="st-crumbs" style="margin-bottom:8px;">
+    Studio /
+    <a asp-area="Studio" asp-controller="Sobres" asp-action="Bandeja">Bandeja</a> /
+    Caso @shortCode
+</div>
+
+@* -- 1) Identidad del cliente, pegada arriba mientras se trabaja ------- *@
+<div class="st-cliente" id="clienteBar">
+    <span class="st-cliente-av">@cli.Iniciales</span>
+    <div class="st-cliente-id">
+        <strong>@(string.IsNullOrWhiteSpace(cli.Titular) ? "Titular no identificado" : cli.Titular)</strong>
+        <span>
+            @if (!string.IsNullOrWhiteSpace(cli.Cedula)) { <text>C&eacute;d. @cli.Cedula</text> }
+            @if (!string.IsNullOrWhiteSpace(cli.Contrato)) { <text> &middot; Contrato @cli.Contrato</text> }
+            @if (!string.IsNullOrWhiteSpace(cli.Producto)) { <text> &middot; @cli.Producto</text> }
+        </span>
+    </div>
+    <div class="st-cliente-datos">
+        @if (!string.IsNullOrWhiteSpace(cli.NumeroSobre))
+        {
+            <span><i>Sobre</i>@cli.NumeroSobre</span>
+        }
+        @if (!string.IsNullOrWhiteSpace(cli.Prestador))
+        {
+            <span><i>Prestador</i>@cli.Prestador</span>
+        }
+        @if (!string.IsNullOrWhiteSpace(cli.FechaAtencion))
+        {
+            <span><i>Atenci&oacute;n</i>@cli.FechaAtencion</span>
+        }
+        @if (cli.TotalFacturado is > 0)
+        {
+            <span class="is-money"><i>Facturado</i>@Money(cli.TotalFacturado.Value)</span>
+        }
+        <span><i>Documentos</i>@Model.Archivos.Count</span>
+    </div>
+    <div class="st-cliente-acc">
+        <a class="btn btn-xs btn-default"
+           asp-area="Studio" asp-controller="Analizar" asp-action="Informe"
+           asp-route-caseCode="@Model.Caso.CaseCode" target="_blank" title="Informe imprimible del caso">
+            <i class="fa fa-file-pdf-o"></i> Informe
+        </a>
+        @if (Model.Archivos.Count > 0)
+        {
+            <a class="btn btn-xs btn-default"
+               href="@Url.Action("DownloadCaseDocumentsZip", "Nexus", new { area = "", caseCode = Model.Caso.CaseCode })"
+               title="Descargar todos los documentos del caso">
+                <i class="fa fa-file-archive-o"></i> ZIP
+            </a>
+        }
+    </div>
+</div>
+
+@* -- 2) El proceso: pasos con su estado real --------------------------- *@
+<div class="st-flow-wrap">
+    <ol class="st-flow" id="stFlow">
+        @foreach (var paso in Model.Pasos)
+        {
+            <li class="st-flow-step @(paso.Hecho ? "is-done" : "is-pend")"
+                data-tab="@paso.Tab" data-num="@paso.Numero"
+                data-url="@paso.UrlGenerar" title="@paso.Entrega">
+                <span class="st-flow-num">
+                    @if (paso.Hecho) { <i class="fa fa-check"></i> } else { @paso.Numero }
+                </span>
+                <span class="st-flow-txt">
+                    <span class="st-flow-tit"><i class="fa @paso.Icono"></i> @paso.Titulo</span>
+                    <span class="st-flow-sub">@paso.Entrega</span>
+                </span>
+            </li>
+        }
+    </ol>
+
+    <div class="st-flow-acc">
+        @if (Model.PasosPendientes > 0)
+        {
+            <button type="button" class="btn btn-ia btn-lg" id="btnProceso"
+                    onclick="ejecutarProceso()"
+                    title="Ejecuta de corrido los pasos que faltan, en orden">
+                <i class="fa fa-play-circle"></i>
+                Ejecutar el proceso (@Model.PasosPendientes paso@(Model.PasosPendientes == 1 ? "" : "s") pendiente@(Model.PasosPendientes == 1 ? "" : "s"))
+            </button>
+        }
+        else
+        {
+            <button type="button" class="btn btn-default btn-lg" id="btnProceso"
+                    onclick="ejecutarProceso(true)"
+                    title="Vuelve a ejecutar todo el proceso desde el paso 2">
+                <i class="fa fa-refresh"></i> Rehacer el proceso completo
+            </button>
+        }
+        @Html.AntiForgeryToken()
+        <span class="st-flow-estado" id="flowEstado"></span>
+        <span class="st-flow-tools">
+            <a class="btn btn-default" href="#tab-chat" onclick="irTab('tab-chat');return false;">
+                <i class="fa fa-comments-o"></i> Preguntar al caso
+            </a>
+            <a class="btn btn-default" href="#tab-analisis" onclick="irTab('tab-analisis');return false;">
+                <i class="fa fa-cogs"></i> An&aacute;lisis libre IA
+            </a>
+        </span>
+    </div>
+    <div class="st-flow-meta">
+        Proceso <code>@Model.ProcessCode</code> &middot; caso @shortCode &middot;
+        importado @Model.Caso.StartDate.ToString("dd/MM/yyyy HH:mm")
+        @if (!string.IsNullOrWhiteSpace(cli.Origen)) { <text> &middot; origen @cli.Origen</text> }
+        @if (Model.Notas.Count > 0) { <text> &middot; @Model.Notas.Count nota(s)</text> }
+    </div>
 </div>
 
 @if (!string.IsNullOrEmpty(Model.Mensaje))
 {
-    <div class="alert-warn">@Model.Mensaje</div>
+    <div class="alert alert-info"><i class="fa fa-info-circle"></i>&nbsp; @Model.Mensaje</div>
 }
 
 @if (Model.AdvertenciasOcr.Count > 0)
 {
-    <div class="alert-warn">
-        <strong>Advertencias OCR:</strong>
-        <ul style="margin:4px 0 0 0; padding-left:18px;">
+    <div class="alert alert-warning">
+        <strong><i class="fa fa-exclamation-triangle"></i> Advertencias OCR:</strong>
+        <ul style="margin:6px 0 0; padding-left:18px;">
             @foreach (var adv in Model.AdvertenciasOcr)
             {
                 <li>@adv</li>
@@ -25,119 +149,419 @@
     </div>
 }
 
-<div class="studio-card">
-    <h4>Caso OCR</h4>
-    <table style="font-size:0.9em; margin-bottom:12px;">
-        <tr>
-            <td style="padding:4px 12px 4px 0; font-weight:600;">CaseCode</td>
-            <td><code>@Model.Caso.CaseCode</code></td>
-        </tr>
-        <tr>
-            <td style="padding:4px 12px 4px 0; font-weight:600;">Proceso</td>
-            <td><code>@Model.ProcessCode</code></td>
-        </tr>
-        <tr>
-            <td style="padding:4px 12px 4px 0; font-weight:600;">Estado</td>
-            <td><span class="badge-estado">@Model.Caso.State</span></td>
-        </tr>
-        <tr>
-            <td style="padding:4px 12px 4px 0; font-weight:600;">Inicio</td>
-            <td>@Model.Caso.StartDate.ToString("dd/MM/yyyy HH:mm")</td>
-        </tr>
-        <tr>
-            <td style="padding:4px 12px 4px 0; font-weight:600;">Archivos OCR</td>
-            <td><strong>@Model.Archivos.Count</strong></td>
-        </tr>
-        <tr>
-            <td style="padding:4px 12px 4px 0; font-weight:600;">Notas</td>
-            <td>@Model.Notas.Count</td>
-        </tr>
-    </table>
+@* -- Las pestanas siguen el MISMO orden del proceso -------------------- *@
+<ul class="nav nav-tabs st-tabs-flow" id="casoTabs">
+    @{ var primero = true; }
+    @foreach (var paso in Model.Pasos)
+    {
+        <li class="@(primero ? "active" : "")">
+            <a href="#@paso.Tab" data-toggle="tab">
+                <span class="st-tab-num @(paso.Hecho ? "is-done" : "")">
+                    @if (paso.Hecho) { <i class="fa fa-check"></i> } else { @paso.Numero }
+                </span>
+                @paso.Titulo
+            </a>
+        </li>
+        primero = false;
+    }
+    <li class="st-tab-sep"><span>herramientas</span></li>
+    <li><a href="#tab-chat" data-toggle="tab"><i class="fa fa-comments-o"></i> Chat</a></li>
+    <li><a href="#tab-analisis" data-toggle="tab"><i class="fa fa-cogs"></i> An&aacute;lisis IA</a></li>
+</ul>
+<div class="tab-content" style="padding-top:16px;">
+<div class="tab-pane active" id="tab-docs">
+
+@* ── Visor embebido (oculto hasta pulsar "Ver" en un documento) ── *@
+<div id="stViewer" class="st-viewer" style="display:none; margin-bottom:20px;">
+    <div class="st-viewer-head">
+        <span class="st-viewer-file" id="stViewerFile"></span>
+        <span>
+            <a id="stViewerDownload" href="#" class="btn btn-xs btn-default" target="_blank" rel="noopener">
+                <i class="fa fa-download"></i> Descargar
+            </a>
+            <button type="button" class="btn btn-xs btn-default" onclick="cerrarVisor()">
+                <i class="fa fa-times"></i> Cerrar
+            </button>
+        </span>
+    </div>
+    @* El componente StPdfViewer monta aquí su barra (hojas, zoom, búsqueda) y el lienzo *@
+    <div id="stViewerHost"></div>
 </div>
 
-@if (Model.Archivos.Count > 0)
-{
-    <div class="studio-card">
-        <h4>Documentos OCR (@Model.Archivos.Count)</h4>
-        <table class="table-studio">
-            <thead>
-                <tr>
-                    <th>#</th>
-                    <th>Nombre original</th>
-                    <th>URI del blob</th>
-                    <th>Texto OCR (vista previa)</th>
-                    <th>Creado</th>
-                </tr>
-            </thead>
-            <tbody>
-                @{ var idx = 1; }
-                @foreach (var archivo in Model.Archivos)
-                {
-                    <tr>
-                        <td>@(idx++)</td>
-                        <td style="font-size:0.85em;">@archivo.OriginalName</td>
-                        <td>
-                            <a href="@archivo.FileUri" target="_blank" rel="noopener"
-                               style="font-size:0.82em; word-break:break-all;">
-                                @archivo.FileUri
-                            </a>
-                        </td>
-                        <td>
-                            <div class="ocr-preview">
-                                @(string.IsNullOrWhiteSpace(archivo.Text)
-                                    ? "(sin texto OCR)"
-                                    : archivo.Text.Length > 300
-                                        ? archivo.Text[..300] + "…"
-                                        : archivo.Text)
-                            </div>
-                        </td>
-                        <td>@archivo.CreatedDate.ToString("dd/MM/yyyy HH:mm")</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+@* ── Documentos OCR ── *@
+<div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+    <header>
+        <span class="widget-icon"><i class="fa fa-file-text-o"></i></span>
+        <h2>Documentos OCR (@Model.Archivos.Count)</h2>
+    </header>
+    <div>
+        <div class="widget-body">
+            @if (Model.Archivos.Count == 0)
+            {
+                <div class="st-empty">
+                    <i class="fa fa-inbox"></i>
+                    Este caso aún no tiene documentos. Puedes adjuntarlos abajo.
+                </div>
+            }
+            else
+            {
+                <table class="table table-striped table-bordered table-hover" width="100%">
+                    <thead>
+                        <tr>
+                            <th style="width:36px;">#</th>
+                            <th>Documento</th>
+                            <th>Texto OCR</th>
+                            <th style="width:150px;">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{ var idx = 1; }
+                        @foreach (var archivo in Model.Archivos)
+                        {
+                            var ext = System.IO.Path.GetExtension(archivo.OriginalName ?? string.Empty).ToLowerInvariant();
+                            var esImagen = imageExts.Contains(ext);
+                            var proxyUrl = Url.Action("DownloadCaseDocument", "Nexus",
+                                new { area = "", caseCode = Model.Caso.CaseCode, fileId = archivo.Id });
+                            var texto = archivo.Text ?? string.Empty;
+                            <tr>
+                                <td>@(idx++)</td>
+                                <td>
+                                    <div class="st-doc-name">@archivo.OriginalName</div>
+                                    <small class="text-muted">@archivo.CreatedDate.ToString("dd/MM/yyyy HH:mm")</small>
+                                </td>
+                                <td>
+                                    @if (string.IsNullOrWhiteSpace(texto))
+                                    {
+                                        <span class="st-ocr is-empty">(sin texto OCR)</span>
+                                    }
+                                    else
+                                    {
+                                        <details>
+                                            <summary style="cursor:pointer; color:var(--st-accent); font-size:12.5px;">
+                                                Ver texto (@texto.Length caracteres)
+                                            </summary>
+                                            <div class="st-ocr" style="margin-top:6px;">@texto</div>
+                                            <div class="st-ocr-tools">
+                                                <button type="button" class="btn btn-xs btn-default"
+                                                        onclick="copiarOcr(this)">
+                                                    <i class="fa fa-copy"></i> Copiar
+                                                </button>
+                                            </div>
+                                        </details>
+                                    }
+                                </td>
+                                <td>
+                                    <div class="st-doc-actions">
+                                        <button type="button" class="btn btn-xs btn-ia st-ver"
+                                                data-url="@proxyUrl"
+                                                data-name="@archivo.OriginalName"
+                                                data-image="@(esImagen ? "1" : "0")"
+                                                data-pdf="@(ext == ".pdf" ? "1" : "0")"
+                                                title="Ver el documento en pantalla">
+                                            <i class="fa fa-eye"></i> Ver
+                                        </button>
+                                        <a class="btn btn-xs btn-default" href="@proxyUrl"
+                                           title="Descargar el archivo original">
+                                            <i class="fa fa-download"></i>
+                                        </a>
+                                        <button type="button" class="btn btn-xs btn-default st-ask"
+                                                data-name="@archivo.OriginalName"
+                                                title="Preguntar a la IA sobre este documento">
+                                            <i class="fa fa-question-circle"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
     </div>
-}
+</div>
 
+@* ── Notas del ticket ── *@
 @if (Model.Notas.Count > 0)
 {
-    <div class="studio-card">
-        <h4>Notas del ticket (@Model.Notas.Count comentarios importados)</h4>
-        @foreach (var nota in Model.Notas)
-        {
-            <div style="border-left:3px solid #003366; padding:8px 12px; margin-bottom:10px; background:#f8faff;">
-                <div style="font-size:0.82em; color:#888; margin-bottom:4px;">
-                    @nota.Title — @nota.CreatedAt.ToString("dd/MM/yyyy HH:mm")
-                </div>
-                <div style="font-size:0.9em; color:#333; white-space: pre-line;">@nota.Detail</div>
+    <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+        <header>
+            <span class="widget-icon"><i class="fa fa-sticky-note-o"></i></span>
+            <h2>Datos del caso (@Model.Notas.Count)</h2>
+        </header>
+        <div>
+            <div class="widget-body">
+                @foreach (var nota in Model.Notas)
+                {
+                    @* El Detail de estas notas es JSON (ContextoSobre, ResolucionReembolso,
+                       ExpedienteDocumental, AuditoriaMedicina). data-st-json hace que se
+                       pinte como ficha legible y deje el original plegado. *@
+                    var _titulo = nota.Title switch
+                    {
+                        "ContextoSobre"        => "Contexto del sobre",
+                        "ResolucionReembolso"  => "Resolución de reembolso",
+                        "ExpedienteDocumental" => "Expediente documental",
+                        "AuditoriaMedicina"    => "Auditoría médica",
+                        _                      => nota.Title
+                    };
+                    var _icono = nota.Title switch
+                    {
+                        "ContextoSobre"        => "fa-id-card-o",
+                        "ResolucionReembolso"  => "fa-gavel",
+                        "ExpedienteDocumental" => "fa-sitemap",
+                        "AuditoriaMedicina"    => "fa-user-md",
+                        _                      => "fa-sticky-note-o"
+                    };
+
+                    <div class="st-nota">
+                        <div class="st-nota-head">
+                            <span class="st-nota-tit"><i class="fa @_icono"></i> @_titulo</span>
+                            <span class="st-nota-fecha">@nota.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                        </div>
+                        <div class="st-nota-cuerpo" data-st-json>@nota.Detail</div>
+                    </div>
+                }
             </div>
-        }
+        </div>
     </div>
 }
 
-<div class="studio-card">
-    <h4>Adjuntar documentos adicionales</h4>
-    <p style="font-size:0.9em; color:#555;">
-        Sube documentos adicionales al caso. Cada archivo se procesa con OCR
-        y queda disponible en el contexto del análisis IA.
-    </p>
-
-    <div id="adjuntarZona">
-        <input type="file" id="archivosInput" multiple accept=".pdf,.jpg,.jpeg,.png,.tiff,.docx,.doc"
-               style="margin-bottom:10px;" />
-        <br />
-        <button type="button" onclick="adjuntarDocumentos()"
-                class="btn-studio btn-primary-studio">
-            Adjuntar y procesar OCR
-        </button>
-        <div id="adjuntarResultado" style="margin-top:10px;"></div>
+@* ── Adjuntar documentos adicionales ── *@
+<div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+    <header>
+        <span class="widget-icon"><i class="fa fa-plus-circle"></i></span>
+        <h2>Adjuntar documentos adicionales</h2>
+    </header>
+    <div>
+        <div class="widget-body">
+            <p class="text-muted" style="font-size:13px;">
+                Sube documentos adicionales al caso. Cada archivo se procesa con OCR
+                y queda disponible en el contexto del análisis IA.
+            </p>
+            <div class="form-inline">
+                <input type="file" id="archivosInput" class="form-control" multiple
+                       accept=".pdf,.jpg,.jpeg,.png,.tiff,.docx,.doc" style="max-width:420px;" />
+                <button type="button" onclick="adjuntarDocumentos()" class="btn btn-primary">
+                    <i class="fa fa-upload"></i> Adjuntar y procesar OCR
+                </button>
+            </div>
+            <div id="adjuntarResultado" style="margin-top:12px;"></div>
+        </div>
     </div>
 </div>
+
+</div>@* /tab-docs *@
+
+<div class="tab-pane" id="tab-tipificacion">
+    <iframe class="st-tabframe" data-src="@Url.Action("Index", "Clasificacion", new { area = "Studio", caseCode = Model.Caso.CaseCode, embed = true })"></iframe>
+</div>
+<div class="tab-pane" id="tab-expediente">
+    <iframe class="st-tabframe" data-src="@Url.Action("Index", "Expediente", new { area = "Studio", caseCode = Model.Caso.CaseCode, embed = true })"></iframe>
+</div>
+<div class="tab-pane" id="tab-analisis">
+    <iframe class="st-tabframe" data-src="@Url.Action("Index", "Analizar", new { area = "Studio", caseCode = Model.Caso.CaseCode, embed = true })"></iframe>
+</div>
+<div class="tab-pane" id="tab-chat">
+    <iframe class="st-tabframe" data-src="@Url.Action("Index", "Chat", new { area = "Studio", caseCode = Model.Caso.CaseCode, embed = true })"></iframe>
+</div>
+<div class="tab-pane" id="tab-reso">
+    <iframe class="st-tabframe" data-src="@Url.Action("Index", "Resolucion", new { area = "Studio", caseCode = Model.Caso.CaseCode, embed = true })"></iframe>
+</div>
+<div class="tab-pane" id="tab-auditoria">
+    <iframe class="st-tabframe" data-src="@Url.Action("Index", "Auditoria", new { area = "Studio", caseCode = Model.Caso.CaseCode, embed = true })"></iframe>
+</div>
+</div>@* /tab-content *@
 
 @Html.AntiForgeryToken()
 
+@section Styles {
+    <link rel="stylesheet" href="~/css/app/st-pdf-viewer.css" asp-append-version="true" />
+}
+
 @section Scripts {
+    @* El modulo vive tambien en el padre para que las pestanas
+       (que van en iframe) puedan delegar su overlay aqui y cubrir
+       el area de trabajo entera. *@
+    <script src="~/js/app/st-progreso.js" asp-append-version="true"></script>
+    @* PDF.js servido desde el propio sitio (sin CDN) *@
+    <script src="~/lib/pdfjs/pdf.min.js"></script>
+    <script src="~/js/app/st-pdf-viewer.js" asp-append-version="true"></script>
+    <script src="~/js/app/st-json.js" asp-append-version="true"></script>
     <script>
+        // ================================================================
+        // EL PROCESO COMO UNO SOLO
+        // ----------------------------------------------------------------
+        // Antes cada pestana tenia su propio boton "Generar" y el operador
+        // tenia que ir de una en otra sin saber que faltaba. Aqui el paso se
+        // pulsa para verlo, y un solo boton ejecuta EN ORDEN lo pendiente,
+        // marcando cada paso al terminar y recargando su pestana.
+        // ================================================================
+
+        // Pulsar un paso del proceso lleva a su pestana.
+        document.querySelectorAll('.st-flow-step').forEach(function (li) {
+            li.addEventListener('click', function () { irTab(li.dataset.tab); });
+        });
+
+        function flowToken() {
+            var i = document.querySelector('#stFlow, .st-flow-acc')
+                        .parentNode.querySelector('input[name="__RequestVerificationToken"]');
+            return i ? i.value : '';
+        }
+
+        function flowRecargarTab(tab) {
+            var f = document.querySelector('#' + tab + ' iframe.st-tabframe');
+            if (f && f.dataset.src) { f.setAttribute('src', f.dataset.src); }
+        }
+
+        var flowCorriendo = false;
+
+        async function ejecutarProceso(rehacer) {
+            if (flowCorriendo) return;
+
+            var pasos = Array.prototype.slice.call(document.querySelectorAll('.st-flow-step'))
+                .filter(function (li) {
+                    if (!li.dataset.url) return false;                       // paso no automatizable
+                    return rehacer ? true : li.classList.contains('is-pend');
+                });
+
+            if (!pasos.length) { return; }
+
+            flowCorriendo = true;
+            var btn = document.getElementById('btnProceso');
+            var est = document.getElementById('flowEstado');
+            var btnHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Ejecutando el proceso...';
+
+            var hechos = 0, fallos = 0;
+            for (var i = 0; i < pasos.length; i++) {
+                var li = pasos[i];
+                var titulo = li.querySelector('.st-flow-tit').textContent.trim();
+
+                li.classList.remove('is-pend');
+                li.classList.add('is-run');
+                li.querySelector('.st-flow-num').innerHTML = '<i class="fa fa-spinner fa-spin"></i>';
+                est.innerHTML = '<i class="fa fa-clock-o"></i> Paso ' + (i + 1) + ' de ' + pasos.length +
+                                ': <strong>' + titulo + '</strong> - cada paso tarda 1-2 minutos';
+                irTab(li.dataset.tab);
+
+                try {
+                    var fd = new FormData();
+                    fd.append('caseCode', '@Model.Caso.CaseCode');
+                    fd.append('embed', 'true');
+                    fd.append('__RequestVerificationToken', flowToken());
+
+                    var r = await fetch(li.dataset.url, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'RequestVerificationToken': flowToken() },
+                        body: fd
+                    });
+
+                    li.classList.remove('is-run');
+                    if (r.ok) {
+                        li.classList.add('is-done');
+                        li.querySelector('.st-flow-num').innerHTML = '<i class="fa fa-check"></i>';
+                        flowRecargarTab(li.dataset.tab);
+                        hechos++;
+                    } else {
+                        li.classList.add('is-error');
+                        li.querySelector('.st-flow-num').innerHTML = '<i class="fa fa-exclamation"></i>';
+                        fallos++;
+                    }
+                } catch (e) {
+                    li.classList.remove('is-run');
+                    li.classList.add('is-error');
+                    li.querySelector('.st-flow-num').innerHTML = '<i class="fa fa-exclamation"></i>';
+                    fallos++;
+                }
+            }
+
+            btn.disabled = false;
+            btn.innerHTML = btnHtml;
+            flowCorriendo = false;
+
+            est.innerHTML = fallos === 0
+                ? '<span class="ok"><i class="fa fa-check-circle"></i> Proceso completo: ' + hechos + ' paso(s) ejecutado(s).</span>'
+                : '<span class="err"><i class="fa fa-exclamation-triangle"></i> ' + hechos +
+                  ' paso(s) ejecutado(s), ' + fallos + ' con error. Abre el paso marcado para ver el detalle.</span>';
+        }
+    </script>
+    <script>
+        // ============================================================
+        // REQ-019 — Interactividad de la vista Caso.
+        // ============================================================
+
+        // URL objeto del visor actual (se libera al abrir otro / cerrar).
+
+        // ── Visor embebido: descarga el documento por el PROXY autenticado
+        //    (NexusController.DownloadCaseDocument) y lo muestra en pantalla.
+        //    Se usa fetch→Blob→objectURL para evitar el Content-Disposition
+        //    "attachment" del endpoint (que si no forzaría una descarga).
+        document.querySelectorAll('.st-ver').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                verDocumento(btn.dataset.url, btn.dataset.name,
+                             btn.dataset.image === '1', btn.dataset.pdf === '1');
+            });
+        });
+
+        // ── Preguntar a la IA sobre un documento: abre la pestaña Chat con la
+        //    pregunta precargada (recarga el iframe con &doc=...). ──
+        document.querySelectorAll('.st-ask').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var f = document.querySelector('#tab-chat iframe.st-tabframe');
+                if (f && f.dataset.src) { f.setAttribute('src', f.dataset.src + '&doc=' + encodeURIComponent(b.dataset.name)); }
+                irTab('tab-chat');
+            });
+        });
+
+        // ── Visor: pinta el documento con PDF.js (wwwroot/js/app/st-pdf-viewer.js)
+        //    en vez de delegar en el visor nativo del navegador. Motivo: con
+        //    "descargar los PDF en lugar de abrirlos" activado, el <iframe>
+        //    quedaba en blanco y el archivo se iba a Descargas.
+        var stVisor = null;
+
+        function verDocumento(url, nombre, esImagen, esPdf) {
+            var panel = document.getElementById('stViewer');
+            panel.style.display = 'block';
+            document.getElementById('stViewerFile').textContent = nombre || 'Documento';
+            document.getElementById('stViewerDownload').href = url;
+
+            // Tipos que no se pueden pintar (docx, xlsx…): solo descarga.
+            if (!esPdf && !esImagen) {
+                document.getElementById('stViewerHost').innerHTML =
+                    '<div class="stpdf-aviso">La vista previa no está disponible para este tipo de archivo. ' +
+                    'Usa el botón Descargar.</div>';
+                panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                return;
+            }
+
+            if (!stVisor) {
+                stVisor = StPdfViewer.create(document.getElementById('stViewerHost'), {});
+            }
+            stVisor.abrir({
+                url: url + (url.indexOf('?') >= 0 ? '&' : '?') + 'inline=true',
+                nombre: nombre,
+                pagina: 1
+            });
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function cerrarVisor() {
+            document.getElementById('stViewer').style.display = 'none';
+        }
+
+        // ── Copiar el texto OCR al portapapeles ──
+        function copiarOcr(btn) {
+            const box = btn.closest('details').querySelector('.st-ocr');
+            if (!box) return;
+            navigator.clipboard.writeText(box.textContent).then(function () {
+                const orig = btn.innerHTML;
+                btn.innerHTML = '<i class="fa fa-check"></i> Copiado';
+                setTimeout(function () { btn.innerHTML = orig; }, 1500);
+            });
+        }
+
+        // ── Adjuntar documentos (base64 → API JSON con antiforgery) ──
         async function adjuntarDocumentos() {
             const input = document.getElementById('archivosInput');
             if (!input.files.length) {
@@ -146,51 +570,50 @@
             }
 
             const archivos = [];
-            for (const file of input.files) {
-                const base64 = await toBase64(file);
-                const ext = '.' + file.name.split('.').pop().toLowerCase();
-                archivos.push({
-                    fileName: file.name,
-                    contentBase64: base64,
-                    extension: ext
-                });
+            for (const f of input.files) {
+                const base64 = await toBase64(f);
+                const ext = '.' + f.name.split('.').pop().toLowerCase();
+                archivos.push({ fileName: f.name, contentBase64: base64, extension: ext });
             }
 
-            // REQ-019: enviar token antiforgery para [ValidateAntiForgeryToken] en AdjuntarDocumentos
             const antiforgeryToken = document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '';
 
             const res = await fetch('@Url.Action("AdjuntarDocumentos", "Sobres", new { area = "Studio" })', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'RequestVerificationToken': antiforgeryToken
-                },
-                body: JSON.stringify({
-                    caseCode: '@Model.Caso.CaseCode',
-                    archivos: archivos
-                })
+                headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': antiforgeryToken },
+                body: JSON.stringify({ caseCode: '@Model.Caso.CaseCode', archivos: archivos })
             });
 
             const data = await res.json();
             const zona = document.getElementById('adjuntarResultado');
             if (data.ok) {
-                zona.innerHTML = '<div class="alert-warn" style="background:#e6f4ea; border-color:#34a853; color:#137333;">' +
-                    'Adjuntados: ' + data.dataFileIds.length + ' archivo(s).' +
-                    (data.advertencias.length ? '<br/>Advertencias: ' + data.advertencias.join(', ') : '') +
-                    '</div>';
-                setTimeout(() => location.reload(), 1800);
+                zona.innerHTML = '<div class="alert alert-success">Adjuntados: ' + data.dataFileIds.length + ' archivo(s).' +
+                    (data.advertencias.length ? '<br/>Advertencias: ' + data.advertencias.join(', ') : '') + '</div>';
+                setTimeout(function () { location.reload(); }, 1600);
             } else {
-                zona.innerHTML = '<div class="alert-error">Error: ' + (data.error || 'Sin detalle') + '</div>';
+                zona.innerHTML = '<div class="alert alert-danger">Error: ' + (data.error || 'Sin detalle') + '</div>';
             }
         }
 
         function toBase64(file) {
-            return new Promise((resolve, reject) => {
+            return new Promise(function (resolve, reject) {
                 const reader = new FileReader();
-                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onload = function () { resolve(reader.result.split(',')[1]); };
                 reader.onerror = reject;
                 reader.readAsDataURL(file);
             });
         }
+
+        // ── Pestañas del workspace: carga perezosa de iframes + deep-link por hash ──
+        function irTab(id) { if (window.$) $('#casoTabs a[href="#' + id + '"]').tab('show'); }
+        $(function () {
+            $('#casoTabs a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+                var pane = document.querySelector(e.target.getAttribute('href'));
+                var f = pane && pane.querySelector('iframe.st-tabframe');
+                if (f && !f.getAttribute('src') && f.dataset.src) f.setAttribute('src', f.dataset.src);
+            });
+            var map = { '#analisis': 'tab-analisis', '#chat': 'tab-chat', '#reso': 'tab-reso', '#docs': 'tab-docs', '#expediente': 'tab-expediente', '#auditoria': 'tab-auditoria', '#tipificacion': 'tab-tipificacion' };
+            if (map[location.hash]) irTab(map[location.hash]);
+        });
     </script>
 }

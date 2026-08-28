@@ -1,0 +1,171 @@
+@using app_ocr_ai_models.Areas.Studio.Models
+@model ExpedienteViewModel
+@{
+    ViewData["Title"] = "Expediente documental";
+    var _embed = (ViewData["Embed"] as bool?) == true;
+    var e = Model.Expediente;
+    var f = e?.FichaCliente;
+    // Índice docId → documento para pintar el árbol
+    var porId = (e?.Documentos ?? new List<ExpedienteDto.DocumentoDto>()).ToDictionary(d => d.DocId, d => d);
+    // Vínculos agrupados por documento principal
+    var vinculosPorPrincipal = (e?.Vinculos ?? new List<ExpedienteDto.VinculoDto>())
+        .GroupBy(v => v.DePrincipal).ToDictionary(g => g.Key, g => g.ToList());
+    var justificantes = new HashSet<int>((e?.Vinculos ?? new List<ExpedienteDto.VinculoDto>())
+        .Where(v => v.Relacion?.ToUpperInvariant() is "JUSTIFICA" or "RESPALDA")
+        .Select(v => v.AJustificante));
+}
+
+<div class="st-head" style="@(_embed ? "display:none" : "")">
+    <div class="st-head-main">
+        <div class="st-crumbs">Studio / Caso / Expediente</div>
+        <h1 class="st-title"><i class="fa fa-folder-o"></i>Expediente documental</h1>
+        <p class="st-sub">Qué es cada documento, qué se extrajo y cómo se justifica la evidencia.</p>
+    </div>
+</div>
+
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-warning"><i class="fa fa-exclamation-triangle"></i> @TempData["Error"]</div>
+}
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-warning"><i class="fa fa-exclamation-triangle"></i> @Model.Error</div>
+}
+
+@if (!Model.Generado || e == null)
+{
+    <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+        <header><span class="widget-icon"><i class="fa fa-folder-o"></i></span><h2>Generar expediente</h2></header>
+        <div>
+            <div class="widget-body">
+                <p class="text-muted" style="font-size:13px;">
+                    La IA clasifica cada documento (factura, receta, pedido médico, resultado…), extrae sus datos,
+                    arma la <strong>ficha del cliente</strong> y el <strong>árbol de evidencia</strong>
+                    (qué justificante respalda cada factura), marcando faltantes e inconsistencias.
+                </p>
+                <form asp-area="Studio" asp-controller="Expediente" asp-action="Generar" method="post" data-st-progreso data-st-titulo="Armando el expediente" data-st-etapas="Abriendo el caso y sus documentos|Leyendo el texto de cada uno|Ordenando que documento respalda cada gasto|Guardando el expediente" data-st-nota="Se construye el arbol de evidencia factura por factura." data-st-segundos="18">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+                    <input type="hidden" name="embed" value="@(_embed ? "true" : "false")" />
+                    <button type="submit" class="btn btn-ia btn-lg"><i class="fa fa-magic"></i> Generar expediente IA</button>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div style="margin-bottom:12px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+        @if (!string.IsNullOrWhiteSpace(e.ResumenCaso))
+        {
+            <span style="font-size:13.5px; color:var(--st-ink);"><i class="fa fa-quote-left text-muted"></i> @e.ResumenCaso</span>
+        }
+        <span style="flex:1;"></span>
+        <small class="text-muted">Generado: @(Model.GeneradoEn?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "—")</small>
+        <form asp-area="Studio" asp-controller="Expediente" asp-action="Generar" method="post" style="display:inline;" data-st-progreso data-st-titulo="Armando el expediente" data-st-etapas="Abriendo el caso y sus documentos|Leyendo el texto de cada uno|Ordenando que documento respalda cada gasto|Guardando el expediente" data-st-nota="Se construye el arbol de evidencia factura por factura." data-st-segundos="18">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+            <input type="hidden" name="embed" value="@(_embed ? "true" : "false")" />
+            <button type="submit" class="btn btn-xs btn-default" title="Reclasificar los documentos"><i class="fa fa-refresh"></i> Regenerar</button>
+        </form>
+    </div>
+
+    @* ── Alertas del expediente (faltantes, inconsistencias) ── *@
+    @if (e.Alertas.Count > 0)
+    {
+        <div class="alert alert-warning">
+            <strong><i class="fa fa-exclamation-triangle"></i> Alertas de evidencia:</strong>
+            <ul style="margin:6px 0 0; padding-left:18px;">
+                @foreach (var a in e.Alertas) { <li>@a</li> }
+            </ul>
+        </div>
+    }
+
+    @* ── Ficha del cliente ── *@
+    @if (f != null)
+    {
+        <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+            <header><span class="widget-icon"><i class="fa fa-id-card-o"></i></span><h2>Ficha del cliente</h2></header>
+            <div>
+                <div class="widget-body">
+                    <div class="st-ficha">
+                        <div class="st-ficha-item"><div class="l">Beneficiario</div><div class="v">@(f.Nombre ?? "—")</div></div>
+                        <div class="st-ficha-item"><div class="l">Cédula</div><div class="v">@(f.Cedula ?? "—")</div></div>
+                        <div class="st-ficha-item"><div class="l">Contrato</div><div class="v">@(f.Contrato ?? "—")</div></div>
+                        <div class="st-ficha-item"><div class="l">Producto</div><div class="v">@(f.Producto ?? "—")</div></div>
+                        <div class="st-ficha-item"><div class="l">Prestador</div><div class="v">@(f.Prestador ?? "—")</div></div>
+                        <div class="st-ficha-item"><div class="l">Diagnóstico(s)</div><div class="v">@(f.Diagnosticos ?? "—")</div></div>
+                        <div class="st-ficha-item"><div class="l">Fecha atención</div><div class="v">@(f.FechaAtencion ?? "—")</div></div>
+                        <div class="st-ficha-item"><div class="l">Total facturado</div><div class="v">@(f.TotalFacturado.HasValue ? f.TotalFacturado.Value.ToString("C2") : "—")</div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ── Árbol de evidencia: principales (facturas) con sus justificantes ── *@
+    <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+        <header><span class="widget-icon"><i class="fa fa-sitemap"></i></span><h2>Árbol de evidencia</h2></header>
+        <div>
+            <div class="widget-body">
+                @{
+                    var principales = e.Documentos.Where(d => !justificantes.Contains(d.DocId)).ToList();
+                }
+                @if (principales.Count == 0) { principales = e.Documentos; }
+                @foreach (var doc in principales)
+                {
+                    <div class="st-arbol-nodo">
+                        <div class="st-doc-card @doc.TipoCss">
+                            <span class="st-doc-tipo"><i class="fa @doc.TipoIcono"></i> @doc.Tipo.Replace('_', ' ')</span>
+                            <div class="st-doc-body">
+                                <div class="st-doc-titulo">@doc.Nombre</div>
+                                <div class="st-doc-resumen">@doc.Resumen</div>
+                                @if (doc.Entidades.Count > 0)
+                                {
+                                    <div class="st-doc-ents">
+                                        @foreach (var kv in doc.Entidades.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)))
+                                        {
+                                            <span class="st-ent" title="@kv.Key"><b>@kv.Key:</b> @kv.Value</span>
+                                        }
+                                    </div>
+                                }
+                                @if (doc.Observaciones.Count > 0)
+                                {
+                                    <div style="font-size:12px; color:#b06000; margin-top:4px;">
+                                        <i class="fa fa-exclamation-circle"></i> @string.Join(" · ", doc.Observaciones)
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        @if (vinculosPorPrincipal.TryGetValue(doc.DocId, out var hijos))
+                        {
+                            <div class="st-arbol-hijos">
+                                @foreach (var v in hijos)
+                                {
+                                    if (!porId.TryGetValue(v.AJustificante, out var hijo)) { continue; }
+                                    <div class="st-arbol-hijo">
+                                        <span class="st-rel @(v.Relacion?.ToUpperInvariant() == "CONTRADICE" ? "is-bad" : v.Relacion?.ToUpperInvariant() == "DUPLICADO" ? "is-dup" : "")">
+                                            <i class="fa fa-level-up fa-rotate-90"></i> @v.Relacion?.ToLowerInvariant()
+                                        </span>
+                                        <div class="st-doc-card st-doc-card--mini @hijo.TipoCss">
+                                            <span class="st-doc-tipo"><i class="fa @hijo.TipoIcono"></i> @hijo.Tipo.Replace('_', ' ')</span>
+                                            <div class="st-doc-body">
+                                                <div class="st-doc-titulo">@hijo.Nombre</div>
+                                                <div class="st-doc-resumen">@(v.Detalle ?? hijo.Resumen)</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+@await Component.InvokeAsync("ToolsUsadas", new { caseCode = Model.CaseCode })
+
+@section Scripts {
+    <script src="~/js/app/st-progreso.js" asp-append-version="true"></script>
+}

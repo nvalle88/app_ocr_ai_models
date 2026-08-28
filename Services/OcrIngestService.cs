@@ -7,6 +7,7 @@ using Azure;
 using Azure.AI.DocumentIntelligence;
 using Azure.Storage.Blobs;
 using Microsoft.EntityFrameworkCore;
+using System.Text;
 
 namespace app_ocr_ai_models.Services
 {
@@ -32,7 +33,22 @@ namespace app_ocr_ai_models.Services
         }
 
         /// <inheritdoc/>
+        /// <remarks>
+        /// WRAPPER de <see cref="ProcessFileDetailedAsync"/>: se conserva sin cambios de
+        /// firma ni de semántica para los callers existentes (SobresController,
+        /// ArmonixDocumentProvider, ZendeskDocumentProvider y el legacy Nexus/OcrTest).
+        /// El Text devuelto sigue siendo exactamente AnalyzeResult.Content.
+        /// </remarks>
         public async Task<(string Url, string Text)> ProcessFileAsync(
+            OcrFile file,
+            int timeoutMilliseconds = 90000)
+        {
+            var resultado = await ProcessFileDetailedAsync(file, timeoutMilliseconds);
+            return (Url: resultado.Url, Text: resultado.Text);
+        }
+
+        /// <inheritdoc/>
+        public async Task<OcrResultado> ProcessFileDetailedAsync(
             OcrFile file,
             int timeoutMilliseconds = 90000)
         {
@@ -61,7 +77,18 @@ namespace app_ocr_ai_models.Services
                     new Uri(blobUrl),
                     cancellationToken: cts.Token);
 
-                return (Url: blobUrl, Text: operation.Value.Content ?? string.Empty);
+                var analyze = operation.Value;
+
+                // Text = AnalyzeResult.Content, TAL CUAL. No se recompone desde las
+                // páginas: así el contrato del wrapper no cambia ni un carácter.
+                var contenidoCompleto = analyze.Content ?? string.Empty;
+
+                return new OcrResultado
+                {
+                    Url     = blobUrl,
+                    Text    = contenidoCompleto,
+                    Paginas = ExtraerPaginas(analyze, contenidoCompleto)
+                };
             }
             catch (TaskCanceledException)
             {
@@ -112,6 +139,102 @@ namespace app_ocr_ai_models.Services
         }
 
         // ── Helpers privados ────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Proyecta AnalyzeResult.Pages a <see cref="PaginaOcr"/>.
+        /// NUNCA lanza: si el modelo no devolvió Pages retorna lista vacía, porque
+        /// perder el desglose por página no debe tumbar la ingesta del documento.
+        /// </summary>
+        private static List<PaginaOcr> ExtraerPaginas(AnalyzeResult result, string contenidoCompleto)
+        {
+            var paginas = new List<PaginaOcr>();
+
+            var pages = result?.Pages;
+            if (pages == null || pages.Count == 0)
+                return paginas;
+
+            foreach (var page in pages)
+            {
+                var lineas = page.Lines;
+                string texto;
+                var desdeSpans = false;
+
+                if (lineas != null && lineas.Count > 0)
+                {
+                    // ── VÍA PRINCIPAL ────────────────────────────────────────────
+                    // DocumentLine.Content ya viene concatenado en orden de lectura;
+                    // unir las líneas con '\n' reconstruye la página sin depender de
+                    // la aritmética de offsets de DocumentSpan.
+                    var sb = new StringBuilder(1024);
+                    foreach (var linea in lineas)
+                    {
+                        if (string.IsNullOrEmpty(linea.Content))
+                            continue;
+                        if (sb.Length > 0)
+                            sb.Append('\n');
+                        sb.Append(linea.Content);
+                    }
+                    texto = sb.ToString();
+                }
+                else
+                {
+                    // ── FALLBACK ─────────────────────────────────────────────────
+                    // Sin Lines: recortar el Content global con los DocumentSpan de la
+                    // página. Los offsets están en las unidades del stringIndexType del
+                    // servicio (que la sobrecarga 1.0.0 no permite fijar), así que se
+                    // acotan los límites y se marca el origen del texto.
+                    texto = RecortarPorSpans(contenidoCompleto, page.Spans);
+                    desdeSpans = texto.Length > 0;
+
+                    // Documento de una sola página: el Content global ES la página.
+                    if (texto.Length == 0 && pages.Count == 1)
+                        texto = contenidoCompleto;
+                }
+
+                paginas.Add(new PaginaOcr
+                {
+                    PageNumber      = page.PageNumber,
+                    Text            = texto,
+                    Width           = page.Width,
+                    Height          = page.Height,
+                    Unit            = page.Unit?.ToString(),
+                    Angle           = page.Angle,
+                    LineCount       = lineas?.Count ?? 0,
+                    WordCount       = page.Words?.Count ?? 0,
+                    TextoDesdeSpans = desdeSpans
+                });
+            }
+
+            return paginas;
+        }
+
+        /// <summary>
+        /// Recorta el Content global usando los spans indicados, acotando offset y
+        /// longitud al tamaño real de la cadena (nunca lanza ArgumentOutOfRange).
+        /// </summary>
+        private static string RecortarPorSpans(string contenido, IReadOnlyList<DocumentSpan>? spans)
+        {
+            if (string.IsNullOrEmpty(contenido) || spans == null || spans.Count == 0)
+                return string.Empty;
+
+            var sb = new StringBuilder(256);
+
+            foreach (var span in spans)   // DocumentSpan es struct: Offset/Length
+            {
+                var offset = span.Offset;
+                var length = span.Length;
+
+                if (offset < 0 || offset >= contenido.Length || length <= 0)
+                    continue;
+
+                if (offset + length > contenido.Length)
+                    length = contenido.Length - offset;   // clamp
+
+                sb.Append(contenido, offset, length);
+            }
+
+            return sb.ToString();
+        }
 
         private async Task<string> UploadBlobInternalAsync(
             OcrFile file,

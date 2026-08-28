@@ -1,0 +1,167 @@
+@using app_ocr_ai_models.Areas.Studio.Models
+@model AuditoriaViewModel
+@{
+    Layout = null;
+    var a = Model.Auditoria;
+    var d = a?.Datos;
+    string N(decimal? v) => v.HasValue ? v.Value.ToString("N0") : "—";
+}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <title>Auditoría de medicina — Caso @Model.ShortCode</title>
+    <style>
+        :root { --azul:#003366; --acento:#1a73e8; --linea:#d9e1ec; --gris:#6b7688; }
+        * { box-sizing:border-box; }
+        body { font-family:'Segoe UI',Arial,sans-serif; color:#222; margin:0; background:#f2f4f8; }
+        .hoja { max-width:900px; margin:20px auto; background:#fff; padding:36px 44px; box-shadow:0 2px 14px rgba(0,0,0,.08); }
+        header.encabezado { display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid var(--azul); padding-bottom:14px; margin-bottom:22px; }
+        .logo { display:flex; align-items:center; gap:12px; } .logo img { height:44px; }
+        .logo .marca { font-size:20px; font-weight:700; color:var(--azul); }
+        .meta { text-align:right; font-size:12px; color:var(--gris); }
+        h1 { font-size:20px; color:var(--azul); margin:0 0 4px; }
+        h2 { font-size:15px; color:var(--azul); border-bottom:1px solid var(--linea); padding-bottom:5px; margin:24px 0 10px; }
+        table.datos { width:100%; border-collapse:collapse; font-size:13px; }
+        table.datos th { text-align:left; color:var(--gris); font-weight:600; width:190px; padding:4px 12px 4px 0; vertical-align:top; }
+        table.datos td { padding:4px 0; }
+        table.lista { width:100%; border-collapse:collapse; font-size:12.5px; }
+        table.lista th { background:#eef2f8; color:var(--azul); text-align:left; padding:6px 10px; border-bottom:2px solid var(--linea); }
+        table.lista td { padding:6px 10px; border-bottom:1px solid var(--linea); vertical-align:top; }
+        table.lista th.num, table.lista td.num { text-align:right; font-variant-numeric:tabular-nums; }
+        .bloque { white-space:pre-wrap; font-size:12.5px; line-height:1.55; background:#f8fafd; border-left:3px solid var(--acento); padding:12px 16px; border-radius:0 4px 4px 0; }
+        .aviso { display:inline-block; background:#fff3cd; color:#856404; border:1px solid #ffe08a; border-radius:4px; padding:4px 10px; font-size:11.5px; font-weight:600; }
+        .kpis { display:flex; gap:10px; margin:10px 0 4px; }
+        .kpi { flex:1; border:1px solid var(--linea); border-radius:5px; padding:8px 10px; text-align:center; }
+        .kpi .v { font-size:16px; font-weight:700; color:var(--azul); } .kpi .v.err { color:#c5221f; }
+        .kpi .l { font-size:10.5px; text-transform:uppercase; letter-spacing:.3px; color:var(--gris); margin-top:3px; }
+        .al { border:1px solid var(--linea); border-left:5px solid var(--c,var(--gris)); border-radius:5px; padding:9px 13px; margin-bottom:8px; }
+        .al .n { font-size:11px; font-weight:700; color:var(--c,var(--gris)); letter-spacing:.3px; }
+        .al .t { font-weight:600; font-size:13px; margin-top:2px; }
+        .al .d { font-size:12.5px; color:#444; margin-top:2px; }
+        .al .ac { font-size:12px; color:var(--azul); margin-top:4px; }
+        .al.is-critica { --c:#c5221f; background:#fdeeed; }
+        .al.is-advertencia { --c:#b06000; background:#fdf5e9; }
+        .al.is-ok { --c:#137333; background:#eef8f1; }
+        .pie { margin-top:30px; padding-top:10px; border-top:1px solid var(--linea); font-size:11px; color:var(--gris); display:flex; justify-content:space-between; }
+        .acciones { position:sticky; top:0; background:var(--azul); padding:10px 16px; display:flex; gap:10px; justify-content:flex-end; }
+        .acciones button, .acciones a { background:#fff; color:var(--azul); border:0; border-radius:4px; padding:8px 18px; font-size:13.5px; font-weight:600; cursor:pointer; text-decoration:none; }
+        @@media print {
+            .acciones { display:none !important; }
+            body { background:#fff; } .hoja { box-shadow:none; margin:0; max-width:none; padding:0 8mm; }
+            h2 { break-after:avoid; } .al, table.lista tr { break-inside:avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="acciones">
+        <a href="@Url.Action("Index","Auditoria", new { area="Studio", caseCode = Model.CaseCode })">← Volver</a>
+        <button type="button" onclick="window.print()">⬇ Descargar PDF / Imprimir</button>
+    </div>
+
+    <div class="hoja">
+        <header class="encabezado">
+            <div class="logo">
+                <img src="~/img/logo_saludsa_home.svg" alt="Saludsa" />
+                <span class="marca">Saludsa · Nexus IA</span>
+            </div>
+            <div class="meta">
+                Auditoría de medicina (asistencia IA)<br />
+                Generado: @DateTime.Now.ToString("dd/MM/yyyy HH:mm")<br />
+                Por: @Model.GeneradoPor
+            </div>
+        </header>
+
+        <h1>Auditoría de medicina — Caso @Model.ShortCode</h1>
+        <div style="margin:6px 0 12px;"><span class="aviso">@Model.Disclaimer</span></div>
+
+        @if (a == null)
+        {
+            <h2>Resultado</h2>
+            <div class="bloque">@Model.RawText</div>
+        }
+        else
+        {
+            <h2>1. Resumen del caso</h2>
+            <div class="bloque">@a.ResumenCaso</div>
+            @if (a.DocumentosAnalizados.Count > 0)
+            {
+                <table class="datos" style="margin-top:8px;">
+                    <tr><th>Documentos analizados</th><td>@string.Join(" · ", a.DocumentosAnalizados)</td></tr>
+                </table>
+            }
+
+            @if (d != null)
+            {
+                <h2>2. Datos estructurados</h2>
+                <table class="datos">
+                    <tr><th>Beneficiario</th><td>@(d.Beneficiario ?? "—")</td></tr>
+                    <tr><th>Diagnóstico</th><td>@(d.Diagnostico ?? "—")</td></tr>
+                    <tr><th>Medicamento</th><td>@(d.Medicamento ?? "—")</td></tr>
+                    <tr><th>Dosis / posología</th><td>@d.Dosis @d.Posologia</td></tr>
+                    <tr><th>Período</th><td>@(d.Periodo ?? "—")</td></tr>
+                </table>
+                <div class="kpis">
+                    <div class="kpi"><div class="v">@N(d.CantidadCorrespondeMes)</div><div class="l">Corresponde al mes</div></div>
+                    <div class="kpi"><div class="v">@N(d.YaCubierto)</div><div class="l">Ya cubierto</div></div>
+                    <div class="kpi"><div class="v">@N(d.SaldoPendiente)</div><div class="l">Saldo pendiente</div></div>
+                    <div class="kpi">
+                        @{ var exc = d.CantidadFacturada.HasValue && d.CantidadCorrespondeMes.HasValue && d.CantidadFacturada > d.CantidadCorrespondeMes; }
+                        <div class="v @(exc ? "err" : "")">@N(d.CantidadFacturada)</div><div class="l">Facturado</div>
+                    </div>
+                </div>
+            }
+
+            <h2>3. Alertas (@a.Alertas.Count)</h2>
+            @foreach (var al in a.Alertas)
+            {
+                <div class="al @al.NivelCss">
+                    <div class="n">@al.NivelLabel</div>
+                    <div class="t">@al.Titulo</div>
+                    @if (!string.IsNullOrWhiteSpace(al.Detalle)) { <div class="d">@al.Detalle</div> }
+                    @if (!string.IsNullOrWhiteSpace(al.AccionSugerida)) { <div class="ac">→ @al.AccionSugerida</div> }
+                </div>
+            }
+
+            @if (a.Faltantes.Count > 0)
+            {
+                <h2>4. Información faltante</h2>
+                <div class="bloque">@string.Join("\n", a.Faltantes.Select(f => "• " + f))</div>
+            }
+
+            <h2>@(a.Faltantes.Count > 0 ? "5" : "4"). Recomendación para el auditor</h2>
+            <div class="bloque">@a.Recomendacion</div>
+
+            @if (!string.IsNullOrWhiteSpace(a.NotaAuditoria))
+            {
+                <h2>@(a.Faltantes.Count > 0 ? "6" : "5"). Nota de auditoría (para el expediente)</h2>
+                <div class="bloque">@a.NotaAuditoria</div>
+            }
+
+            @if (Model.ToolInvocaciones.Count > 0)
+            {
+                <h2>@(a.Faltantes.Count > 0 ? "7" : "6"). Herramientas consultadas (auditoría)</h2>
+                <table class="lista">
+                    <thead><tr><th>Herramienta</th><th>Cuándo</th><th class="num">Duración</th><th>Resultado</th></tr></thead>
+                    <tbody>
+                        @foreach (var ti in Model.ToolInvocaciones)
+                        {
+                            <tr>
+                                <td>@ti.ToolCode</td>
+                                <td>@ti.StartDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+                                <td class="num">@(ti.DuracionSeg.HasValue ? $"{ti.DuracionSeg.Value:N1}s" : "—")</td>
+                                <td>@(ti.IsError ? "Error" : "OK")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        }
+
+        <div class="pie">
+            <span>Saludsa — Nexus IA · Asistencia al auditor médico · No constituye dictamen clínico ni decisión de cobertura</span>
+            <span>Caso @Model.ShortCode</span>
+        </div>
+    </div>
+</body>
+</html>

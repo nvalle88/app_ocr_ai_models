@@ -11,7 +11,15 @@ public partial class StepExecution
 
     public int StepOrder { get; set; }
 
-    public int DataFileId { get; set; }
+    /// <summary>
+    /// El documento sobre el que opera este paso, si opera sobre alguno.
+    ///
+    /// Es anulable porque hay ejecuciones legítimas sin documento: la primera
+    /// del portal del afiliado resuelve sus contratos por cédula, y en ese
+    /// momento todavía no ha subido nada. Antes se escribía 0, que violaba
+    /// FK_StepExecution_DataFile (REQ-020b).
+    /// </summary>
+    public int? DataFileId { get; set; }
 
     public string ModelCode { get; set; } = null!;
 

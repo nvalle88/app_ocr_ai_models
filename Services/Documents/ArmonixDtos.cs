@@ -183,6 +183,9 @@ public sealed class ArmonixSobreResueltoDto
 
     /// <summary>Fecha de recepción del sobre (SobreEntity.FechaRecepcion).</summary>
     public DateTime? FechaRecepcion { get; init; }
+
+    /// <summary>Valor presentado del sobre (Sobre.ValorPresentado), para mostrar en la selección.</summary>
+    public decimal? ValorPresentado { get; init; }
 }
 
 /// <summary>

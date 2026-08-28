@@ -1,80 +1,95 @@
 @model BusquedaSobreArmonixViewModel
 @{
-    ViewData["Title"] = "Resultados de búsqueda en Armonix";
+    ViewData["Title"] = "Resultados de búsqueda";
 }
 
-<div class="studio-breadcrumb">
-    Studio /
-    <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> /
-    <a asp-area="Studio" asp-controller="Sobres" asp-action="ImportarArmonix">Armonix</a> /
-    Resultados
+<div class="st-head">
+    <div class="st-head-main">
+        <div class="st-crumbs">
+            Studio /
+            <a asp-area="Studio" asp-controller="Sobres" asp-action="Index">Sobres</a> /
+            <a asp-area="Studio" asp-controller="Sobres" asp-action="ImportarArmonix">Buscar</a> /
+            Resultados
+        </div>
+        <h1 class="st-title"><i class="fa fa-list"></i>Sobres encontrados</h1>
+        <p class="st-sub">Búsqueda: <strong>@Model.CriterioBuscado</strong></p>
+    </div>
+    <div class="st-actions">
+        <a asp-area="Studio" asp-controller="Sobres" asp-action="ImportarArmonix" class="btn btn-default">
+            <i class="fa fa-search"></i> Nueva búsqueda
+        </a>
+    </div>
 </div>
 
-<div class="studio-card">
-    <h4>Resultados de búsqueda — <em>@Model.CriterioBuscado</em></h4>
-
-    @if (!string.IsNullOrEmpty(Model.Error))
-    {
-        <div class="alert-error">@Model.Error</div>
-    }
-    else if (Model.Sobres.Count == 0)
-    {
-        <div class="alert-warn">
-            No se encontró ningún sobre para <strong>@Model.CriterioBuscado</strong> en Armonix.
-            Verifica el número de sobre o la cédula e intenta nuevamente.
+<div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+    <header><span class="widget-icon"><i class="fa fa-inbox"></i></span><h2>Selecciona el sobre a importar</h2></header>
+    <div>
+        <div class="widget-body">
+            @if (!string.IsNullOrEmpty(Model.Error))
+            {
+                <div class="alert alert-danger">@Model.Error</div>
+            }
+            else if (Model.Sobres.Count == 0)
+            {
+                <div class="st-empty">
+                    <i class="fa fa-inbox"></i>
+                    No se encontró ningún sobre para <strong>@Model.CriterioBuscado</strong>.
+                    <div style="margin-top:8px; font-size:12.5px;">
+                        Verifica el dato. Recuerda que este ambiente busca en la base de <strong>Pruebas</strong>:
+                        sobres muy recientes de Producción pueden no existir aquí todavía.
+                    </div>
+                </div>
+            }
+            else
+            {
+                <p class="text-muted" style="font-size:13px;">
+                    <strong>@Model.Sobres.Count</strong> sobre(s), del más reciente al más antiguo.
+                </p>
+                <table class="table table-striped table-bordered table-hover" width="100%">
+                    <thead>
+                        <tr>
+                            <th>N.° de Sobre</th>
+                            <th>Cliente</th>
+                            <th>Estado</th>
+                            <th style="text-align:right;">Valor</th>
+                            <th>Recepción</th>
+                            <th style="width:120px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var sobre in Model.Sobres)
+                        {
+                            <tr>
+                                <td><strong>@sobre.NumeroSobre</strong></td>
+                                <td>@(string.IsNullOrWhiteSpace(sobre.NombreTitular) ? "—" : sobre.NombreTitular)</td>
+                                <td>
+                                    <span class="label label-default">@(string.IsNullOrWhiteSpace(sobre.EstadoSobre) ? "—" : sobre.EstadoSobre)</span>
+                                </td>
+                                <td style="text-align:right;">
+                                    @(sobre.ValorPresentado.HasValue ? sobre.ValorPresentado.Value.ToString("C2") : "—")
+                                </td>
+                                <td>@(sobre.FechaRecepcion.HasValue ? sobre.FechaRecepcion.Value.ToString("dd/MM/yyyy") : "—")</td>
+                                <td>
+                                    <form asp-area="Studio" asp-controller="Sobres" asp-action="ConfirmarSobreArmonix" method="post" style="display:inline;"
+                                          onsubmit="mostrarLoadingPanel('content', 'Consultando los documentos del sobre en M-Files…');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="numeroSobre" value="@sobre.NumeroSobre" />
+                                        <input type="hidden" name="numeroContrato" value="@sobre.NumeroContrato" />
+                                        <input type="hidden" name="codigoProducto" value="@sobre.CodigoProducto" />
+                                        <input type="hidden" name="codigoRegion" value="@sobre.CodigoRegion" />
+                                        <input type="hidden" name="numeroPersonaPaciente" value="@sobre.NumeroPersonaPaciente" />
+                                        <input type="hidden" name="nombreTitular" value="@sobre.NombreTitular" />
+                                        <input type="hidden" name="processCode" value="@Model.ProcessCode" />
+                                        <button type="submit" class="btn btn-xs btn-primary">
+                                            <i class="fa fa-arrow-right"></i> Seleccionar
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
         </div>
-    }
-    else
-    {
-        <p style="font-size:0.9em; color:#333;">
-            Se encontraron <strong>@Model.Sobres.Count</strong> sobre(s). Selecciona el que deseas importar.
-        </p>
-
-        <table class="studio-table" style="width:100%; font-size:0.88em; border-collapse:collapse; margin-bottom:16px;">
-            <thead>
-                <tr style="background:#f4f6f8; text-align:left;">
-                    <th style="padding:8px 10px;">N.° de Sobre</th>
-                    <th style="padding:8px 10px;">Afiliado</th>
-                    <th style="padding:8px 10px;">Estado</th>
-                    <th style="padding:8px 10px;">Fecha Recepción</th>
-                    <th style="padding:8px 10px;"></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var sobre in Model.Sobres)
-                {
-                    <tr style="border-top:1px solid #e0e4ea;">
-                        <td style="padding:7px 10px; font-weight:600;">@sobre.NumeroSobre</td>
-                        <td style="padding:7px 10px;">@(string.IsNullOrWhiteSpace(sobre.NombreTitular) ? "—" : sobre.NombreTitular)</td>
-                        <td style="padding:7px 10px;">@(string.IsNullOrWhiteSpace(sobre.EstadoSobre) ? "—" : sobre.EstadoSobre)</td>
-                        <td style="padding:7px 10px;">
-                            @(sobre.FechaRecepcion.HasValue ? sobre.FechaRecepcion.Value.ToString("dd/MM/yyyy") : "—")
-                        </td>
-                        <td style="padding:7px 10px;">
-                            <form asp-area="Studio" asp-controller="Sobres" asp-action="ConfirmarSobreArmonix" method="post" style="display:inline;">
-                                @Html.AntiForgeryToken()
-                                <input type="hidden" name="numeroSobre"           value="@sobre.NumeroSobre" />
-                                <input type="hidden" name="numeroContrato"        value="@sobre.NumeroContrato" />
-                                <input type="hidden" name="codigoProducto"        value="@sobre.CodigoProducto" />
-                                <input type="hidden" name="codigoRegion"          value="@sobre.CodigoRegion" />
-                                <input type="hidden" name="numeroPersonaPaciente" value="@sobre.NumeroPersonaPaciente" />
-                                <input type="hidden" name="nombreTitular"         value="@sobre.NombreTitular" />
-                                <input type="hidden" name="processCode"           value="@Model.ProcessCode" />
-                                <button type="submit" class="btn-studio btn-primary-studio" style="padding:4px 12px; font-size:0.85em;">
-                                    Seleccionar
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
-
-    <div style="margin-top:14px;">
-        <a asp-area="Studio" asp-controller="Sobres" asp-action="ImportarArmonix"
-           class="btn-studio btn-secondary-studio">
-            Nueva búsqueda
-        </a>
     </div>
 </div>

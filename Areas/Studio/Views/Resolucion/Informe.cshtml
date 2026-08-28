@@ -1,0 +1,208 @@
+@using app_ocr_ai_models.Areas.Studio.Models
+@model ResolucionViewModel
+@{
+    Layout = null;
+    string M(decimal v) => v.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-EC"));
+    var p = Model.Propuesta;
+    var c = p?.Cabecera;
+    var t = p?.Totales;
+}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <title>Resolución de reembolso — Caso @Model.ShortCode</title>
+    <style>
+        :root { --azul:#003366; --acento:#1a73e8; --linea:#d9e1ec; --gris:#6b7688; }
+        * { box-sizing: border-box; }
+        body { font-family:'Segoe UI',Arial,sans-serif; color:#222; margin:0; background:#f2f4f8; }
+        .hoja { max-width:900px; margin:20px auto; background:#fff; padding:36px 44px; box-shadow:0 2px 14px rgba(0,0,0,.08); }
+        header.encabezado { display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid var(--azul); padding-bottom:14px; margin-bottom:22px; }
+        .logo { display:flex; align-items:center; gap:12px; }
+        .logo img { height:44px; }
+        .logo .marca { font-size:20px; font-weight:700; color:var(--azul); }
+        .meta { text-align:right; font-size:12px; color:var(--gris); }
+        h1 { font-size:20px; color:var(--azul); margin:0 0 4px; }
+        h2 { font-size:15px; color:var(--azul); border-bottom:1px solid var(--linea); padding-bottom:5px; margin:24px 0 10px; }
+        table.datos { width:100%; border-collapse:collapse; font-size:13px; }
+        table.datos th { text-align:left; color:var(--gris); font-weight:600; width:190px; padding:4px 12px 4px 0; vertical-align:top; }
+        table.datos td { padding:4px 0; }
+        table.lista { width:100%; border-collapse:collapse; font-size:12.5px; }
+        table.lista th { background:#eef2f8; color:var(--azul); text-align:left; padding:6px 10px; border-bottom:2px solid var(--linea); }
+        table.lista th.num, table.lista td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+        table.lista td { padding:6px 10px; border-bottom:1px solid var(--linea); vertical-align:top; }
+        table.lista tfoot td { font-weight:700; color:var(--azul); border-top:2px solid var(--azul); padding:7px 10px; }
+        .bloque { white-space:pre-wrap; font-size:12.5px; line-height:1.55; background:#f8fafd; border-left:3px solid var(--acento); padding:12px 16px; border-radius:0 4px 4px 0; word-break:break-word; }
+        .no-oficial { display:inline-block; background:#fff3cd; color:#856404; border:1px solid #ffe08a; border-radius:4px; padding:4px 10px; font-size:11.5px; font-weight:600; }
+        .pie { margin-top:30px; padding-top:10px; border-top:1px solid var(--linea); font-size:11px; color:var(--gris); display:flex; justify-content:space-between; }
+        .acciones { position:sticky; top:0; background:var(--azul); padding:10px 16px; display:flex; gap:10px; justify-content:flex-end; z-index:5; }
+        .acciones button, .acciones a { background:#fff; color:var(--azul); border:0; border-radius:4px; padding:8px 18px; font-size:13.5px; font-weight:600; cursor:pointer; text-decoration:none; }
+        /* Banner de estado */
+        .reso-banner { display:flex; flex-wrap:wrap; align-items:center; gap:14px; border:1px solid var(--linea); border-left:6px solid var(--rc,var(--gris)); background:var(--rbg,#f8fafd); border-radius:6px; padding:12px 16px; margin:10px 0 4px; }
+        .reso-banner .estado { font-size:16px; font-weight:700; color:var(--rc,var(--azul)); }
+        .reso-banner .frase { font-size:13px; color:#444; flex:1 1 200px; }
+        .reso-banner .total { font-size:13px; color:var(--azul); }
+        .reso-banner.is-liquida{--rc:#137333;--rbg:#eef8f1;} .reso-banner.is-semi{--rc:#b06000;--rbg:#fdf5e9;}
+        .reso-banner.is-ch{--rc:#8430ce;--rbg:#f6eefd;} .reso-banner.is-negativa{--rc:#c5221f;--rbg:#fdeeed;}
+        .reso-kpis { display:flex; gap:10px; margin:10px 0 4px; }
+        .reso-kpi { flex:1; border:1px solid var(--linea); border-radius:5px; padding:8px 10px; text-align:center; }
+        .reso-kpi .v { font-size:15px; font-weight:700; color:var(--azul); } .reso-kpi .v.ok{color:#137333;} .reso-kpi .v.err{color:#c5221f;}
+        .reso-kpi .l { font-size:10.5px; text-transform:uppercase; letter-spacing:.3px; color:var(--gris); margin-top:3px; }
+        .reso-regla { font-family:Consolas,monospace; font-size:11px; color:#3a4a6b; }
+        @@media print {
+            .acciones { display:none !important; }
+            body { background:#fff; } .hoja { box-shadow:none; margin:0; max-width:none; padding:0 8mm; }
+            h2 { break-after:avoid; } .reso-banner, table.lista tr { break-inside:avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="acciones">
+        <a href="@Url.Action("Index","Resolucion", new { area="Studio", caseCode = Model.CaseCode })">← Volver</a>
+        <button type="button" onclick="window.print()">⬇ Descargar PDF / Imprimir</button>
+    </div>
+
+    <div class="hoja">
+        <header class="encabezado">
+            <div class="logo">
+                <img src="~/img/logo_saludsa_home.svg" alt="Saludsa" />
+                <span class="marca">Saludsa · Nexus IA</span>
+            </div>
+            <div class="meta">
+                Resolución de reembolso (pre-liquidación)<br />
+                Generado: @DateTime.Now.ToString("dd/MM/yyyy HH:mm")<br />
+                Por: @Model.GeneradoPor
+            </div>
+        </header>
+
+        <h1>Resolución de reembolso — Caso @Model.ShortCode</h1>
+        <div style="margin:6px 0 12px;"><span class="no-oficial">@Model.Disclaimer</span></div>
+
+        <div class="reso-banner @Model.EstadoCss">
+            <span class="estado">@Model.EstadoLabel</span>
+            <span class="frase">@Model.EstadoFrase</span>
+            @if (t != null) { <span class="total">Valor a reembolsar (est.): <strong>@M(t.EstimadoPagar == 0 ? t.Cubierto : t.EstimadoPagar)</strong></span> }
+        </div>
+
+        <h2>1. Datos del caso</h2>
+        <table class="datos">
+            @if (c != null)
+            {
+                <tr><th>Sobre</th><td>@c.NumeroSobre</td></tr>
+                <tr><th>Titular / beneficiario</th><td>@c.Titular @(string.IsNullOrWhiteSpace(c.Beneficiario) ? "" : $"· {c.Beneficiario}")</td></tr>
+                <tr><th>Contrato / producto</th><td>@c.Contrato · @c.Producto @(string.IsNullOrWhiteSpace(c.Region) ? "" : $"· {c.Region}")</td></tr>
+                <tr><th>Prestador</th><td>@c.Prestador</td></tr>
+            }
+            <tr><th>CaseCode</th><td style="font-family:monospace;">@Model.CaseCode</td></tr>
+        </table>
+
+        @if (Model.RawText != null)
+        {
+            <h2>2. Análisis (requiere control humano)</h2>
+            <div class="bloque">@Model.RawText</div>
+        }
+        else if (p != null)
+        {
+            <h2>2. Resumen</h2>
+            @if (t != null)
+            {
+                <div class="reso-kpis">
+                    <div class="reso-kpi"><div class="v">@M(t.Presentado)</div><div class="l">Facturado</div></div>
+                    <div class="reso-kpi"><div class="v ok">@M(t.Cubierto)</div><div class="l">Cubierto</div></div>
+                    <div class="reso-kpi"><div class="v">@M(t.Copago)</div><div class="l">Copago</div></div>
+                    <div class="reso-kpi"><div class="v">@M(t.Deducible)</div><div class="l">Deducible</div></div>
+                    <div class="reso-kpi"><div class="v err">@M(t.NoCubierto)</div><div class="l">No cubierto</div></div>
+                </div>
+            }
+
+            <h2>3. Detalle de liquidación</h2>
+            <table class="lista">
+                <thead>
+                    <tr><th>Ítem</th><th class="num">Facturado</th><th class="num">Cubierto</th><th class="num">Copago</th><th class="num">Deducible</th><th class="num">No cubierto</th><th>Regla</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var it in p.Items)
+                    {
+                        <tr>
+                            <td>@it.Descripcion@(string.IsNullOrWhiteSpace(it.Motivo) ? "" : $" — {it.Motivo}")</td>
+                            <td class="num">@M(it.ValorPresentado)</td>
+                            <td class="num">@M(it.ValorCubierto)</td>
+                            <td class="num">@M(it.ValorCopago)</td>
+                            <td class="num">@M(it.ValorDeducible)</td>
+                            <td class="num">@M(it.ValorNoCubierto)</td>
+                            <td><span class="reso-regla">@it.ReglaAplicada</span></td>
+                        </tr>
+                    }
+                </tbody>
+                @if (t != null)
+                {
+                    <tfoot>
+                        <tr>
+                            <td>Totales</td>
+                            <td class="num">@M(t.Presentado)</td><td class="num">@M(t.Cubierto)</td>
+                            <td class="num">@M(t.Copago)</td><td class="num">@M(t.Deducible)</td>
+                            <td class="num">@M(t.NoCubierto)</td><td>A reembolsar: @M(t.EstimadoPagar == 0 ? t.Cubierto : t.EstimadoPagar)</td>
+                        </tr>
+                    </tfoot>
+                }
+            </table>
+
+            @if (p.ReglasEvaluadas.Count > 0)
+            {
+                <h2>4. Reglas evaluadas (auditoría)</h2>
+                <table class="lista">
+                    <thead><tr><th>Familia</th><th>Regla</th><th>Resultado</th><th>Detalle</th><th>Evidencia</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in p.ReglasEvaluadas)
+                        {
+                            <tr>
+                                <td>@r.Familia</td>
+                                <td>@r.Regla</td>
+                                <td>@(r.Resultado?.Replace('_',' '))</td>
+                                <td>@r.Detalle</td>
+                                <td><span class="reso-regla">@r.Evidencia</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            @if (Model.ToolInvocaciones.Count > 0)
+            {
+                <h2>@(p.ReglasEvaluadas.Count > 0 ? "5" : "4"). Herramientas ejecutadas (registro de auditoría)</h2>
+                <table class="lista">
+                    <thead><tr><th>Herramienta</th><th>Cuándo</th><th>Duración</th><th>Resultado</th></tr></thead>
+                    <tbody>
+                        @foreach (var ti in Model.ToolInvocaciones)
+                        {
+                            <tr>
+                                <td><span class="reso-regla">@ti.ToolCode</span></td>
+                                <td>@ti.StartDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+                                <td>@(ti.DuracionSeg.HasValue ? $"{ti.DuracionSeg.Value:N1}s" : "—")</td>
+                                <td>@(ti.IsError ? "Error" : "OK")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            @if (p.Observaciones.Count > 0)
+            {
+                <h2>Fundamento / observaciones</h2>
+                <div class="bloque">@string.Join("\n", p.Observaciones.Select(o => "• " + o))</div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(Model.CartaTexto))
+            {
+                <h2>@(p.Observaciones.Count > 0 ? "5" : "4"). Carta al cliente (borrador)</h2>
+                <div class="bloque">@Model.CartaTexto</div>
+            }
+        }
+
+        <div class="pie">
+            <span>Saludsa — Nexus IA · Pre-liquidación NO OFICIAL generada por IA · Sujeta a validación formal</span>
+            <span>Caso @Model.ShortCode</span>
+        </div>
+    </div>
+</body>
+</html>

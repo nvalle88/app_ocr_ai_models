@@ -1,0 +1,110 @@
+@using app_ocr_ai_models.Areas.Studio.ViewComponents
+@model ToolsUsadasVm
+
+@*
+    REQ-019 — Qué consultó el agente, en TODAS las pantallas.
+    Es la diferencia entre un dato verificado contra la base y una suposición
+    del modelo: si aquí no hay nada, el resultado salió solo del texto.
+
+    Cada pantalla rinde cuentas de SU agente. Antes se listaba todo el caso
+    revuelto y los prompts de los doce modelos de la base, y por eso parecía
+    que siempre se usaban las mismas herramientas y las mismas skills.
+*@
+
+@if (Model.Invocaciones.Count == 0 && Model.Skills.Count == 0)
+{
+    return;
+}
+
+<details class="st-tools-bloque" @(Model.ConError > 0 ? "open" : "")>
+    <summary>
+        <i class="fa fa-plug"></i>
+        <strong>Qué consultó @(Model.AgenteFiltro ?? "el agente")</strong>
+        @if (Model.Invocaciones.Count > 0)
+        {
+            <span class="st-tools-resumen">
+                @Model.Distintas herramienta@(Model.Distintas == 1 ? "" : "s")
+                · @Model.Invocaciones.Count llamada@(Model.Invocaciones.Count == 1 ? "" : "s")
+                @if (Model.ConError > 0)
+                {
+                    <span class="err">· @Model.ConError con error</span>
+                }
+            </span>
+        }
+        else
+        {
+            <span class="st-tools-resumen vacio">
+                sin llamadas a la base ni a las APIs &mdash; este resultado sale solo del texto
+            </span>
+        }
+    </summary>
+
+    <div class="st-tools-cuerpo">
+        @if (Model.Invocaciones.Count > 0)
+        {
+            <div class="table-responsive">
+                <table class="st-reglas">
+                    <thead>
+                        <tr>
+                            @if (Model.MostrarAgente)
+                            {
+                                <th>Agente</th>
+                            }
+                            <th>Herramienta</th>
+                            <th>Con qué se consultó</th>
+                            <th>Cuándo</th>
+                            <th>Duración</th>
+                            <th>Resultado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in Model.Invocaciones)
+                        {
+                            <tr class="@(t.EsError ? "st-fila-error" : "")">
+                                @if (Model.MostrarAgente)
+                                {
+                                    <td><span class="st-chip">@t.Agente</span></td>
+                                }
+                                <td><code>@t.ToolCode</code></td>
+                                <td><small class="text-muted" style="word-break:break-all;">@t.Entrada</small></td>
+                                <td>@t.Cuando.ToLocalTime().ToString("dd/MM HH:mm:ss")</td>
+                                <td>@(t.DuracionSeg.HasValue ? $"{t.DuracionSeg.Value:N1}s" : "—")</td>
+                                <td>
+                                    @if (t.EsError)
+                                    {
+                                        <span class="err"><i class="fa fa-times"></i> error</span>
+                                        @if (!string.IsNullOrWhiteSpace(t.Motivo))
+                                        {
+                                            <div class="st-tools-motivo">@t.Motivo</div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span class="ok"><i class="fa fa-check"></i> OK</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <small class="text-muted">
+                Registro real de la tabla de auditoría <code>ToolInvocation</code>: cada fila es una
+                consulta que el agente hizo de verdad contra la base o una API.
+            </small>
+        }
+
+        @if (Model.Skills.Count > 0)
+        {
+            <div class="st-tools-skills">
+                <span class="st-tools-skills-lbl">
+                    Skills de @(Model.AgenteFiltro ?? "los agentes del caso") (prompts apilados)
+                </span>
+                @foreach (var sk in Model.Skills)
+                {
+                    <span class="st-chip">@sk</span>
+                }
+            </div>
+        }
+    </div>
+</details>

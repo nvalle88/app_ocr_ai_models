@@ -1,0 +1,170 @@
+@using app_ocr_ai_models.Areas.Studio.Models
+@model InformeCasoViewModel
+@{
+    // Página independiente optimizada para IMPRIMIR (Guardar como PDF del navegador).
+    Layout = null;
+    var shortCode = Model.Caso.CaseCode.ToString().Split('-')[0];
+}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <title>Informe de análisis — Caso @shortCode</title>
+    <style>
+        /* ── Formato corporativo Saludsa (paleta azul institucional) ── */
+        :root { --azul: #003366; --acento: #1a73e8; --linea: #d9e1ec; --gris: #6b7688; }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif; color: #222; margin: 0;
+            background: #f2f4f8;
+        }
+        .hoja {
+            max-width: 900px; margin: 20px auto; background: #fff; padding: 36px 44px;
+            box-shadow: 0 2px 14px rgba(0,0,0,.08);
+        }
+        header.encabezado {
+            display: flex; align-items: center; justify-content: space-between;
+            border-bottom: 3px solid var(--azul); padding-bottom: 14px; margin-bottom: 22px;
+        }
+        .logo { display: flex; align-items: center; gap: 12px; }
+        .logo img { height: 44px; }
+        .logo .marca { font-size: 20px; font-weight: 700; color: var(--azul); }
+        .meta { text-align: right; font-size: 12px; color: var(--gris); }
+        h1 { font-size: 20px; color: var(--azul); margin: 0 0 4px; }
+        h2 {
+            font-size: 15px; color: var(--azul); border-bottom: 1px solid var(--linea);
+            padding-bottom: 5px; margin: 26px 0 10px;
+        }
+        table.datos { width: 100%; border-collapse: collapse; font-size: 13px; }
+        table.datos th {
+            text-align: left; color: var(--gris); font-weight: 600; width: 190px;
+            padding: 4px 12px 4px 0; vertical-align: top;
+        }
+        table.datos td { padding: 4px 0; }
+        table.lista { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+        table.lista th {
+            background: #eef2f8; color: var(--azul); text-align: left;
+            padding: 6px 10px; border-bottom: 2px solid var(--linea);
+        }
+        table.lista td { padding: 6px 10px; border-bottom: 1px solid var(--linea); vertical-align: top; }
+        .bloque {
+            white-space: pre-wrap; font-size: 12.5px; line-height: 1.55;
+            background: #f8fafd; border-left: 3px solid var(--acento);
+            padding: 10px 14px; border-radius: 0 4px 4px 0; word-break: break-word;
+        }
+        .bloque--json { font-family: Consolas, monospace; font-size: 11.5px; }
+        .pie {
+            margin-top: 30px; padding-top: 10px; border-top: 1px solid var(--linea);
+            font-size: 11px; color: var(--gris); display: flex; justify-content: space-between;
+        }
+        .badge { display: inline-block; background: #e6f0e8; color: #1d6f42; border-radius: 10px;
+                 padding: 2px 10px; font-size: 11.5px; font-weight: 600; }
+        .acciones {
+            position: sticky; top: 0; background: var(--azul); padding: 10px 16px;
+            display: flex; gap: 10px; justify-content: flex-end; z-index: 5;
+        }
+        .acciones button, .acciones a {
+            background: #fff; color: var(--azul); border: 0; border-radius: 4px;
+            padding: 8px 18px; font-size: 13.5px; font-weight: 600; cursor: pointer; text-decoration: none;
+        }
+        .acciones button:hover, .acciones a:hover { background: #e8eef7; }
+        @@media print {
+            .acciones { display: none !important; }
+            body { background: #fff; }
+            .hoja { box-shadow: none; margin: 0; max-width: none; padding: 0 8mm; }
+            h2 { break-after: avoid; }
+            .bloque, table.lista tr { break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="acciones">
+        <a href="@Url.Action("Caso", "Sobres", new { area = "Studio", caseCode = Model.Caso.CaseCode })">← Volver al caso</a>
+        <button type="button" onclick="window.print()">⬇ Descargar PDF / Imprimir</button>
+    </div>
+
+    <div class="hoja">
+        <header class="encabezado">
+            <div class="logo">
+                <img src="~/img/logo_saludsa_home.svg" alt="Saludsa" />
+                <span class="marca">Saludsa · Nexus IA</span>
+            </div>
+            <div class="meta">
+                Informe de análisis de sobre<br />
+                Generado: @DateTime.Now.ToString("dd/MM/yyyy HH:mm")<br />
+                Por: @Model.GeneradoPor
+            </div>
+        </header>
+
+        <h1>Informe de análisis — Caso @shortCode</h1>
+        <span class="badge">@Model.Caso.State</span>
+
+        <h2>1. Datos del caso</h2>
+        <table class="datos">
+            <tr><th>CaseCode</th><td style="font-family:monospace;">@Model.Caso.CaseCode</td></tr>
+            <tr><th>Proceso</th><td>@Model.Caso.DefinitionCode</td></tr>
+            <tr><th>Fecha de inicio</th><td>@Model.Caso.StartDate.ToString("dd/MM/yyyy HH:mm")</td></tr>
+            <tr><th>Documentos</th><td>@Model.Archivos.Count</td></tr>
+        </table>
+
+        @if (!string.IsNullOrWhiteSpace(Model.ContextoSobre))
+        {
+            <h2>2. Contexto del sobre (importación)</h2>
+            <div class="bloque bloque--json">@Model.ContextoSobre</div>
+        }
+
+        <h2>3. Documentos analizados</h2>
+        @if (Model.Archivos.Count == 0)
+        {
+            <p style="font-size:13px; color:var(--gris);">El caso no tiene documentos.</p>
+        }
+        else
+        {
+            <table class="lista">
+                <thead><tr><th style="width:30px;">#</th><th>Documento</th><th style="width:130px;">Fecha</th><th style="width:110px;">OCR</th></tr></thead>
+                <tbody>
+                    @{ var i = 1; }
+                    @foreach (var a in Model.Archivos)
+                    {
+                        <tr>
+                            <td>@(i++)</td>
+                            <td>@a.OriginalName</td>
+                            <td>@a.CreatedDate.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>@(string.IsNullOrWhiteSpace(a.Text) ? "sin texto" : $"{a.Text.Length:N0} caracteres")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        @if (Model.Ejecuciones.Count > 0)
+        {
+            <h2>4. Análisis del agente IA (ejecuciones)</h2>
+            foreach (var e in Model.Ejecuciones.Where(x => !string.IsNullOrWhiteSpace(x.ResponseContent)))
+            {
+                <table class="datos" style="margin-top:10px;">
+                    <tr><th>Ejecución</th><td>#@e.ExecutionId · Agente <strong>@e.ModelCode</strong> · @e.Status · @e.StartDate.ToString("dd/MM/yyyy HH:mm")</td></tr>
+                </table>
+                <div class="bloque">@e.ResponseContent</div>
+            }
+        }
+
+        @if (Model.RespuestasChat.Count > 0)
+        {
+            <h2>@(Model.Ejecuciones.Count > 0 ? "5" : "4"). Consultas del chat IA</h2>
+            foreach (var r in Model.RespuestasChat)
+            {
+                <table class="datos" style="margin-top:10px;">
+                    <tr><th>Fecha</th><td>@r.CreatedDate.ToString("dd/MM/yyyy HH:mm")</td></tr>
+                </table>
+                <div class="bloque">@r.ResponseText</div>
+            }
+        }
+
+        <div class="pie">
+            <span>Saludsa — Sistema Nexus IA (Área Studio) · Documento generado automáticamente</span>
+            <span>Caso @shortCode</span>
+        </div>
+    </div>
+</body>
+</html>

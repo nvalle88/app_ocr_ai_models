@@ -69,6 +69,26 @@ public partial class OCRDbContext : DbContext
     // REQ-019 T3: configuración multi-cuenta Zendesk
     public virtual DbSet<ZendeskConf> ZendeskConf { get; set; }
 
+    // REQ-019 / clasificación de documentos de reembolso
+    public virtual DbSet<DataFilePage> DataFilePage { get; set; }
+
+    public virtual DbSet<DocumentoClasificacion> DocumentoClasificacion { get; set; }
+
+    // REQ-019m — tipificación profunda
+    public virtual DbSet<DocumentoProcedimiento> DocumentoProcedimiento { get; set; }
+    public virtual DbSet<ClasificacionSobre> ClasificacionSobre { get; set; }
+
+    /// <summary>REQ-020: la sesión del afiliado en el portal del cliente.</summary>
+    public virtual DbSet<SolicitudCliente> SolicitudCliente { get; set; }
+    public virtual DbSet<CatalogoCodigoLiquidacion> CatalogoCodigoLiquidacion { get; set; }
+    public virtual DbSet<CatalogoBeneficioCorrelacion> CatalogoBeneficioCorrelacion { get; set; }
+
+    public virtual DbSet<DocumentoItem> DocumentoItem { get; set; }
+
+    public virtual DbSet<DocumentoTag> DocumentoTag { get; set; }
+
+    public virtual DbSet<DocumentoDiagnostico> DocumentoDiagnostico { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Agent>(entity =>
@@ -791,6 +811,248 @@ public partial class OCRDbContext : DbContext
                 .HasDefaultValue(true);
 
             entity.HasIndex(e => e.IsActive, "IX_ZendeskConf_IsActive");
+        });
+
+        // REQ-019 / clasificación de documentos de reembolso -----------------------------------
+        // Los nombres de entidad coinciden con los de tabla, así que no hace falta ToTable().
+
+        modelBuilder.Entity<DataFilePage>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_DataFilePage");
+
+            entity.HasIndex(e => new { e.DataFileId, e.PageNumber }, "UQ_DataFilePage_File_Page")
+                .IsUnique();
+
+            entity.Property(e => e.Text).IsUnicode(false);   // varchar(max), igual que DataFile.Text
+            entity.Property(e => e.Unit).HasMaxLength(20).IsUnicode(false);
+            entity.Property(e => e.Width).HasColumnType("real");
+            entity.Property(e => e.Height).HasColumnType("real");
+            entity.Property(e => e.Angle).HasColumnType("real");
+            entity.Property(e => e.CreatedDate)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnType("datetime");
+
+            entity.HasOne(d => d.DataFileNavigation).WithMany(p => p.DataFilePage)
+                .HasForeignKey(d => d.DataFileId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_DataFilePage_DataFile");
+        });
+
+        modelBuilder.Entity<DocumentoClasificacion>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_DocumentoClasificacion");
+
+            // Índice FILTRADO: una sola clasificación vigente por archivo
+            entity.HasIndex(e => e.DataFileId, "UQ_DocumentoClasificacion_Current")
+                .IsUnique()
+                .HasFilter("[IsCurrent] = 1");
+
+            entity.HasIndex(e => e.TipoArchivo, "IX_DocumentoClasificacion_TipoArchivo");
+
+            entity.Property(e => e.TipoArchivo).HasMaxLength(30).IsUnicode(false);
+            entity.Property(e => e.ListaTipoArchivo).HasMaxLength(400).IsUnicode(false);
+            entity.Property(e => e.NumeroFactura).HasMaxLength(50).IsUnicode(false);
+            entity.Property(e => e.ClaveAcceso).HasMaxLength(60).IsUnicode(false);
+            entity.Property(e => e.ModelCode).HasMaxLength(50).IsUnicode(false);
+            entity.Property(e => e.ValorTotal).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+            entity.Property(e => e.Confianza).HasColumnType("decimal(5,4)");
+            entity.Property(e => e.RawJson).HasColumnType("nvarchar(max)");
+            entity.Property(e => e.EsFacturaValida).HasDefaultValue(false);
+            entity.Property(e => e.VersionNumber).HasDefaultValue(1);
+            entity.Property(e => e.IsCurrent).HasDefaultValue(true);
+            entity.Property(e => e.CreatedDate)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnType("datetime");
+
+            entity.HasOne(d => d.DataFileNavigation).WithMany(p => p.DocumentoClasificacion)
+                .HasForeignKey(d => d.DataFileId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_DocumentoClasificacion_DataFile");
+        });
+
+        modelBuilder.Entity<DocumentoItem>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_DocumentoItem");
+            entity.Property(e => e.Id).UseIdentityColumn();
+
+            entity.HasIndex(e => new { e.DataFileId, e.PageNumber }, "IX_DocumentoItem_DataFileId");
+            entity.HasIndex(e => e.TipoRubro, "IX_DocumentoItem_TipoRubro");
+
+            entity.Property(e => e.Descripcion).HasMaxLength(500).IsUnicode(false);
+            entity.Property(e => e.TipoRubro).HasMaxLength(10).IsUnicode(false);
+            entity.Property(e => e.NumeroFactura).HasMaxLength(50).IsUnicode(false);
+            entity.Property(e => e.Cantidad).HasColumnType("decimal(18,4)");
+            entity.Property(e => e.ValorUnitario).HasColumnType("decimal(18,4)");
+            entity.Property(e => e.ValorTotal).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.Confianza).HasColumnType("decimal(5,4)");
+            entity.Property(e => e.CreatedDate)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnType("datetime");
+
+            entity.HasOne(d => d.DataFileNavigation).WithMany(p => p.DocumentoItem)
+                .HasForeignKey(d => d.DataFileId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_DocumentoItem_DataFile");
+        });
+
+        modelBuilder.Entity<DocumentoTag>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_DocumentoTag");
+            entity.Property(e => e.Id).UseIdentityColumn();
+
+            entity.HasIndex(e => new { e.DataFileId, e.PageNumber, e.Tag, e.Origen },
+                    "UQ_DocumentoTag_Unico")
+                .IsUnique();
+
+            entity.HasIndex(e => e.Tag, "IX_DocumentoTag_Tag");
+
+            entity.Property(e => e.Tag).HasMaxLength(60).IsUnicode(false);
+            entity.Property(e => e.Categoria).HasMaxLength(30).IsUnicode(false);
+            entity.Property(e => e.Origen).HasMaxLength(10).IsUnicode(false);
+            entity.Property(e => e.Valor).HasMaxLength(200).IsUnicode(false);
+            entity.Property(e => e.Confianza).HasColumnType("decimal(5,4)");
+            entity.Property(e => e.CreatedDate)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnType("datetime");
+
+            entity.HasOne(d => d.DataFileNavigation).WithMany(p => p.DocumentoTag)
+                .HasForeignKey(d => d.DataFileId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_DocumentoTag_DataFile");
+        });
+
+        modelBuilder.Entity<DocumentoDiagnostico>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_DocumentoDiagnostico");
+            entity.Property(e => e.Id).UseIdentityColumn();
+
+            entity.HasIndex(e => new { e.DataFileId, e.Codigo },
+                    "UQ_DocumentoDiagnostico_File_Codigo")
+                .IsUnique();
+
+            entity.HasIndex(e => e.Codigo, "IX_DocumentoDiagnostico_Codigo");
+
+            entity.Property(e => e.Codigo).HasMaxLength(10).IsUnicode(false);
+            entity.Property(e => e.CodigoOriginal).HasMaxLength(15).IsUnicode(false);
+            entity.Property(e => e.Descripcion).HasMaxLength(300).IsUnicode(false);
+            entity.Property(e => e.ValorAsignado).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.CreatedDate)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnType("datetime");
+
+            entity.HasOne(d => d.DataFileNavigation).WithMany(p => p.DocumentoDiagnostico)
+                .HasForeignKey(d => d.DataFileId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_DocumentoDiagnostico_DataFile");
+        });
+
+        // ── REQ-019m: tipificación profunda ────────────────────────────────
+        modelBuilder.Entity<DocumentoProcedimiento>(e =>
+        {
+            e.ToTable("DocumentoProcedimiento");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.CodigoCpt).HasMaxLength(20);
+            e.Property(x => x.Descripcion).HasMaxLength(500).IsRequired();
+            e.Property(x => x.CodigoLiquidacion).HasMaxLength(20);
+            e.Property(x => x.RubroLiquidacion).HasMaxLength(250);
+            e.Property(x => x.OrigenMatch).HasMaxLength(20);
+            e.Property(x => x.NombreLr05).HasMaxLength(400);
+            e.Property(x => x.CodigoBeneficio).HasMaxLength(10);
+            e.Property(x => x.TipoMedicina).HasMaxLength(20);
+            e.Property(x => x.ScoreHomologacion).HasColumnType("decimal(5,3)");
+            e.Property(x => x.EstadoCorrelacion).HasMaxLength(20);
+            e.Property(x => x.CorrelacionDx).HasMaxLength(10);
+            e.Property(x => x.CreatedDate).HasColumnType("datetime");
+            e.HasOne(x => x.DataFileNavigation)
+             .WithMany()
+             .HasForeignKey(x => x.DataFileId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.DataFileId);
+        });
+
+        modelBuilder.Entity<ClasificacionSobre>(e =>
+        {
+            e.ToTable("ClasificacionSobre");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.TipoAtencion).HasMaxLength(30).IsRequired();
+            e.Property(x => x.Justificacion).HasMaxLength(2000);
+            e.Property(x => x.TipoPredominante).HasMaxLength(30);
+            e.Property(x => x.ModelCode).HasMaxLength(50);
+            e.Property(x => x.TotalSobre).HasColumnType("decimal(18,2)");
+            e.Property(x => x.CreatedDate).HasColumnType("datetime");
+            // Una sola vigente por caso: el índice filtrado lo garantiza en BD
+            e.HasIndex(x => x.CaseCode)
+             .HasFilter("[IsCurrent] = 1")
+             .IsUnique()
+             .HasDatabaseName("UQ_ClasificacionSobre_Vigente");
+        });
+
+        modelBuilder.Entity<SolicitudCliente>(e =>
+        {
+            e.ToTable("SolicitudCliente");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Cedula).HasMaxLength(20).IsRequired();
+            e.Property(x => x.NumeroContrato).HasMaxLength(20);
+            e.Property(x => x.CodigoProducto).HasMaxLength(20);
+            e.Property(x => x.CodigoRegion).HasMaxLength(20);
+            e.Property(x => x.CodigoPlan).HasMaxLength(40);
+            e.Property(x => x.NombrePlan).HasMaxLength(200);
+            e.Property(x => x.NombreTitular).HasMaxLength(200);
+            e.Property(x => x.Estado).HasMaxLength(30).IsRequired();
+            e.Property(x => x.ValorPresentado).HasColumnType("decimal(18,2)");
+            e.Property(x => x.NombreBeneficiario).HasMaxLength(200);
+            e.Property(x => x.CedulaBeneficiario).HasMaxLength(20);
+            e.Property(x => x.RelacionBeneficiario).HasMaxLength(60);
+            e.Property(x => x.GeneroBeneficiario).HasMaxLength(5);
+            e.Property(x => x.DeducibleCubierto).HasColumnType("decimal(18,2)");
+            // Un caso, una solicitud: el índice único lo garantiza en BD y no
+            // depende de que el código se acuerde de comprobarlo.
+            e.HasIndex(x => x.CaseCode).IsUnique()
+             .HasDatabaseName("IX_SolicitudCliente_CaseCode");
+            e.HasIndex(x => new { x.Cedula, x.CreatedDate })
+             .HasDatabaseName("IX_SolicitudCliente_Cedula");
+        });
+
+        modelBuilder.Entity<CatalogoBeneficioCorrelacion>(e =>
+        {
+            e.ToTable("CatalogoBeneficioCorrelacion");
+            e.HasKey(x => x.CodigoBeneficio);
+            e.Property(x => x.CodigoBeneficio).HasMaxLength(10);
+            e.Property(x => x.Descripcion).HasMaxLength(200);
+            e.Property(x => x.TipoMedicina).HasMaxLength(20);
+            e.Property(x => x.CreatedDate).HasColumnType("datetime");
+        });
+
+        modelBuilder.Entity<CatalogoCodigoLiquidacion>(e =>
+        {
+            e.ToTable("CatalogoCodigoLiquidacion");
+            e.HasKey(x => x.Codigo);
+            e.Property(x => x.Codigo).HasMaxLength(20);
+            e.Property(x => x.Rubro).HasMaxLength(250).IsRequired();
+            e.Property(x => x.Descripcion).HasMaxLength(1000);
+            e.Property(x => x.CreatedDate).HasColumnType("datetime");
+        });
+
+        modelBuilder.Entity<DocumentoClasificacion>(e =>
+        {
+            e.Property(x => x.TipoSoporte).HasMaxLength(40);
+            e.Property(x => x.ResumenSoporte).HasMaxLength(600);
+            e.Property(x => x.EmisorRuc).HasMaxLength(20);
+            e.Property(x => x.EmisorNombre).HasMaxLength(250);
+            e.Property(x => x.EmisorNombreComercial).HasMaxLength(250);
+            e.Property(x => x.EmisorTipo).HasMaxLength(30);
+            e.Property(x => x.EmisorCiudad).HasMaxLength(100);
+            e.Property(x => x.EmisorPais).HasMaxLength(60);
+            e.Property(x => x.NumeroAutorizacion).HasMaxLength(60);
+            e.Property(x => x.FechaEmision).HasColumnType("date");
+            e.Property(x => x.FechaAtencion).HasColumnType("date");
+            e.Property(x => x.Subtotal).HasColumnType("decimal(18,2)");
+            e.Property(x => x.Iva).HasColumnType("decimal(18,2)");
+            e.Property(x => x.Moneda).HasMaxLength(10);
+            e.Property(x => x.PacienteSexo).HasMaxLength(10);
+            e.Property(x => x.MedicoNombre).HasMaxLength(250);
+            e.Property(x => x.MedicoEspecialidad).HasMaxLength(150);
+            e.Property(x => x.MedicoRegistro).HasMaxLength(60);
         });
 
         OnModelCreatingPartial(modelBuilder);

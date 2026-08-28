@@ -1,0 +1,250 @@
+@using app_ocr_ai_models.Areas.Studio.Models
+@model AuditoriaViewModel
+@{
+    ViewData["Title"] = "Auditoría de medicina";
+    var _embed = (ViewData["Embed"] as bool?) == true;
+    var a = Model.Auditoria;
+    var d = a?.Datos;
+    string N(decimal? v, string? u = null) => v.HasValue ? v.Value.ToString("N0") + (string.IsNullOrWhiteSpace(u) ? "" : " " + u) : "—";
+}
+
+<div class="st-head" style="@(_embed ? "display:none" : "")">
+    <div class="st-head-main">
+        <div class="st-crumbs">
+            Studio /
+            <a asp-area="Studio" asp-controller="Sobres" asp-action="Caso" asp-route-caseCode="@Model.CaseCode">Caso</a> /
+            Auditoría
+        </div>
+        <h1 class="st-title"><i class="fa fa-user-md"></i>Auditoría de medicina</h1>
+        <p class="st-sub">Cantidades por mes, pertinencia, interacciones y posible abuso — como banderas para el auditor.</p>
+    </div>
+</div>
+
+<div style="margin-bottom:12px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+    <span class="st-no-oficial"><i class="fa fa-user-md"></i> @Model.Disclaimer</span>
+    <span style="flex:1;"></span>
+    @if (Model.Generada)
+    {
+        <small class="text-muted">Generado: @(Model.GeneradoEn?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "—")</small>
+        <a class="btn btn-xs btn-default" asp-area="Studio" asp-controller="Auditoria" asp-action="Informe"
+           asp-route-caseCode="@Model.CaseCode" target="_blank">
+            <i class="fa fa-file-pdf-o"></i> Informe PDF
+        </a>
+        <form asp-area="Studio" asp-controller="Auditoria" asp-action="Generar" method="post" style="display:inline;" data-st-progreso data-st-titulo="Auditando el caso" data-st-etapas="Abriendo el expediente completo|Cargando el auditor y sus herramientas|Leyendo el texto de cada documento|Consultando historial y preexistencias en la base|Guardando la auditoria" data-st-nota="El auditor razona en varias vueltas y consulta la base en cada una." data-st-segundos="20">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+            <input type="hidden" name="embed" value="@(_embed ? "true" : "false")" />
+            <button type="submit" class="btn btn-xs btn-default"><i class="fa fa-refresh"></i> Regenerar</button>
+        </form>
+    }
+</div>
+
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-warning"><i class="fa fa-exclamation-triangle"></i> @TempData["Error"]</div>
+}
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-warning"><i class="fa fa-exclamation-triangle"></i> @Model.Error</div>
+}
+
+@if (!Model.Generada)
+{
+    <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+        <header><span class="widget-icon"><i class="fa fa-user-md"></i></span><h2>Generar auditoría</h2></header>
+        <div>
+            <div class="widget-body">
+                <p class="text-muted" style="font-size:13px;">
+                    El asistente estructura <strong>receta, factura y liquidación anterior</strong>, calcula la
+                    <strong>cantidad que corresponde al mes</strong> según la posología, la compara con lo ya cubierto
+                    y el saldo, y levanta <strong>banderas</strong> de pertinencia, interacciones y posible abuso
+                    (revisando el historial de compras del cliente). La decisión clínica y de cobertura queda en manos del auditor médico.
+                </p>
+                <form asp-area="Studio" asp-controller="Auditoria" asp-action="Generar" method="post" data-st-progreso data-st-titulo="Auditando el caso" data-st-etapas="Abriendo el expediente completo|Cargando el auditor y sus herramientas|Leyendo el texto de cada documento|Consultando historial y preexistencias en la base|Guardando la auditoria" data-st-nota="El auditor razona en varias vueltas y consulta la base en cada una." data-st-segundos="20">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+                    <input type="hidden" name="embed" value="@(_embed ? "true" : "false")" />
+                    <button type="submit" class="btn btn-ia btn-lg"><i class="fa fa-stethoscope"></i> Auditar con IA</button>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+else if (a == null)
+{
+    <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+        <header><span class="widget-icon"><i class="fa fa-file-text-o"></i></span><h2>Resultado (texto)</h2></header>
+        <div><div class="widget-body"><div class="st-nota-cuerpo" data-st-json>@Model.RawText</div></div></div>
+    </div>
+}
+else
+{
+    @* ── Semáforo global por severidad ── *@
+    <div class="st-reso-head @Model.EstadoCss">
+        <span class="st-reso-light"><i class="fa @Model.EstadoIcono"></i></span>
+        <div class="st-reso-body">
+            <div class="st-reso-estado">@Model.EstadoLabel</div>
+            <div class="st-reso-desc">@Model.EstadoFrase</div>
+        </div>
+        @if (d?.CantidadCorrespondeMes != null)
+        {
+            <div class="st-reso-total">
+                <div class="v">@N(d.CantidadCorrespondeMes)</div>
+                <div class="l">Corresponde al mes@(string.IsNullOrWhiteSpace(d.Unidad) ? "" : " (" + d.Unidad + ")")</div>
+            </div>
+        }
+    </div>
+
+    @* ── RESUMEN DEL CASO ── *@
+    <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+        <header><span class="widget-icon"><i class="fa fa-file-text-o"></i></span><h2>Resumen del caso</h2></header>
+        <div>
+            <div class="widget-body">
+                <div class="st-response">@a.ResumenCaso</div>
+                @if (a.DocumentosAnalizados.Count > 0)
+                {
+                    <div class="st-doc-ents" style="margin-top:10px;">
+                        @foreach (var doc in a.DocumentosAnalizados)
+                        {
+                            <span class="st-ent"><i class="fa fa-paperclip"></i> @doc</span>
+                        }
+                    </div>
+                }
+                @if (a.Faltantes.Count > 0)
+                {
+                    <div class="alert alert-warning" style="margin:12px 0 0;">
+                        <strong><i class="fa fa-question-circle"></i> Información faltante:</strong>
+                        <ul style="margin:6px 0 0; padding-left:18px;">
+                            @foreach (var f in a.Faltantes) { <li>@f</li> }
+                        </ul>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* ── DATOS ESTRUCTURADOS ── *@
+    @if (d != null)
+    {
+        <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+            <header><span class="widget-icon"><i class="fa fa-medkit"></i></span><h2>Datos estructurados</h2></header>
+            <div>
+                <div class="widget-body">
+                    <div class="st-ficha" style="margin-bottom:14px;">
+                        <div class="st-ficha-item"><div class="l">Beneficiario</div><div class="v">@(d.Beneficiario ?? "—")</div></div>
+                        <div class="st-ficha-item"><div class="l">Diagnóstico</div><div class="v">@(d.Diagnostico ?? "—")</div></div>
+                        <div class="st-ficha-item"><div class="l">Medicamento</div><div class="v">@(d.Medicamento ?? "—")</div></div>
+                        <div class="st-ficha-item"><div class="l">Dosis / posología</div><div class="v">@(d.Dosis) @(d.Posologia)</div></div>
+                        <div class="st-ficha-item"><div class="l">Período</div><div class="v">@(d.Periodo ?? "—")</div></div>
+                    </div>
+                    <div class="st-kpis" style="margin-bottom:0;">
+                        <div class="st-kpi"><div class="st-kpi-value">@N(d.CantidadCorrespondeMes)</div><div class="st-kpi-label">Corresponde al mes</div></div>
+                        <div class="st-kpi st-kpi--soft"><div class="st-kpi-value">@N(d.YaCubierto)</div><div class="st-kpi-label">Ya cubierto</div></div>
+                        <div class="st-kpi st-kpi--soft"><div class="st-kpi-value">@N(d.SaldoPendiente)</div><div class="st-kpi-label">Saldo pendiente</div></div>
+                        <div class="st-kpi">
+                            @{
+                                var excede = d.CantidadFacturada.HasValue && d.CantidadCorrespondeMes.HasValue
+                                             && d.CantidadFacturada > d.CantidadCorrespondeMes;
+                            }
+                            <div class="st-kpi-value @(excede ? "money-err" : "money-ok")">@N(d.CantidadFacturada)</div>
+                            <div class="st-kpi-label">Facturado @(excede ? "(excede)" : "")</div>
+                        </div>
+                        @if (d.ValorFacturado != null)
+                        {
+                            <div class="st-kpi st-kpi--soft"><div class="st-kpi-value" style="font-size:18px;">@d.ValorFacturado.Value.ToString("C2")</div><div class="st-kpi-label">Valor facturado</div></div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ── ALERTAS ── *@
+    <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+        <header><span class="widget-icon"><i class="fa fa-flag"></i></span><h2>Alertas (@a.Alertas.Count)</h2></header>
+        <div>
+            <div class="widget-body">
+                @if (a.Alertas.Count == 0)
+                {
+                    <div class="st-empty"><i class="fa fa-check-circle"></i> Sin alertas registradas.</div>
+                }
+                @foreach (var al in a.Alertas)
+                {
+                    <div class="st-alerta @al.NivelCss">
+                        <span class="st-alerta-nivel"><i class="fa @al.NivelIcono"></i> @al.NivelLabel</span>
+                        <div class="st-alerta-body">
+                            <div class="st-alerta-titulo">@al.Titulo</div>
+                            @if (!string.IsNullOrWhiteSpace(al.Detalle)) { <div class="st-alerta-detalle">@al.Detalle</div> }
+                            @if (!string.IsNullOrWhiteSpace(al.AccionSugerida))
+                            {
+                                <div class="st-alerta-accion"><i class="fa fa-arrow-right"></i> @al.AccionSugerida</div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* ── RECOMENDACIÓN + NOTA DE AUDITORÍA (equivalente a la carta) ── *@
+    <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+        <header><span class="widget-icon"><i class="fa fa-check-square-o"></i></span><h2>Recomendación para el auditor</h2></header>
+        <div>
+            <div class="widget-body">
+                <div class="st-response st-response--final">@a.Recomendacion</div>
+                @if (!string.IsNullOrWhiteSpace(a.NotaAuditoria))
+                {
+                    <div class="st-carta" style="margin-top:14px;">
+                        <div class="st-carta-head">
+                            <span class="t"><i class="fa fa-sticky-note-o"></i> Nota de auditoría (para el expediente)</span>
+                            <span class="st-carta-tools">
+                                <button type="button" class="btn btn-xs btn-default" onclick="copiarNota()"><i class="fa fa-copy"></i> Copiar</button>
+                            </span>
+                        </div>
+                        <div class="st-carta-body" id="notaBody">@a.NotaAuditoria</div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* ── Herramientas ejecutadas (audit trail real) ── *@
+    @if (Model.ToolInvocaciones.Count > 0)
+    {
+        <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+            <header><span class="widget-icon"><i class="fa fa-plug"></i></span><h2>Herramientas ejecutadas (@Model.ToolInvocaciones.Count)</h2></header>
+            <div>
+                <div class="widget-body st-tools-audit">
+                    <table class="st-reglas">
+                        <thead><tr><th>Herramienta</th><th>Cuándo</th><th>Duración</th><th>Resultado</th></tr></thead>
+                        <tbody>
+                            @foreach (var ti in Model.ToolInvocaciones)
+                            {
+                                <tr>
+                                    <td><code>@ti.ToolCode</code></td>
+                                    <td>@ti.StartDate.ToLocalTime().ToString("dd/MM HH:mm:ss")</td>
+                                    <td>@(ti.DuracionSeg.HasValue ? $"{ti.DuracionSeg.Value:N1}s" : "—")</td>
+                                    <td>@if (ti.IsError) { <span class="err"><i class="fa fa-times"></i> Error</span> } else { <span class="ok"><i class="fa fa-check"></i> OK</span> }</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <small class="text-muted">Registro de la tabla de auditoría ToolInvocation (llamadas reales a BD/APIs).</small>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@section Scripts {
+    <script src="~/js/app/st-progreso.js" asp-append-version="true"></script>
+    <script src="~/js/app/st-json.js" asp-append-version="true"></script>
+<script>
+    function copiarNota() {
+        var el = document.getElementById('notaBody'); if (!el) return;
+        navigator.clipboard.writeText(el.innerText).then(function () {
+            if (window.mostrarNotificacion) mostrarNotificacion('OK', 'Nota copiada al portapapeles');
+        });
+    }
+</script>
+}

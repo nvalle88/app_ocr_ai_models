@@ -95,6 +95,76 @@ namespace app_ocr_ai_models.Areas.Studio.Models
 
         /// <summary>Indica si hubo archivos que no pudieron procesarse (OCR falló).</summary>
         public IReadOnlyList<string> AdvertenciasOcr { get; set; } = Array.Empty<string>();
+
+        /// <summary>
+        /// Identidad del cliente del caso. Se muestra FIJA en la cabecera del
+        /// workspace para que el operador no pierda de vista de quién es el sobre
+        /// en ningún paso del proceso.
+        /// </summary>
+        public ContextoClienteVm Cliente { get; set; } = new();
+
+        /// <summary>
+        /// Los pasos del proceso del caso, en orden y con su estado REAL leído de
+        /// la base (no un stepper decorativo).
+        /// </summary>
+        public IReadOnlyList<PasoProcesoVm> Pasos { get; set; } = Array.Empty<PasoProcesoVm>();
+
+        /// <summary>Pasos del proceso que aún no se han ejecutado.</summary>
+        public int PasosPendientes => Pasos.Count(x => !x.Hecho);
+    }
+
+    /// <summary>
+    /// Identidad del cliente/sobre, consolidada de dos fuentes: la nota
+    /// determinista ContextoSobre (lo que trajo la importación) y la ficha que
+    /// extrae el Expediente de los documentos. La primera manda; la segunda
+    /// rellena lo que falte.
+    /// </summary>
+    public sealed class ContextoClienteVm
+    {
+        public string? Titular { get; set; }
+        public string? Cedula { get; set; }
+        public string? Contrato { get; set; }
+        public string? Producto { get; set; }
+        public string? Prestador { get; set; }
+        public string? NumeroSobre { get; set; }
+        public string? Origen { get; set; }
+        public string? Diagnosticos { get; set; }
+        public string? FechaAtencion { get; set; }
+        public decimal? TotalFacturado { get; set; }
+
+        /// <summary>Hay algo que mostrar (si no, la barra no se pinta).</summary>
+        public bool TieneDatos =>
+            !string.IsNullOrWhiteSpace(Titular) || !string.IsNullOrWhiteSpace(Cedula)
+            || !string.IsNullOrWhiteSpace(NumeroSobre) || !string.IsNullOrWhiteSpace(Contrato);
+
+        /// <summary>Iniciales del titular, para el avatar de la barra.</summary>
+        public string Iniciales
+        {
+            get
+            {
+                var partes = (Titular ?? string.Empty)
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (partes.Length == 0) return "?";
+                if (partes.Length == 1) return partes[0][..1].ToUpperInvariant();
+                return (partes[0][..1] + partes[^1][..1]).ToUpperInvariant();
+            }
+        }
+    }
+
+    /// <summary>Un paso del proceso del caso, con su estado real.</summary>
+    public sealed class PasoProcesoVm
+    {
+        public int Numero { get; set; }
+        /// <summary>Id de la pestaña del workspace (p. ej. "tab-tipificacion").</summary>
+        public string Tab { get; set; } = string.Empty;
+        public string Titulo { get; set; } = string.Empty;
+        public string Icono { get; set; } = string.Empty;
+        /// <summary>Qué produce este paso, en una frase.</summary>
+        public string Entrega { get; set; } = string.Empty;
+        /// <summary>Ya se ejecutó (hay resultado guardado en BD).</summary>
+        public bool Hecho { get; set; }
+        /// <summary>Endpoint POST que lo ejecuta; null si no es automatizable.</summary>
+        public string? UrlGenerar { get; set; }
     }
 
     /// <summary>
@@ -154,10 +224,22 @@ namespace app_ocr_ai_models.Areas.Studio.Models
     /// </summary>
     public class ImportarSobreArmonixViewModel
     {
-        /// <summary>Número del sobre en Armonix/MFiles (se usa como criterio de búsqueda).</summary>
+        /// <summary>
+        /// Criterio ÚNICO de búsqueda (REQ-019 UX): número de sobre (NA-…),
+        /// cédula (10 dígitos) o nombre del cliente. El controller detecta el tipo.
+        /// </summary>
+        public string? Criterio { get; set; }
+
+        /// <summary>
+        /// Año de nacimiento del titular. SOLO requerido cuando el criterio es una
+        /// cédula (el API de contratos lo exige para desambiguar).
+        /// </summary>
+        public int? AnioNacimiento { get; set; }
+
+        /// <summary>Número del sobre en Armonix/MFiles (compat; la UI usa <see cref="Criterio"/>).</summary>
         public string? NumeroSobre { get; set; }
 
-        /// <summary>Cédula del afiliado/paciente (alternativa al número de sobre).</summary>
+        /// <summary>Cédula del afiliado/paciente (compat; la UI usa <see cref="Criterio"/>).</summary>
         public string? Cedula { get; set; }
 
         /// <summary>Código del Process (definición de caso) al que se asignará el caso importado.</summary>
@@ -184,6 +266,9 @@ namespace app_ocr_ai_models.Areas.Studio.Models
 
         /// <summary>Fecha de recepción del sobre.</summary>
         public DateTime? FechaRecepcion { get; set; }
+
+        /// <summary>Valor presentado del sobre.</summary>
+        public decimal? ValorPresentado { get; set; }
 
         // Identificadores resueltos (hidden en la tabla de selección)
 

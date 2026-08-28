@@ -1,0 +1,324 @@
+@using app_ocr_ai_models.Areas.Studio.Models
+@model ResolucionViewModel
+@{
+    ViewData["Title"] = "Resolución de reembolso";
+    string M(decimal v) => v.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-EC"));
+    var p = Model.Propuesta;
+    var c = p?.Cabecera;
+    var t = p?.Totales;
+    var _embed = (ViewData["Embed"] as bool?) == true;   // dentro del workspace (iframe) se oculta la cabecera
+}
+
+<div class="st-head" style="@(_embed ? "display:none" : "")">
+    <div class="st-head-main">
+        <div class="st-crumbs">
+            Studio /
+            <a asp-area="Studio" asp-controller="Sobres" asp-action="Caso" asp-route-caseCode="@Model.CaseCode">Caso</a> /
+            Resolución
+        </div>
+        <h1 class="st-title"><i class="fa fa-gavel"></i>Resolución de reembolso</h1>
+        <p class="st-sub">
+            Caso @Model.ShortCode
+            @if (c != null) { <text>· @c.Titular · Sobre @c.NumeroSobre</text> }
+        </p>
+    </div>
+    <div class="st-actions">
+        <a class="btn btn-default" asp-area="Studio" asp-controller="Sobres" asp-action="Caso" asp-route-caseCode="@Model.CaseCode">
+            <i class="fa fa-arrow-left"></i> Volver al caso
+        </a>
+        @if (Model.Generada)
+        {
+            <a class="btn btn-default" asp-area="Studio" asp-controller="Resolucion" asp-action="Informe"
+               asp-route-caseCode="@Model.CaseCode" target="_blank">
+                <i class="fa fa-file-pdf-o"></i> Informe PDF
+            </a>
+            <form asp-area="Studio" asp-controller="Resolucion" asp-action="Generar" method="post" style="display:inline;" data-st-progreso data-st-titulo="Resolviendo el reembolso" data-st-etapas="Leyendo la auditoria y el expediente|Consultando el plan, el deducible y las coberturas|Aplicando las reglas una por una|Calculando la liquidacion propuesta|Guardando la resolucion" data-st-nota="Es el paso que mas consulta: plan, convenio, topes y carencias." data-st-segundos="20">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+                <button type="submit" class="btn btn-default" title="Volver a evaluar con el motor IA">
+                    <i class="fa fa-refresh"></i> Regenerar
+                </button>
+            </form>
+        }
+    </div>
+</div>
+
+<div style="margin-bottom:14px;"><span class="st-no-oficial"><i class="fa fa-info-circle"></i> @Model.Disclaimer</span></div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-warning"><i class="fa fa-exclamation-triangle"></i> @Model.Error</div>
+}
+
+@if (!Model.Generada)
+{
+    @* ── Estado inicial: generar ── *@
+    <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+        <header><span class="widget-icon"><i class="fa fa-gavel"></i></span><h2>Generar resolución</h2></header>
+        <div>
+            <div class="widget-body">
+                <p class="text-muted" style="font-size:13px;">
+                    El motor IA evalúa el sobre contra las <strong>reglas de reembolso</strong> (elegibilidad, diagnósticos/exclusiones,
+                    preexistencias/carencias, correlación, copagos, deducibles y topes), aplica la <strong>matriz de triaje</strong>
+                    (liquida / semi / control humano / negativa) y propone la liquidación por ítem con la <strong>regla citada</strong>,
+                    más la carta al cliente. Toma 1-2 minutos.
+                </p>
+                <form asp-area="Studio" asp-controller="Resolucion" asp-action="Generar" method="post" data-st-progreso data-st-titulo="Resolviendo el reembolso" data-st-etapas="Leyendo la auditoria y el expediente|Consultando el plan, el deducible y las coberturas|Aplicando las reglas una por una|Calculando la liquidacion propuesta|Guardando la resolucion" data-st-nota="Es el paso que mas consulta: plan, convenio, topes y carencias." data-st-segundos="20">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+                    <button type="submit" class="btn btn-ia btn-lg"><i class="fa fa-cogs"></i> Generar resolución IA</button>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    @* ── Banner semáforo por estado ── *@
+    <div class="st-reso-head @Model.EstadoCss">
+        <span class="st-reso-light"><i class="fa @Model.EstadoIcono"></i></span>
+        <div class="st-reso-body">
+            <div class="st-reso-estado">@Model.EstadoLabel</div>
+            <div class="st-reso-desc">@Model.EstadoFrase</div>
+        </div>
+        @if (t != null)
+        {
+            <div class="st-reso-total">
+                <div class="v">@M(t.EstimadoPagar == 0 ? t.Cubierto : t.EstimadoPagar)</div>
+                <div class="l">Valor a reembolsar (est.)</div>
+            </div>
+        }
+    </div>
+
+    if (p == null)
+    {
+        @* ── Sin JSON estructurado → control humano ── *@
+        <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+            <header><span class="widget-icon"><i class="fa fa-user-md"></i></span><h2>Análisis (control humano)</h2></header>
+            <div>
+                <div class="widget-body">
+                    @if (!string.IsNullOrWhiteSpace(Model.RawText))
+                    {
+                        <div class="st-nota-cuerpo" data-st-json>@Model.RawText</div>
+                    }
+                    else
+                    {
+                        <div class="st-empty"><i class="fa fa-user-md"></i> La resolución requiere control humano. Pulsa "Regenerar" para reintentar.</div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        @* ── KPIs de totales ── *@
+        if (t != null)
+        {
+            <div class="st-kpis">
+                <div class="st-kpi"><div class="st-kpi-value">@M(t.Presentado)</div><div class="st-kpi-label">Facturado</div></div>
+                <div class="st-kpi"><div class="st-kpi-value money-ok">@M(t.Cubierto)</div><div class="st-kpi-label">Cubierto</div></div>
+                <div class="st-kpi st-kpi--soft"><div class="st-kpi-value">@M(t.Copago)</div><div class="st-kpi-label">Copago</div></div>
+                <div class="st-kpi st-kpi--soft"><div class="st-kpi-value">@M(t.Deducible)</div><div class="st-kpi-label">Deducible</div></div>
+                <div class="st-kpi"><div class="st-kpi-value money-err">@M(t.NoCubierto)</div><div class="st-kpi-label">No cubierto</div></div>
+            </div>
+        }
+
+        @* ── Detalle de liquidación ── *@
+        <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+            <header><span class="widget-icon"><i class="fa fa-list-alt"></i></span><h2>Detalle de liquidación (propuesta)</h2></header>
+            <div>
+                <div class="widget-body">
+                    <div class="table-responsive">
+                        <table class="st-liq">
+                            <thead>
+                                <tr>
+                                    <th>Ítem</th>
+                                    <th class="num">Facturado</th>
+                                    <th class="num">Cubierto</th>
+                                    <th class="num">Copago</th>
+                                    <th class="num">Deducible</th>
+                                    <th class="num">No cubierto</th>
+                                    <th>Regla / motivo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var it in p.Items)
+                                {
+                                    <tr>
+                                        <td>
+                                            <strong>@it.Descripcion</strong>
+                                            @if (!string.IsNullOrWhiteSpace(it.Procedimiento)) { <br /><small class="text-muted">@it.Procedimiento</small> }
+                                        </td>
+                                        <td class="num">@M(it.ValorPresentado)</td>
+                                        <td class="num money-cubierto">@M(it.ValorCubierto)</td>
+                                        <td class="num">@M(it.ValorCopago)</td>
+                                        <td class="num">@M(it.ValorDeducible)</td>
+                                        <td class="num money-nocubierto">@M(it.ValorNoCubierto)</td>
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(it.ReglaAplicada))
+                                            {
+                                                <span class="st-regla @it.ReglaCssClass" title="@it.ReglaFuente">@it.ReglaAplicada</span>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(it.Motivo)) { <div style="font-size:12px; color:var(--st-muted); margin-top:3px;">@it.Motivo</div> }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                            @if (t != null)
+                            {
+                                <tfoot>
+                                    <tr>
+                                        <td>Totales</td>
+                                        <td class="num">@M(t.Presentado)</td>
+                                        <td class="num">@M(t.Cubierto)</td>
+                                        <td class="num">@M(t.Copago)</td>
+                                        <td class="num">@M(t.Deducible)</td>
+                                        <td class="num">@M(t.NoCubierto)</td>
+                                        <td>A reembolsar (est.): <strong>@M(t.EstimadoPagar == 0 ? t.Cubierto : t.EstimadoPagar)</strong></td>
+                                    </tr>
+                                </tfoot>
+                            }
+                        </table>
+                    </div>
+                    @if (p.Observaciones.Count > 0)
+                    {
+                        <div style="margin-top:12px;">
+                            <strong style="font-size:13px; color:var(--st-blue);">Observaciones</strong>
+                            <ul style="margin:6px 0 0; padding-left:18px; font-size:13px; color:var(--st-ink);">
+                                @foreach (var o in p.Observaciones) { <li>@o</li> }
+                            </ul>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @* ── Reglas evaluadas (audit trail del razonamiento) ── *@
+        if (p.ReglasEvaluadas.Count > 0)
+        {
+            <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+                <header><span class="widget-icon"><i class="fa fa-list-ol"></i></span><h2>Reglas evaluadas (@p.ReglasEvaluadas.Count)</h2></header>
+                <div>
+                    <div class="widget-body">
+                        <div class="table-responsive">
+                            <table class="st-reglas">
+                                <thead>
+                                    <tr><th>Familia</th><th>Regla</th><th>Resultado</th><th>Detalle</th><th>Evidencia</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var r in p.ReglasEvaluadas)
+                                    {
+                                        <tr>
+                                            <td><strong>@r.Familia</strong></td>
+                                            <td>@r.Regla</td>
+                                            <td><span class="st-regla-res @r.ResultadoCss">@(r.Resultado?.Replace('_', ' '))</span></td>
+                                            <td>@r.Detalle</td>
+                                            <td><span class="st-regla" style="cursor:default;">@r.Evidencia</span></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ── Herramientas ejecutadas (audit REAL desde ToolInvocation) ── *@
+        if (Model.ToolInvocaciones.Count > 0)
+        {
+            <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+                <header><span class="widget-icon"><i class="fa fa-plug"></i></span><h2>Herramientas ejecutadas (@Model.ToolInvocaciones.Count — registro de auditoría)</h2></header>
+                <div>
+                    <div class="widget-body st-tools-audit">
+                        <table class="st-reglas">
+                            <thead>
+                                <tr><th>Herramienta</th><th>Cuándo</th><th>Duración</th><th>Resultado</th><th>Parámetros</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var ti in Model.ToolInvocaciones)
+                                {
+                                    <tr>
+                                        <td><code>@ti.ToolCode</code></td>
+                                        <td>@ti.StartDate.ToLocalTime().ToString("dd/MM HH:mm:ss")</td>
+                                        <td>@(ti.DuracionSeg.HasValue ? $"{ti.DuracionSeg.Value:N1}s" : "—")</td>
+                                        <td>
+                                            @if (ti.IsError) { <span class="err"><i class="fa fa-times"></i> Error</span> }
+                                            else { <span class="ok"><i class="fa fa-check"></i> OK</span> }
+                                        </td>
+                                        <td><small class="text-muted" style="word-break:break-all;">@(ti.InputResumen?.Length > 140 ? ti.InputResumen[..140] + "…" : ti.InputResumen)</small></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                        <small class="text-muted">Registro tomado de la tabla de auditoría ToolInvocation (cada llamada real del agente a BD/APIs).</small>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ── Carta al cliente (borrador) ── *@
+        <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+            <header><span class="widget-icon"><i class="fa fa-envelope-o"></i></span><h2>Carta al cliente (borrador)</h2></header>
+            <div>
+                <div class="widget-body" style="padding:0;">
+                    <div class="st-carta" style="border:0;">
+                        <div class="st-carta-head">
+                            <span class="t"><i class="fa fa-user"></i> @(c?.Titular ?? "Cliente")</span>
+                            <span class="st-carta-tools">
+                                <button type="button" class="btn btn-xs btn-default" onclick="copiarCarta()"><i class="fa fa-copy"></i> Copiar</button>
+                                <button type="button" class="btn btn-xs btn-ia" onclick="confirmarEnvio()"><i class="fa fa-paper-plane"></i> Enviar al cliente</button>
+                            </span>
+                        </div>
+                        <div class="st-carta-body" id="cartaBody">@Model.CartaTexto</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <form id="formEnviarCarta" asp-area="Studio" asp-controller="Resolucion" asp-action="EnviarCarta" method="post" style="display:none;" data-st-progreso data-st-titulo="Resolviendo el reembolso" data-st-etapas="Leyendo la auditoria y el expediente|Consultando el plan, el deducible y las coberturas|Aplicando las reglas una por una|Calculando la liquidacion propuesta|Guardando la resolucion" data-st-nota="Es el paso que mas consulta: plan, convenio, topes y carencias." data-st-segundos="20">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+            <input type="hidden" name="carta" id="cartaHidden" />
+            <input type="hidden" name="correo" value="@Model.CorreoCliente" />
+        </form>
+    }
+}
+
+@section Scripts {
+    <script src="~/js/app/st-progreso.js" asp-append-version="true"></script>
+    <script src="~/js/app/st-json.js" asp-append-version="true"></script>
+<script>
+    function copiarCarta() {
+        var el = document.getElementById('cartaBody'); if (!el) return;
+        navigator.clipboard.writeText(el.innerText).then(function () {
+            if (window.mostrarNotificacion) mostrarNotificacion('OK', 'Carta copiada al portapapeles');
+        });
+    }
+    function confirmarEnvio() {
+        var el = document.getElementById('cartaBody'); if (!el) return;
+        var txt = el.innerText;
+        var enviar = function () {
+            document.getElementById('cartaHidden').value = txt;
+            var f = document.getElementById('formEnviarCarta');
+            fetch(f.action, {
+                method: 'POST',
+                headers: { 'RequestVerificationToken': f.querySelector('input[name="__RequestVerificationToken"]').value },
+                body: new FormData(f)
+            }).then(function (r) { return r.json(); }).then(function (d) {
+                if (window.mostrarNotificacion) mostrarNotificacion(d.ok ? 'OK' : 'Error', d.message || d.error);
+                else alert(d.message || d.error);
+            });
+        };
+        if (window.$ && $.SmartMessageBox) {
+            $.SmartMessageBox({
+                title: "Registrar carta al cliente",
+                content: "Se registrará esta carta como borrador para el canal de comunicación. El envío real es un paso posterior. ¿Continuar?",
+                buttons: '[Cancelar][Registrar]'
+            }, function (btn) { if (btn === 'Registrar') enviar(); });
+        } else if (confirm('¿Registrar esta carta para el cliente? (el envío real es un paso posterior)')) {
+            enviar();
+        }
+    }
+</script>
+}

@@ -1,0 +1,101 @@
+/* ============================================================================
+   REQ-020 — El overlay de progreso.
+
+   Tiene que leerse en un móvil a pleno sol y con prisa, así que: fondo opaco de
+   verdad (no un velo tímido), tipografía grande, y las etapas como una lista
+   marcable. Sin barra de porcentaje — ver el comentario de st-progreso.js.
+   ========================================================================= */
+
+.st-prog {
+    position: fixed; inset: 0; z-index: 10500;
+    display: none; align-items: center; justify-content: center;
+    padding: 20px;
+    background: rgba(16, 24, 40, .62);
+    backdrop-filter: blur(2px);
+}
+.st-prog.is-visible { display: flex; }
+
+body.st-prog-bloqueado { overflow: hidden; }
+
+.st-prog-caja {
+    width: 100%; max-width: 460px;
+    background: #fff; border-radius: 12px;
+    padding: 26px 28px;
+    box-shadow: 0 18px 50px rgba(10, 20, 40, .3);
+    animation: stProgEntra .16s ease-out;
+}
+@keyframes stProgEntra {
+    from { opacity: 0; transform: translateY(8px) scale(.985); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* ── Cabecera: el anillo + el título ─────────────────────────────────── */
+.st-prog-cab { display: flex; align-items: flex-start; gap: 15px; }
+
+.st-prog-anillo {
+    flex: 0 0 auto; width: 30px; height: 30px; margin-top: 2px;
+    border: 3px solid #dbe3ef;
+    border-top-color: #002F87;
+    border-radius: 50%;
+    animation: stProgGira .85s linear infinite;
+}
+@keyframes stProgGira { to { transform: rotate(360deg); } }
+
+.st-prog-tit {
+    font-size: 17.5px; font-weight: 700; color: #002F87; line-height: 1.3;
+}
+.st-prog-detalle {
+    font-size: 13px; color: #6b7684; margin-top: 3px; line-height: 1.45;
+    word-break: break-word;
+}
+
+/* ── Las etapas ─────────────────────────────────────────────────────── */
+.st-prog-etapas {
+    list-style: none; margin: 18px 0 0; padding: 0;
+    max-height: 260px; overflow-y: auto;
+}
+.st-prog-etapas li {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 6px 0; font-size: 13.5px; line-height: 1.45;
+    color: #6b7684;
+    transition: color .15s;
+}
+.st-prog-etapas li .fa { flex: 0 0 auto; width: 15px; margin-top: 2px; text-align: center; }
+
+.st-prog-etapas li.is-pendiente { opacity: .5; }
+.st-prog-etapas li.is-actual    { color: #1f2733; font-weight: 600; }
+.st-prog-etapas li.is-actual .fa { color: #002F87; }
+.st-prog-etapas li.is-hecha     { color: #2c6e49; }
+.st-prog-etapas li.is-hecha .fa { color: #2c6e49; }
+.st-prog-etapas li.is-error     { color: #a4262c; font-weight: 600; }
+.st-prog-etapas li.is-error .fa { color: #a4262c; }
+
+/* ── Pie: la nota y el reloj real ───────────────────────────────────── */
+.st-prog-pie {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    margin-top: 16px; padding-top: 12px; border-top: 1px solid #eef1f5;
+}
+.st-prog-nota { font-size: 12px; color: #8a95a3; line-height: 1.45; }
+.st-prog-reloj {
+    font-size: 12.5px; font-weight: 700; color: #6b7684;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+/* ── Error: el overlay se queda para que se pueda leer ──────────────── */
+.st-prog.is-error .st-prog-anillo {
+    animation: none; border-color: #f0c4c4; border-top-color: #a4262c;
+}
+.st-prog.is-error .st-prog-tit { color: #a4262c; }
+
+.st-prog-cerrar {
+    margin-top: 16px; width: 100%;
+    padding: 10px 16px; border: 1px solid #dde3ec; border-radius: 7px;
+    background: #fff; font-size: 14px; font-weight: 700; color: #1f2733;
+    cursor: pointer;
+}
+.st-prog-cerrar:hover { border-color: #002F87; color: #002F87; }
+
+@media (max-width: 480px) {
+    .st-prog-caja { padding: 20px 18px; }
+    .st-prog-tit { font-size: 16px; }
+}

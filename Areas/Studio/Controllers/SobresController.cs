@@ -80,6 +80,280 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
         }
 
         // ----------------------------------------------------------------
+        // GET /Studio/Sobres/Bandeja — bandeja de casos (análisis realizados)
+        // ----------------------------------------------------------------
+
+        /// <summary>Lista los casos OCR ya trabajados (sobre, cliente, estado, docs, resolución) con filtros.</summary>
+        [HttpGet]
+        public async Task<IActionResult> Bandeja(string? search, string? estado, int page = 1)
+        {
+            const string CTX  = app_tramites.Services.Ai.OcrPromptHelper.ContextoSobreNoteTitle;
+            const string RESO = app_tramites.Services.Ai.OcrPromptHelper.ResolucionReembolsoNoteTitle;
+            const int pageSize = 15;
+            if (page < 1) page = 1;
+
+            // Sin .Include(): lo que hace falta de las relaciones se pide en la
+            // proyección de más abajo. Un .Include() aquí obligaría a materializar
+            // el grafo completo (documentos con su texto OCR, todas las notas) para
+            // luego usar tres campos.
+            var q = _db.ProcessCase.AsNoTracking().AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(estado))
+                q = q.Where(pc => pc.State == estado);
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = search.Trim();
+
+                // El EXISTS sobre Notes se resuelve APARTE, no dentro del OR.
+                //
+                // Con las tres condiciones unidas por OR, SQL Server no puede
+                // resolver el EXISTS como semi-join y lo evalúa fila por fila como
+                // un booleano: medido, 94.064 lecturas lógicas y ~3,5 s para
+                // devolver cero resultados. El mismo EXISTS solo, contra la misma
+                // tabla y sin ningún índice nuevo, son 16 lecturas. Resolviendo
+                // primero los CaseCode y pasándolos como lista:
+                //
+                //      94.064 -> 110 lecturas lógicas, 265 ms   (855x menos)
+                //
+                // No hace falta ningún índice: el problema era la forma de la
+                // consulta, no el esquema.
+                var idsPorNota = await _db.Note.AsNoTracking()
+                    .Where(n => n.Title == CTX && n.Detail != null && n.Detail.Contains(s))
+                    .Select(n => n.CaseCode)
+                    .Distinct()
+                    .ToListAsync();
+
+                q = q.Where(pc =>
+                    pc.DefinitionCode.Contains(s)
+                    || (pc.DefinitionCodeNavigation != null && pc.DefinitionCodeNavigation.Name.Contains(s))
+                    || idsPorNota.Contains(pc.CaseCode));
+            }
+
+            var total = await q.CountAsync();
+            var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
+            if (page > totalPages) page = totalPages;
+
+            // PROYECCIÓN, no .Include(). La Bandeja necesita exactamente tres cosas
+            // de las relaciones: el CONTEO de documentos (ni una columna de ellos),
+            // el Detail de la nota ContextoSobre y el de ResolucionReembolso.
+            //
+            // Con .Include(pc => pc.DataFile) EF traía la columna Text COMPLETA de
+            // cada documento: media 13.718 caracteres, máximo medido 2,69 MB en un
+            // solo valor, 129 MB de LOB en la tabla. Y con .Include(pc => pc.Notes)
+            // traía TODAS las notas del caso, incluidas ResolucionReembolso (~7 KB),
+            // AuditoriaMedicina (~5,5 KB) y ExpedienteDocumental (~3,4 KB), cuando
+            // solo se usan dos de ellas y solo su Detail.
+            //
+            // Proyectando, el listado deja de depender del tamaño de los documentos.
+            var rows = await q.OrderByDescending(pc => pc.StartDate)
+                .Skip((page - 1) * pageSize).Take(pageSize)
+                .Select(pc => new
+                {
+                    pc.CaseCode,
+                    pc.DefinitionCode,
+                    ProcesoNombre = pc.DefinitionCodeNavigation != null ? pc.DefinitionCodeNavigation.Name : null,
+                    pc.State,
+                    pc.StartDate,
+                    NumDocumentos = pc.DataFile.Count,
+                    Contexto = pc.Notes.Where(n => n.Title == CTX)
+                                       .OrderByDescending(n => n.CreatedAt)
+                                       .Select(n => n.Detail).FirstOrDefault(),
+                    Resolucion = pc.Notes.Where(n => n.Title == RESO)
+                                         .OrderByDescending(n => n.CreatedAt)
+                                         .Select(n => n.Detail).FirstOrDefault()
+                })
+                .ToListAsync();
+
+            var casos = rows.Select(pc =>
+            {
+                var item = new CasoListItem
+                {
+                    CaseCode       = pc.CaseCode,
+                    DefinitionCode = pc.DefinitionCode,
+                    ProcesoNombre  = pc.ProcesoNombre,
+                    Estado         = pc.State ?? string.Empty,
+                    NumDocumentos  = pc.NumDocumentos,
+                    StartDate      = pc.StartDate
+                };
+                ParseContexto(pc.Contexto, item);
+                ParseResolucion(pc.Resolucion, item);
+                return item;
+            }).ToList();
+
+            var estados = (await _db.ProcessCase.AsNoTracking().Select(pc => pc.State).Distinct().ToListAsync())
+                .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).OrderBy(x => x).ToList();
+            var conReso = await _db.Note.AsNoTracking().Where(n => n.Title == RESO).Select(n => n.CaseCode).Distinct().CountAsync();
+
+            return View(new BandejaViewModel
+            {
+                Casos = casos, Search = search, Estado = estado,
+                Page = page, TotalPages = totalPages, Total = total,
+                TotalCasos = await _db.ProcessCase.CountAsync(),
+                ConResolucion = conReso,
+                EstadosDisponibles = estados
+            });
+        }
+
+        /// <summary>
+        /// Consolida la identidad del cliente de DOS fuentes, en este orden:
+        ///  1) la nota ContextoSobre - determinista, lo que trajo la importacion;
+        ///  2) la ficha del Expediente - extraida por IA de los documentos.
+        /// La primera manda; la segunda solo rellena lo que falte. Con esto la
+        /// cabecera del workspace muestra al cliente en TODOS los pasos.
+        /// </summary>
+        private static ContextoClienteVm ArmarContextoCliente(IEnumerable<Note> notas)
+        {
+            var vm = new ContextoClienteVm();
+            var lista = notas.ToList();
+
+            static string? Campo(System.Text.Json.JsonElement raiz, params string[] claves)
+            {
+                foreach (var k in claves)
+                {
+                    foreach (var pr in raiz.EnumerateObject())
+                    {
+                        if (!string.Equals(pr.Name, k, StringComparison.OrdinalIgnoreCase)) continue;
+                        var v = pr.Value.ValueKind == System.Text.Json.JsonValueKind.String
+                            ? pr.Value.GetString()
+                            : pr.Value.ToString();
+                        if (!string.IsNullOrWhiteSpace(v) && v != "null") return v;
+                    }
+                }
+                return null;
+            }
+
+            // 1) ContextoSobre
+            var ctx = lista.Where(n => n.Title == "ContextoSobre")
+                           .OrderByDescending(n => n.CreatedAt)
+                           .Select(n => n.Detail).FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(ctx))
+            {
+                try
+                {
+                    using var d = System.Text.Json.JsonDocument.Parse(ctx);
+                    if (d.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    {
+                        var r = d.RootElement;
+                        vm.Titular = Campo(r, "nombreTitular", "titular", "cliente");
+                        vm.Cedula = Campo(r, "cedula", "identificacion");
+                        vm.NumeroSobre = Campo(r, "numeroSobre", "sobre");
+                        vm.Origen = Campo(r, "origen");
+                        vm.Contrato = Campo(r, "numeroContrato", "contrato");
+                        vm.Producto = Campo(r, "codigoProducto", "producto");
+                    }
+                }
+                catch (System.Text.Json.JsonException) { }
+            }
+
+            // 2) Ficha del Expediente (rellena huecos)
+            var exp = lista.Where(n => n.Title == "ExpedienteDocumental")
+                           .OrderByDescending(n => n.CreatedAt)
+                           .Select(n => n.Detail).FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(exp))
+            {
+                try
+                {
+                    using var d = System.Text.Json.JsonDocument.Parse(exp);
+
+                    // El nodo se llama "fichaCliente" (asi lo emite el agente); se
+                    // acepta tambien "ficha" y se busca sin distinguir mayusculas,
+                    // porque TryGetProperty SI distingue y nos dejaba la barra a medias.
+                    System.Text.Json.JsonElement f = default;
+                    var hayFicha = false;
+                    if (d.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    {
+                        foreach (var pr in d.RootElement.EnumerateObject())
+                        {
+                            if ((pr.Name.Equals("fichaCliente", StringComparison.OrdinalIgnoreCase)
+                                 || pr.Name.Equals("ficha", StringComparison.OrdinalIgnoreCase))
+                                && pr.Value.ValueKind == System.Text.Json.JsonValueKind.Object)
+                            {
+                                f = pr.Value;
+                                hayFicha = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (hayFicha)
+                    {
+                        vm.Titular ??= Campo(f, "nombre");
+                        vm.Cedula ??= Campo(f, "cedula");
+                        vm.Contrato ??= Campo(f, "contrato");
+                        vm.Producto ??= Campo(f, "producto");
+                        vm.Prestador ??= Campo(f, "prestador");
+                        vm.Diagnosticos ??= Campo(f, "diagnosticos");
+                        vm.FechaAtencion ??= Campo(f, "fechaAtencion");
+                        var tot = Campo(f, "totalFacturado");
+                        if (decimal.TryParse(tot, System.Globalization.NumberStyles.Any,
+                                             System.Globalization.CultureInfo.InvariantCulture, out var v))
+                        {
+                            vm.TotalFacturado = v;
+                        }
+                    }
+                }
+                catch (System.Text.Json.JsonException) { }
+            }
+
+            return vm;
+        }
+
+        private static void ParseContexto(string? json, CasoListItem item)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return;
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) return;
+                string? G(string k)
+                {
+                    foreach (var p in doc.RootElement.EnumerateObject())
+                        if (string.Equals(p.Name, k, StringComparison.OrdinalIgnoreCase))
+                            return p.Value.ValueKind == System.Text.Json.JsonValueKind.String ? p.Value.GetString() : p.Value.ToString();
+                    return null;
+                }
+                item.NumeroSobre = G("numeroSobre");
+                item.Origen      = G("origen");
+                var titular = G("nombreTitular");
+                var ced     = G("cedula");
+                item.Cliente = !string.IsNullOrWhiteSpace(titular) ? titular
+                             : (!string.IsNullOrWhiteSpace(ced) ? $"Céd. {ced}" : null);
+            }
+            catch (System.Text.Json.JsonException) { }
+        }
+
+        private static void ParseResolucion(string? json, CasoListItem item)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return;
+            item.TieneResolucion = true;
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                string? estado = null; double? conf = null;
+                if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    foreach (var p in doc.RootElement.EnumerateObject())
+                    {
+                        if (string.Equals(p.Name, "estadoPropuesto", StringComparison.OrdinalIgnoreCase)) estado = p.Value.GetString();
+                        else if (string.Equals(p.Name, "confianza", StringComparison.OrdinalIgnoreCase) && p.Value.ValueKind == System.Text.Json.JsonValueKind.Number) conf = p.Value.GetDouble();
+                        else if (string.Equals(p.Name, "_raw", StringComparison.OrdinalIgnoreCase)) estado = "CONTROL_HUMANO";
+                    }
+                }
+                (item.ResolucionLabel, item.ResolucionCss) = (estado?.ToUpperInvariant(), conf) switch
+                {
+                    (_, < 0.5)            => ("Control humano", "label-default"),
+                    ("LIQUIDA_AUTO", _)   => ("Liquida", "label-success"),
+                    ("SEMI", _)           => ("Parcial", "label-warning"),
+                    ("NEGATIVA", _)       => ("Negativa", "label-danger"),
+                    ("CONTROL_HUMANO", _) => ("Control humano", "label-default"),
+                    _                     => ("Generada", "label-info")
+                };
+            }
+            catch (System.Text.Json.JsonException) { item.ResolucionLabel = "Generada"; item.ResolucionCss = "label-info"; }
+        }
+
+        // ----------------------------------------------------------------
         // POST /Studio/Sobres/Buscar  — Busca el ticket en Zendesk
         // ----------------------------------------------------------------
 
@@ -216,6 +490,25 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
                 State = "Started"
             };
             _db.ProcessCase.Add(newCase);
+
+            // ── 3b. REQ-019: contexto estructurado del sobre (el ticket Zendesk
+            //   trae número de sobre y CÉDULA — la cédula habilita la cadena de tools
+            //   por identidad y el guardián anti-IDOR).
+            _db.Note.Add(new Note
+            {
+                CaseCode  = newCase.CaseCode,
+                Title     = app_tramites.Services.Ai.OcrPromptHelper.ContextoSobreNoteTitle,
+                Detail    = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    origen      = "Zendesk",
+                    ticketId    = ticketId,
+                    numeroSobre = ticket.NumeroSobre,
+                    cedula      = ticket.CedulaBeneficiario,
+                    asunto      = ticket.Subject
+                }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }),
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = "import-zendesk"
+            });
             await _db.SaveChangesAsync();
 
             // ── 4. Persistir comentarios como Notes del caso
@@ -263,6 +556,7 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
 
                     var fileUrl = string.Empty;
                     var ocrText = string.Empty;
+                    List<app_tramites.Models.ViewModel.PaginaOcr> paginasOcr = new();
 
                     // Descargar y procesar con OCR
                     try
@@ -279,9 +573,11 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
                             Extension = extension
                         };
 
-                        var (blobUrl, texto) = await _ingest.ProcessFileAsync(ocrFile);
-                        fileUrl = blobUrl;
-                        ocrText = texto;
+                        // REQ-019: versión detallada → conserva el OCR por página
+                        var ocrRes = await _ingest.ProcessFileDetailedAsync(ocrFile);
+                        fileUrl = ocrRes.Url;
+                        ocrText = ocrRes.Text;
+                        paginasOcr = ocrRes.Paginas;
                     }
                     catch (Exception ocrEx)
                     {
@@ -305,6 +601,14 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
                     _db.DataFile.Add(dataFile);
                     await _db.SaveChangesAsync();
                     dataFileIds.Add(dataFile.Id);
+
+                    // REQ-019: OCR POR PÁGINA (habilita tags y clasificación por página)
+                    var paginas = OcrPaginaPersistencia.Materializar(dataFile.Id, paginasOcr);
+                    if (paginas.Count > 0)
+                    {
+                        _db.DataFilePage.AddRange(paginas);
+                        await _db.SaveChangesAsync();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -351,13 +655,48 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
                 return RedirectToAction(nameof(Index));
             }
 
+            var archivos = caso.DataFile.OrderBy(f => f.CreatedDate).ToList();
+
+            // -- Estado REAL de cada paso, leido de la base --------------------
+            // El workspace deja de ser 7 pestanas sueltas: es un proceso con
+            // pasos que se marcan hechos cuando existe su resultado guardado.
+            var tipificado = await _db.DocumentoClasificacion.AsNoTracking()
+                .AnyAsync(x => x.DataFileNavigation.CaseCode == caseCode && x.IsCurrent);
+
+            var titulos = caso.Notes.Where(n => n.Title != null).Select(n => n.Title!).ToHashSet();
+
+            var pasos = new List<PasoProcesoVm>
+            {
+                new() { Numero = 1, Tab = "tab-docs", Titulo = "Documentos", Icono = "fa-file-text-o",
+                        Entrega = "OCR por pagina de cada documento del sobre",
+                        Hecho = archivos.Count > 0 },
+                new() { Numero = 2, Tab = "tab-tipificacion", Titulo = "Tipificacion", Icono = "fa-tags",
+                        Entrega = "Que tipo de reembolso es cada documento y cada hoja",
+                        Hecho = tipificado,
+                        UrlGenerar = Url.Action("Generar", "Clasificacion", new { area = "Studio" }) },
+                new() { Numero = 3, Tab = "tab-expediente", Titulo = "Expediente", Icono = "fa-sitemap",
+                        Entrega = "Ficha del cliente y arbol de evidencia (factura -> justificantes)",
+                        Hecho = titulos.Contains("ExpedienteDocumental"),
+                        UrlGenerar = Url.Action("Generar", "Expediente", new { area = "Studio" }) },
+                new() { Numero = 4, Tab = "tab-auditoria", Titulo = "Auditoria medica", Icono = "fa-user-md",
+                        Entrega = "Revision clinica: pertinencia, correlacion y hallazgos",
+                        Hecho = titulos.Contains("AuditoriaMedicina"),
+                        UrlGenerar = Url.Action("Generar", "Auditoria", new { area = "Studio" }) },
+                new() { Numero = 5, Tab = "tab-reso", Titulo = "Resolucion", Icono = "fa-gavel",
+                        Entrega = "Liquidacion regla por regla (usa la auditoria) + carta al cliente",
+                        Hecho = titulos.Contains("ResolucionReembolso"),
+                        UrlGenerar = Url.Action("Generar", "Resolucion", new { area = "Studio" }) },
+            };
+
             var vm = new CasoImportadoViewModel
             {
                 Caso = caso,
-                Archivos = caso.DataFile.OrderBy(f => f.CreatedDate).ToList(),
+                Archivos = archivos,
                 Notas = caso.Notes.OrderBy(n => n.CreatedAt).ToList(),
                 ProcessCode = caso.DefinitionCode,
-                Mensaje = TempData["Mensaje"]?.ToString()
+                Mensaje = TempData["Mensaje"]?.ToString(),
+                Cliente = ArmarContextoCliente(caso.Notes),
+                Pasos = pasos
             };
             return View(vm);
         }
@@ -409,13 +748,14 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
                         Extension = archivo.Extension
                     };
 
-                    var (blobUrl, texto) = await _ingest.ProcessFileAsync(ocrFile);
+                    // REQ-019: versión detallada → conserva el OCR por página
+                    var ocrRes = await _ingest.ProcessFileDetailedAsync(ocrFile);
 
                     var dataFile = new DataFile
                     {
                         IsFileUri = true,
-                        FileUri = blobUrl,
-                        Text = texto,
+                        FileUri = ocrRes.Url,
+                        Text = ocrRes.Text,
                         CaseCode = request.CaseCode,
                         CreatedDate = DateTime.UtcNow,
                         OriginalName = archivo.FileName
@@ -423,6 +763,14 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
                     _db.DataFile.Add(dataFile);
                     await _db.SaveChangesAsync();
                     dataFileIds.Add(dataFile.Id);
+
+                    // REQ-019: OCR POR PÁGINA
+                    var paginas = OcrPaginaPersistencia.Materializar(dataFile.Id, ocrRes.Paginas);
+                    if (paginas.Count > 0)
+                    {
+                        _db.DataFilePage.AddRange(paginas);
+                        await _db.SaveChangesAsync();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -480,34 +828,67 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> BuscarArmonix(ImportarSobreArmonixViewModel vm)
         {
-            if (string.IsNullOrWhiteSpace(vm.NumeroSobre) && string.IsNullOrWhiteSpace(vm.Cedula))
+            // ── REQ-019 UX: criterio ÚNICO con detección automática ──────────
+            //   "NA-2612551" / "NE123..."  → número de sobre (exacto)
+            //   10 dígitos                 → cédula (requiere AnioNacimiento)
+            //   otros dígitos              → se intenta como número de sobre
+            //   texto                      → nombre del cliente (LIKE)
+            var criterio = vm.Criterio?.Trim();
+            string? numeroSobre = null, cedula = null, nombre = null;
+
+            if (!string.IsNullOrWhiteSpace(criterio))
             {
-                var procesos = await _db.Process
+                var soloDigitos = criterio.All(char.IsDigit);
+                if (System.Text.RegularExpressions.Regex.IsMatch(criterio, @"^[A-Za-z]{1,4}-?\d+$"))
+                    numeroSobre = criterio;
+                else if (soloDigitos && criterio.Length == 10)
+                    cedula = criterio;
+                else if (soloDigitos)
+                    numeroSobre = criterio;
+                else
+                    nombre = criterio;
+            }
+            else
+            {
+                // Compatibilidad con los campos separados (llamadas antiguas)
+                numeroSobre = string.IsNullOrWhiteSpace(vm.NumeroSobre) ? null : vm.NumeroSobre.Trim();
+                cedula      = string.IsNullOrWhiteSpace(vm.Cedula)      ? null : vm.Cedula.Trim();
+                criterio    = numeroSobre ?? cedula ?? string.Empty;
+            }
+
+            if (numeroSobre == null && cedula == null && nombre == null)
+            {
+                vm.ProcesosDisponibles = await _db.Process
                     .Where(p => p.IsActive == true)
                     .OrderBy(p => p.Name)
                     .ToListAsync();
-                vm.ProcesosDisponibles = procesos;
-                ModelState.AddModelError(string.Empty, "Debe ingresar el número de sobre o la cédula del afiliado.");
+                ModelState.AddModelError(string.Empty,
+                    "Escribe un número de sobre (NA-…), una cédula o el nombre del cliente.");
                 return View("ImportarArmonix", vm);
             }
-
-            var criterio = !string.IsNullOrWhiteSpace(vm.NumeroSobre)
-                ? vm.NumeroSobre.Trim()
-                : vm.Cedula!.Trim();
 
             IReadOnlyList<app_ocr_ai_models.Services.Documents.ArmonixSobreResueltoDto> sobres;
             try
             {
-                sobres = await _armonix.BuscarSobresAsync(
-                    string.IsNullOrWhiteSpace(vm.NumeroSobre) ? null : vm.NumeroSobre.Trim(),
-                    string.IsNullOrWhiteSpace(vm.Cedula)      ? null : vm.Cedula.Trim());
+                sobres = await _armonix.BuscarSobresAsync(numeroSobre, cedula, nombre, vm.AnioNacimiento);
+            }
+            catch (ArgumentException aex)
+            {
+                // Criterio incompleto (p. ej. cédula sin año de nacimiento, nombre muy corto):
+                // volver al formulario con el mensaje, conservando lo escrito.
+                vm.ProcesosDisponibles = await _db.Process
+                    .Where(p => p.IsActive == true)
+                    .OrderBy(p => p.Name)
+                    .ToListAsync();
+                ModelState.AddModelError(string.Empty, aex.Message);
+                return View("ImportarArmonix", vm);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[T22 RW] Error al buscar sobre Armonix con criterio {Criterio}.", criterio);
                 var resultado = new BusquedaSobreArmonixViewModel
                 {
-                    CriterioBuscado = criterio,
+                    CriterioBuscado = criterio ?? string.Empty,
                     ProcessCode     = vm.ProcessCode,
                     Error           = $"Error al consultar Armonix: {ex.Message}"
                 };
@@ -519,7 +900,7 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
             {
                 var resultado = new BusquedaSobreArmonixViewModel
                 {
-                    CriterioBuscado = criterio,
+                    CriterioBuscado = criterio ?? string.Empty,
                     ProcessCode     = vm.ProcessCode
                 };
                 return View("BusquedaSobreArmonix", resultado);
@@ -534,7 +915,7 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
             // Varios sobres: mostrar tabla de selección
             var seleccion = new BusquedaSobreArmonixViewModel
             {
-                CriterioBuscado = criterio,
+                CriterioBuscado = criterio ?? string.Empty,
                 ProcessCode     = vm.ProcessCode,
                 Sobres = sobres.Select(s => new SobreArmonixResueltoViewModel
                 {
@@ -545,7 +926,8 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
                     CodigoRegion          = s.CodigoRegion,
                     CodigoProducto        = s.CodigoProducto,
                     NumeroContrato        = s.NumeroContrato,
-                    NumeroPersonaPaciente = s.NumeroPersonaPaciente
+                    NumeroPersonaPaciente = s.NumeroPersonaPaciente,
+                    ValorPresentado       = s.ValorPresentado
                 }).ToList()
             };
             return View("BusquedaSobreArmonix", seleccion);
@@ -610,7 +992,8 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
             string codigoProducto,
             string codigoRegion,
             string numeroPersonaPaciente,
-            string processCode)
+            string processCode,
+            string? nombreTitular = null)
         {
             // ── 1. Validar el Process
             var process = await _db.Process.FindAsync(processCode);
@@ -629,6 +1012,27 @@ namespace app_ocr_ai_models.Areas.Studio.Controllers
                 State          = "Started"
             };
             _db.ProcessCase.Add(newCase);
+
+            // ── 2b. REQ-019: persistir el CONTEXTO ESTRUCTURADO del sobre como Note.
+            //   Sin esto, el agente IA queda "ciego": pierde contrato/producto/región/persona
+            //   que ya conocemos aquí, y las tools de coberturas/deducible no pueden encadenarse.
+            _db.Note.Add(new Note
+            {
+                CaseCode  = newCase.CaseCode,
+                Title     = app_tramites.Services.Ai.OcrPromptHelper.ContextoSobreNoteTitle,
+                Detail    = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    origen                = "Armonix",
+                    numeroSobre           = numeroSobre?.Trim(),
+                    numeroContrato        = numeroContrato?.Trim(),
+                    codigoProducto        = codigoProducto?.Trim(),
+                    codigoRegion          = codigoRegion?.Trim(),
+                    numeroPersonaPaciente = numeroPersonaPaciente?.Trim(),
+                    nombreTitular         = nombreTitular?.Trim()
+                }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }),
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = "import-armonix"
+            });
             await _db.SaveChangesAsync();
 
             // ── 3. Importar documentos desde Armonix → OCR → DataFile
