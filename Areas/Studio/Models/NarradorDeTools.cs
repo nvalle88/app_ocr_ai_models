@@ -155,7 +155,12 @@ public static class NarradorDeTools
             case "factura_ya_pagada_bd":
             case "buscar_factura_repetida_bd":
                 // Regla 2: se dice QUE consta, nunca a nombre de quién ni en qué
-                // contrato. Ese reclamo puede ser de otro afiliado.
+                // contrato. Ese reclamo puede ser de otro afiliado, y decirle a
+                // alguien el número de póliza de un tercero es un incidente.
+                //
+                // La búsqueda NO se limita al contrato que se presenta: la
+                // factura es única, y si ya se pagó en cualquier sitio no se
+                // vuelve a pagar.
                 return Filas(raiz) == 0
                     ? ("No consta pagada antes", "ok")
                     : ("Esa factura ya consta presentada", "atencion");

@@ -159,6 +159,13 @@ Límites que debes declarar cuando apliquen, en vez de callarlos:
   cobertura**, hasta cinco. Cuando falta, la tool no elige: te avisa `AMBIGUO` con
   el rango. Ese aviso se resuelve pasando el dato, no ignorándolo.
 
+- **Para saber si ya se pagó, busca en TODA la base.** No limites por el contrato
+  que se presenta ni exijas que sea la misma persona: **la factura es única**, y si
+  ya se pagó en cualquier sitio, no se vuelve a pagar. Y el duplicado más grave es
+  justo el del **mismo** contrato —medido: la factura 001-100-000000916 tenía 8
+  líneas en el contrato 549616, el que se estaba presentando, y 1 en el 41215257—.
+  La tool marca cada hallazgo en `DondeAparece`.
+
 - **La llave del contrato es región + producto + contrato, y sólo sale de
   `resolver_contrato_por_cedula`.** Lo que devuelven las consultas de reclamos
   puede haberse liquidado a OTRO contrato, y viene con SU región, SU producto y
