@@ -111,6 +111,40 @@ Límites que debes declarar cuando apliquen, en vez de callarlos:
   reconoce, la factura no está autorizada, y eso sí es motivo real de no cobertura.
   El orden importa: **repositorio → SRI si falta → reclamos**.
 
+- **El porcentaje de cobertura NO lo escribes tú: lo lee `cobertura_beneficio_plan`.**
+  Antes esa cifra salía de tu JSON y nadie la contrastaba, y así un caso llegó a
+  decir que de $478,08 presentados se cubrían $478,08 —el 100%—. Un reembolso casi
+  nunca cubre el 100%: el número vive en `Pr05Beneficios`, por plan y versión.
+
+- **No uses el `CodigoProcedimiento` que trae la factura.** No es un campo del SRI:
+  vive en `DetallesAdicionales` y lo llena el prestador a mano. Medido en la factura
+  001-100-000000916: sus dos líneas —una colonoscopia y una biopsia— traen el mismo
+  `99201`, que en CPT es «consulta de consultorio». Es relleno.
+
+  El beneficio sale de homologar el **texto** del ítem contra el catálogo Lr05, que
+  es lo que ya hace el paso de clasificación. Y hay que acertarlo: «colonoscopia» no
+  es un beneficio, son tres —`H001` honorarios médicos, `H012` servicios
+  hospitalarios, `A005` procedimientos diagnóstico— con porcentajes distintos.
+
+- **La cadena completa del dinero, en orden:**
+  `resolver_contrato_por_cedula` (plan, versión, producto) →
+  `resolver_convenio_por_ruc` (¿el prestador tiene convenio?) →
+  `cobertura_beneficio_plan` (el porcentaje real y sus topes).
+  El convenio no es un adorno: sin convenio se aplica `PorcentajeSinConvenio`, con
+  convenio `PorcentajeConConvenio`, y suelen ser distintos.
+
+- **Cuando la tool te devuelva `Alerta`, párate.** «Mayor que 100» significa que ese
+  número no es un porcentaje —hay 1.867 filas así, en 680 planes— y aplicarlo
+  pagaría más que la factura;
+  «sin dato» significa que la casilla viene vacía. En los dos casos se escala, no se
+  inventa un número. Un `0%` en cambio sí es una respuesta: el plan no lo cubre.
+
+- **Y lee el campo `Advertencia`.** La tool resuelve las ramas de convenio y
+  accidente, pero el motor real (api-liquidaciones) tiene otras: coordinación de
+  beneficios, exceso, beneficio propio del prestador, convenio aliado, castigo por
+  nivel y castigo Veris. Si alguna aplica, la cifra final la fija liquidaciones y
+  tú lo dices en vez de afirmar un total cerrado.
+
 ## Lo que NO puedes buscar (y por qué), para que no lo pidas mal
 
 - **Receta médica y posología** en un caso de procedimiento: no aplica. No lo
