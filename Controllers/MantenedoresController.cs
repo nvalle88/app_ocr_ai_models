@@ -20,19 +20,19 @@ namespace SmartAdmin.Web.Controllers
             _userManager = userManager;
         }
 
-        public async Task<IActionResult> Index()
-        {
-            ViewBag.ConfigCount       = await _db.OPAIConfiguration.CountAsync(x => x.IsActive);
-            ViewBag.AgentCount        = await _db.Agent.CountAsync(x => x.IsActive);
-            ViewBag.PromptCount       = await _db.OPAIPrompt.CountAsync(x => x.IsActive);
-            ViewBag.AsignacionCount   = await _db.OPAIModelPrompt.CountAsync();
-            ViewBag.ProcesoCount      = await _db.Process.CountAsync();
-            ViewBag.AgentProcessCount = await _db.AgentProcesses.CountAsync();
-            ViewBag.PolicyCount       = await _db.AccessAgentPolicies.CountAsync(x => x.Status);
-            ViewBag.BlobCount         = await _db.AzureBlobConf.CountAsync();
-            ViewBag.UserCount         = await _userManager.Users.CountAsync();
-            return View();
-        }
+        /// <summary>
+        /// Un solo mantenedor.
+        ///
+        /// Habia dos pantallas para lo mismo: este Index -un panel de contadores
+        /// que no dejaba editar nada- y Config, la unificada. Mas los nueve
+        /// mantenedores sueltos por entidad. Tres formas de llegar al mismo sitio
+        /// es una forma de no llegar a ninguno: el menu llevaba a los sueltos y
+        /// la unificada no se enlazaba desde ningun lado.
+        ///
+        /// Se queda Config. Este Index redirige, para que los enlaces viejos y
+        /// los favoritos de la gente sigan funcionando en vez de romperse.
+        /// </summary>
+        public IActionResult Index() => RedirectToAction(nameof(Config));
 
         public async Task<IActionResult> Config()
         {
