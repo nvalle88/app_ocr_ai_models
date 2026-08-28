@@ -131,10 +131,38 @@ public sealed class ClasificacionController : Controller
         //
         // Cada documento lleva su PROPIO StepExecution: asi se mide uno por uno
         // y un fallo queda acotado a su documento en vez de tumbar el sobre.
-        var documentos = caso.DataFile.OrderBy(f => f.CreatedDate).ToList();
-        if (documentos.Count == 0)
+        var todos = caso.DataFile.OrderBy(f => f.CreatedDate).ToList();
+        if (todos.Count == 0)
         {
             TempData["Error"] = "El caso no tiene documentos que clasificar.";
+            return RedirectToAction(nameof(Index), new { caseCode, embed });
+        }
+
+        // ── Solo lo que NO esta clasificado todavia ──────────────────────────
+        //
+        // El afiliado sube los documentos de uno en uno, y cada vez que anadia
+        // uno se volvian a clasificar TODOS. Medido en un caso real: el doc
+        // 10944 se clasifico a las 21:24, el afiliado subio otro, y a las 21:33
+        // se reclasificaron los dos —el primero por segunda vez, para llegar al
+        // mismo resultado—. Con seis documentos eso son 1+2+3+4+5+6 = 21
+        // clasificaciones para seis documentos.
+        //
+        // Ahora solo entran los que no tienen clasificacion vigente. Si no queda
+        // ninguno, no se llama al modelo: no hay nada que preguntar.
+        //
+        // Para rehacer una que quedo mal, se borra su clasificacion vigente y
+        // vuelve a entrar sola.
+        var yaClasificados = await _db.DocumentoClasificacion.AsNoTracking()
+            .Where(c => c.DataFileNavigation.CaseCode == caseCode && c.IsCurrent)
+            .Select(c => c.DataFileId)
+            .ToListAsync();
+
+        var documentos = todos.Where(f => !yaClasificados.Contains(f.Id)).ToList();
+
+        if (documentos.Count == 0)
+        {
+            // Todo hecho: no se llama al modelo para no cambiar nada.
+            TempData["Aviso"] = "Sus documentos ya estaban identificados.";
             return RedirectToAction(nameof(Index), new { caseCode, embed });
         }
 
@@ -243,10 +271,55 @@ public sealed class ClasificacionController : Controller
             return RedirectToAction(nameof(Index), new { caseCode, embed });
         }
 
+        // ── Lo del SOBRE, que ninguna respuesta ve entera ────────────────────
+        //
+        // ClasificacionSobre guarda el tipo de atencion y el total del sobre
+        // COMPLETO. Con una llamada por documento, ninguna respuesta lo ve
+        // entero: cada una habla de su documento. Si se dejara como viene, ese
+        // bloque dejaria de escribirse en silencio.
+        //
+        // Se compone aqui, y NO preguntandoselo otra vez al modelo, porque es
+        // aritmetica y una regla, no un juicio:
+        //
+        //   · el total del sobre es la suma de sus partes;
+        //   · si CUALQUIER documento es hospitalario, el sobre lo es: una
+        //     hospitalizacion manda sobre las consultas que la acompanan;
+        //   · el tipo predominante es el que mas veces aparece.
+        //
+        // Cruzar los documentos entre si -duplicados, contradicciones- no se
+        // hace aqui: eso ya es AGENTE_EXPEDIENTE, que trabaja sobre estos datos
+        // ya estructurados y es el paso mas barato del pipeline.
+        var partes = resultados.Where(x => x.Error == null)
+                               .Select(x => ExtractJson(x.Texto))
+                               .Where(j => !string.IsNullOrWhiteSpace(j))
+                               .Select(j => { try { return JsonSerializer.Deserialize<ClasificacionSobreDto>(j!, JsonOpts); }
+                                              catch { return null; } })
+                               .Where(d => d != null).Cast<ClasificacionSobreDto>().ToList();
+
+        dto.TotalSobre = partes.Sum(x => x.TotalSobre);
+
+        var atenciones = partes.Select(x => (x.TipoAtencion ?? string.Empty).Trim())
+                               .Where(x => x.Length > 0).ToList();
+        dto.TipoAtencion = atenciones.Any(a => a.StartsWith("HOSP", StringComparison.OrdinalIgnoreCase))
+            ? atenciones.First(a => a.StartsWith("HOSP", StringComparison.OrdinalIgnoreCase))
+            : atenciones.FirstOrDefault();
+
+        dto.JustificacionAtencion = string.Join(" · ",
+            partes.Select(x => x.JustificacionAtencion)
+                  .Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().Take(3));
+
+        foreach (var ind in partes.SelectMany(x => x.IndicadoresAtencion))
+            dto.IndicadoresAtencion.Add(ind);
+
+        dto.TipoPredominante = dto.Ficheros
+            .Select(f => f.TipoArchivo).Where(t => !string.IsNullOrWhiteSpace(t))
+            .GroupBy(t => t).OrderByDescending(g => g.Count())
+            .Select(g => g.Key).FirstOrDefault();
+
         // Decirlo cuando falta alguno: quedarse callado hace creer que el sobre
         // esta completo cuando no lo esta, y eso se paga al liquidar.
         if (leidos < documentos.Count)
-            TempData["Aviso"] = $"Se leyeron {leidos} de {documentos.Count} documentos. "
+            TempData["Aviso"] = $"Se leyeron {leidos} de {documentos.Count} documentos nuevos. "
                               + "Los que faltan pueden reintentarse sin volver a subirlos.";
 
         var json = JsonSerializer.Serialize(dto, JsonOpts);
