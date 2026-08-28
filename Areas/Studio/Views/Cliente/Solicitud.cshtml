@@ -168,8 +168,45 @@
     <div class="st-columnas@(Model.Documentos.Count == 0 ? " is-sola" : "")">
     <div class="st-col-accion">
 
+    @* ═══════════ ESA FACTURA YA ESTÁ ═══════════════════════════════
+       Va ANTES que el resultado y lo sustituye. Una factura no se paga dos
+       veces, así que aquí no hay cifra que dar ni porcentaje que explicar:
+       enseñar «le devolvemos X» junto a «ya está registrada» sería prometerle
+       un dinero que no va a llegar.
+
+       Lo decide el código sobre los reclamos reales, no el modelo. *@
+    @if (Model.FacturaRepetida is { Bloquea: true } rep)
+    {
+        <div class="st-reso is-neg">
+            <div class="st-reso-cifra">
+                <span class="lbl">Esta factura ya está registrada</span>
+            </div>
+            <p class="st-reso-frase">@rep.ParaElCliente</p>
+
+            @* Lo mínimo para que se reconozca cuál es, sin decir nunca la
+               póliza ni el reclamo de otra persona. *@
+            @if (rep.HayEnElMismoContrato)
+            {
+                <div class="st-terminos">
+                    <div class="st-termino">
+                        <strong>¿Y si ya la había enviado?</strong>
+                        <span>
+                            Entonces no hace falta hacer nada: su solicitud anterior sigue su curso.
+                            Puede consultarla en el historial de reembolsos.
+                        </span>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
     @* ═══════════ EL RESULTADO ═══════════════════════════════════════ *@
-    @if ((momento == "RESULTADO" || momento == "ENVIADO") && Model.Resolucion is { HayAlgo: true } r)
+    @* Si la factura ya está registrada, aquí no se enseña nada: la condición
+       lo excluye. Enseñar «le devolvemos X» debajo de «ya está registrada»
+       sería prometerle un dinero que no va a llegar. *@
+    @if ((momento == "RESULTADO" || momento == "ENVIADO")
+         && Model.Resolucion is { HayAlgo: true } r
+         && Model.FacturaRepetida is not { Bloquea: true })
     {
         var claseReso = (r.EstadoPropuesto ?? "").ToUpperInvariant() == "LIQUIDA_AUTO" ? "is-auto"
                       : (r.EstadoPropuesto ?? "").ToUpperInvariant() == "NEGATIVA"     ? "is-neg"

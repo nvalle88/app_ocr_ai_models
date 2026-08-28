@@ -616,6 +616,12 @@ public sealed class GrupoDocumentosVm
 /// <summary>Pantalla 3: la solicitud en curso.</summary>
 public sealed class ClienteSolicitudVm
 {
+    /// <summary>
+    /// Si esa factura ya está en el sistema, no vuelve a entrar. Lo decide
+    /// <see cref="FacturaRepetida"/> en código, no el modelo.
+    /// </summary>
+    public VeredictoFacturaRepetida? FacturaRepetida { get; set; }
+
     public Guid CaseCode { get; set; }
     public string Cedula { get; set; } = string.Empty;
     public string? NumeroContrato { get; set; }

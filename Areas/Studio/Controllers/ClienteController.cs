@@ -1403,6 +1403,39 @@ public sealed class ClienteController : Controller
                         .FirstOrDefault();
         vm.Resolucion = LeerResolucion(reso, audi);
 
+        // ── Una factura no se paga dos veces, y eso no lo decide el modelo ────
+        //
+        // El hallazgo del duplicado llegaba al agente como un dato más y era él
+        // quien decidía si cambiaba el resultado. Un dato así no se opina.
+        //
+        // Se lee la respuesta REAL de factura_ya_pagada_bd que quedó guardada en
+        // el caso y se juzga en código. Si esa factura ya está en un reclamo sin
+        // anular —en este contrato o en cualquier otro, de esta persona o de
+        // otra— no vuelve a entrar. Medido sobre 001-100-000000916: 8 líneas en
+        // el contrato que se presentaba y 1 en otro.
+        //
+        // Los anulados NO cuentan: si se anuló, esa presentación dejó de existir.
+        var repetida = await _db.ToolInvocation
+            .Where(ti => ti.ToolCode == "factura_ya_pagada_bd"
+                      && _db.StepExecution.Any(se => se.ExecutionId == ti.ExecutionId
+                                                  && se.CaseCode == caseCode)
+                      && !ti.IsError)
+            .OrderByDescending(ti => ti.InvocationId)
+            .Select(ti => ti.ResponseJson)
+            .FirstOrDefaultAsync();
+
+        vm.FacturaRepetida = FacturaRepetida.Juzgar(repetida, vm.NumeroContrato);
+
+        if (vm.FacturaRepetida.Bloquea)
+        {
+            // El log importa: si esto se dispara de más, alguien deja de cobrar
+            // lo que le toca, y hay que poder medirlo.
+            _log.LogWarning(
+                "[Portal] Caso {Caso}: factura ya registrada en {N} reclamo(s) sin anular "
+                + "(mismo contrato: {Mismo}). No se permite presentarla de nuevo.",
+                caseCode, vm.FacturaRepetida.Hallazgos.Count, vm.FacturaRepetida.HayEnElMismoContrato);
+        }
+
         // Un descuadre entre lo que el modelo dice que va a pagar y sus propias
         // partes no puede pasar en silencio: es dinero, y la pantalla enseña la
         // cifra derivada. Queda en el log para poder medir cada cuánto ocurre.
