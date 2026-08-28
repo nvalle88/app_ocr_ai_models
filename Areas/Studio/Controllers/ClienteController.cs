@@ -586,6 +586,51 @@ public sealed class ClienteController : Controller
     // deducible se consultan, no se suponen. Al afiliado se le puede decir "no
     // lo sé todavía", pero nunca un porcentaje inventado.
     // ─────────────────────────────────────────────────────────────────────
+    // ── Lo que el agente está haciendo AHORA MISMO ───────────────────────────
+    //
+    // Los pasos del portal tardan entre veinte y noventa segundos, y por dentro
+    // el agente consulta el SRI, los reclamos de producción, el convenio del
+    // prestador y las coberturas del plan. Nada de eso se veía: el afiliado
+    // miraba un rótulo fijo y recibía un veredicto sin haber visto el trabajo.
+    //
+    // Mientras el paso corre, el navegador pregunta aquí cada segundo y medio y
+    // va pintando lo que ya se hizo. No es una animación: cada línea existe
+    // porque hay una llamada registrada en ToolInvocation. Si el agente no
+    // consulta nada, aquí no aparece nada — que también es la verdad.
+    //
+    // `desde` es el último id ya pintado, para no repetir ni traer de más.
+    [HttpGet]
+    public async Task<IActionResult> Progreso(Guid caseCode, long desde = 0)
+    {
+        // Sin esto, cualquiera con un caseCode ajeno leería el avance de otro.
+        var mio = await _db.SolicitudCliente.AnyAsync(x => x.CaseCode == caseCode);
+        if (!mio) return Json(new { pasos = Array.Empty<object>(), ultimo = desde });
+
+        // Las invocaciones del caso, por sus ejecuciones. Se piden en crudo y se
+        // narran fuera del SQL: la traducción es una regla, no una consulta.
+        var crudas = await (
+            from ti in _db.ToolInvocation
+            join se in _db.StepExecution on ti.ExecutionId equals se.ExecutionId
+            where se.CaseCode == caseCode && ti.InvocationId > desde
+            orderby ti.InvocationId
+            select new
+            {
+                ti.InvocationId, ti.ToolCode, ti.ResponseJson,
+                ti.IsError, ti.StartDate, ti.EndDate
+            }).Take(40).ToListAsync();
+
+        var pasos = crudas
+            .Select(c => NarradorDeTools.Narrar(
+                c.InvocationId, c.ToolCode, c.ResponseJson, c.IsError, c.StartDate, c.EndDate))
+            .ToList();
+
+        return Json(new
+        {
+            pasos,
+            ultimo = crudas.Count > 0 ? crudas[^1].InvocationId : desde
+        });
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Explicar(Guid caseCode)

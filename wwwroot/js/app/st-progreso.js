@@ -65,6 +65,8 @@
                 '</div>' +
               '</div>' +
               '<ul class="st-prog-etapas"></ul>' +
+              '<div class="st-prog-checks-cab" hidden>Comprobaciones</div>' +
+              '<ul class="st-prog-checks"></ul>' +
               '<div class="st-prog-pie">' +
                 '<span class="st-prog-nota"></span>' +
                 '<span class="st-prog-reloj">0s</span>' +
@@ -184,6 +186,47 @@
             ESTADO.etapas.push(texto);
             ESTADO.actual = ESTADO.etapas.length - 1;
             pintarEtapas();
+            return api;
+        },
+
+        /**
+         * Una comprobación REAL que el agente acaba de hacer, con su resultado.
+         *
+         * Va en su propia lista, separada de las etapas gruesas, porque son dos
+         * cosas distintas: la etapa es por dónde va el proceso; esto es qué se
+         * verificó y qué salió. Mezclarlas haría ilegibles las dos.
+         *
+         * Cada línea existe porque hay una llamada registrada. Si el agente no
+         * consulta nada, aquí no aparece nada.
+         *
+         *   p.verificacion({ que: 'Comprobando su factura en el SRI',
+         *                    resultado: 'Está registrada', tono: 'ok', segundos: 1.4 })
+         */
+        verificacion: function (v) {
+            if (!CAPA || !v || !v.que) return api;
+            var ul  = CAPA.querySelector('.st-prog-checks');
+            var cab = CAPA.querySelector('.st-prog-checks-cab');
+            if (!ul) return api;
+
+            // Sin id no se puede evitar repetir, así que se exige.
+            if (v.id !== undefined && ul.querySelector('[data-id="' + v.id + '"]')) return api;
+
+            var tono = { ok: 'is-ok', atencion: 'is-atencion', fallo: 'is-fallo' }[v.tono] || 'is-neutro';
+            var icono = { ok: 'fa-check', atencion: 'fa-exclamation', fallo: 'fa-times' }[v.tono] || 'fa-circle-o';
+
+            var li = document.createElement('li');
+            li.className = tono;
+            if (v.id !== undefined) li.setAttribute('data-id', v.id);
+            li.innerHTML =
+                '<i class="fa ' + icono + '" aria-hidden="true"></i>' +
+                '<span class="st-check-que">' + esc(v.que) + '</span>' +
+                (v.resultado ? '<span class="st-check-res">' + esc(v.resultado) + '</span>' : '') +
+                (v.segundos ? '<span class="st-check-t">' + v.segundos + 's</span>' : '');
+            ul.appendChild(li);
+            if (cab) cab.hidden = false;
+
+            // Lo último hecho es lo que interesa ver.
+            ul.scrollTop = ul.scrollHeight;
             return api;
         },
 

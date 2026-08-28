@@ -99,3 +99,70 @@ body.st-prog-bloqueado { overflow: hidden; }
     .st-prog-caja { padding: 20px 18px; }
     .st-prog-tit { font-size: 16px; }
 }
+
+/* ── Las comprobaciones del agente, en vivo ────────────────────────────────
+   Van debajo de las etapas gruesas y en su propio bloque: la etapa dice por
+   dónde va el proceso, esto dice qué se verificó y qué salió. Son dos cosas
+   distintas y mezclarlas hacía ilegibles las dos.
+
+   La lista tiene alto máximo y hace scroll: en un caso con muchos documentos
+   pueden salir veinte líneas, y el overlay no puede crecer hasta empujar el
+   pie fuera de la pantalla. */
+.st-prog-checks-cab {
+    margin: 14px 0 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    color: #8792a2;
+}
+
+.st-prog-checks {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 190px;
+    overflow-y: auto;
+    border-top: 1px solid #e8ecf3;
+}
+
+.st-prog-checks li {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    padding: 7px 2px;
+    font-size: 13px;
+    line-height: 1.4;
+    border-bottom: 1px solid #f2f5f9;
+    animation: st-check-entra .22s ease-out;
+}
+.st-prog-checks li:last-child { border-bottom: 0; }
+
+.st-prog-checks li i { flex: 0 0 auto; font-size: 11px; width: 13px; text-align: center; }
+
+.st-check-que { flex: 1 1 auto; color: #3d4757; min-width: 0; }
+.st-check-res { flex: 0 0 auto; font-weight: 600; }
+.st-check-t   { flex: 0 0 auto; font-size: 11px; color: #a3adbb; font-variant-numeric: tabular-nums; }
+
+.st-prog-checks li.is-ok i,       .st-prog-checks li.is-ok .st-check-res       { color: #1a7f4b; }
+.st-prog-checks li.is-atencion i, .st-prog-checks li.is-atencion .st-check-res { color: #8a6100; }
+.st-prog-checks li.is-fallo i,    .st-prog-checks li.is-fallo .st-check-res    { color: #b42318; }
+.st-prog-checks li.is-neutro i,   .st-prog-checks li.is-neutro .st-check-res   { color: #7b8698; }
+
+@keyframes st-check-entra {
+    from { opacity: 0; transform: translateY(-3px); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* En móvil el resultado se va a su propia línea antes que truncarse: leer
+   "Su plan cubre el…" cortado es peor que dos líneas. */
+@media (max-width: 520px) {
+    .st-prog-checks li { flex-wrap: wrap; }
+    .st-check-que { flex: 1 1 100%; }
+    .st-check-res { margin-left: 22px; }
+}
+
+/* Quien prefiere no ver animaciones, no las ve. */
+@media (prefers-reduced-motion: reduce) {
+    .st-prog-checks li { animation: none; }
+}

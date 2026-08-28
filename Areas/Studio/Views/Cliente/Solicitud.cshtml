@@ -1244,6 +1244,52 @@
                     nota: nota || ''
                 });
 
+                // ── Mientras el paso corre, contar lo que el agente comprueba ──
+                //
+                // El POST de abajo tarda entre veinte y noventa segundos, y por
+                // dentro el agente consulta el SRI, los reclamos, el convenio del
+                // prestador y las coberturas del plan. Antes nada de eso se veía:
+                // un rótulo fijo y, al final, un veredicto caído del cielo.
+                //
+                // Esto pregunta cada segundo y medio por lo que YA quedó
+                // registrado. No adivina ni anima: si el agente no consulta nada,
+                // no aparece nada.
+                var ultimoVisto = 0, sondeo = null;
+
+                function mirarQueEstaHaciendo() {
+                    return fetch('@Url.Action("Progreso", "Cliente", new { area = "Studio" })'
+                                 + '?caseCode=@Model.CaseCode&desde=' + ultimoVisto,
+                                 { credentials: 'same-origin' })
+                        .then(function (r) { return r.ok ? r.json() : null; })
+                        .then(function (d) {
+                            if (!d || !d.pasos) return;
+                            d.pasos.forEach(function (x) {
+                                p.verificacion({
+                                    id: x.id, que: x.que, resultado: x.resultado,
+                                    tono: x.tono, segundos: x.segundos
+                                });
+                            });
+                            if (d.ultimo) ultimoVisto = d.ultimo;
+                        })
+                        // Que falle el sondeo NO puede tumbar el paso: es adorno
+                        // informativo, no parte del proceso.
+                        .catch(function () { });
+                }
+
+                function arrancarSondeo() {
+                    if (sondeo) return;
+                    sondeo = setInterval(mirarQueEstaHaciendo, 1500);
+                }
+                function pararSondeo() {
+                    if (!sondeo) return;
+                    clearInterval(sondeo); sondeo = null;
+                    // Una última pasada: lo que se registró en el ultimo segundo
+                    // se perdía si se cortaba justo al terminar.
+                    mirarQueEstaHaciendo();
+                }
+
+                arrancarSondeo();
+
                 for (var i = 0; i < pasos.length; i++) {
                     var li = pasos[i];
                     p.etapa(i, 'Paso ' + (i + 1) + ' de ' + pasos.length);
@@ -1256,16 +1302,19 @@
                             headers: { 'RequestVerificationToken': token() }, body: fd
                         });
                         if (!resp.ok) {
+                            pararSondeo();
                             p.error('No se pudo completar «' + li.dataset.titulo + '». ' +
                                     'Sus documentos están guardados; vuelva a intentarlo.');
                             return false;
                         }
                         p.hecho(i);
                     } catch (e) {
+                        pararSondeo();
                         p.error('Se perdió la conexión. Sus documentos están guardados.');
                         return false;
                     }
                 }
+                pararSondeo();
                 return true;
             }
 
