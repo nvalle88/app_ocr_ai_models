@@ -35,6 +35,22 @@
    en una sola ida. La anterior queda desactivada: dos tools que contestan lo
    mismo acaban contestando distinto.
 
+   -- Por que entra codigoCobertura ---------------------------------------------
+   api-liquidaciones no busca el beneficio como yo lo buscaba. Su llave real, en
+   AccesoDatosCore/Planes/DatosBeneficioPlan.ObtenerBeneficio, son SEIS campos:
+
+       Region + CodigoProducto + CodigoPlan + VersionPlan + CodigoCobertura
+              + TipoCobertura IN ('AMBOS', el del reclamo) + CodigoBeneficio
+
+   Faltaban CodigoCobertura -que ni existia como parametro- y Region, que yo
+   trataba como opcional. Y no es cosmetico: MEDIDO sobre 3.000 llaves
+   (plan+version+producto+beneficio), 1.066 -el 36%- tienen MAS DE UN porcentaje
+   segun la cobertura, hasta cinco distintos. Sin ese campo, una de cada tres
+   respuestas podia ser el porcentaje de otra cobertura.
+
+   Cuando no se pasa, la tool NO elige: devuelve las filas y avisa AMBIGUO con el
+   rango que hay. Elegir a ciegas en un dato de dinero es peor que no contestar.
+
    -- Un nombre que enganna ---------------------------------------------------
    En Lr04DetalleReclamo hay DOS columnas parecidas y no son lo mismo:
        CodigoProcedimiento = Lr05.CodigoHarvard        (504001, 99201, 221121)
@@ -83,7 +99,7 @@ DECLARE @schema nvarchar(max) = N'{
     },
     "region": {
       "type": "string",
-      "description": "Sierra o Costa. Opcional."
+      "description": "Sierra o Costa. El motor la exige en su llave; sin ella la fila puede no ser la que el elegiria."
     },
     "prestadorEnConvenio": {
       "type": "string",
@@ -92,6 +108,10 @@ DECLARE @schema nvarchar(max) = N'{
     "esAccidente": {
       "type": "string",
       "description": "true si el reclamo es por accidente: entonces se aplica el porcentaje DE convenio aunque no lo tenga."
+    },
+    "codigoCobertura": {
+      "type": "string",
+      "description": "Codigo de cobertura del plan (INC01, PRX01, MAT01, CRN01...). IMPORTANTE: el motor lo exige en su llave, y medido, 1 de cada 3 llaves tiene porcentajes DISTINTOS segun la cobertura. Sin el, la tool avisa de ambiguedad en vez de elegir."
     }
   },
   "required": [
@@ -103,7 +123,7 @@ DECLARE @schema nvarchar(max) = N'{
 DECLARE @binding nvarchar(max) = N'{
   "connection": "SaludReclamos",
   "maxRows": 5,
-  "query": "SELECT TOP 5 p.NumeroProcedimiento, p.CodigoHarvard AS CodigoProcedimiento, p.NombreEspanol AS NombreProcedimiento, p.CodigoBeneficio, cb.NombreBeneficio, b.CodigoPlan, b.VersionPlan, b.CodigoProducto, b.TipoCobertura, b.Region, b.PorcentajeConConvenio, b.PorcentajeSinConvenio, b.PorcentajeRedEspecifica, b.PorcentajeOtrosNoAfiliados, b.PorcentajeExceso, b.MontoPorPrestacion, b.CantidadPorPrestacion, b.PeriodoMonto, b.PeriodoCantidad, b.AplicaDeducible, b.AplicaCarencia, b.DiasCarenciaBeneficios, b.DiasReclamo, b.EdadDesde, b.EdadHasta, b.BeneficioGenero, b.TopaProcedimiento, b.ValorProcedimiento, a.Pct AS PorcentajeQueAplica, a.Por AS PorQueEsePorcentaje, CASE WHEN b.CodigoBeneficio IS NULL THEN ''El plan no lista este beneficio. No es un 0%: es que no hay fila. Verificar plan, version y producto antes de concluir nada.'' WHEN a.Pct IS NULL THEN ''SIN DATO: la casilla viene vacia en el plan. No inventar un porcentaje: escalar.'' WHEN a.Pct > 100 THEN ''NO USAR: valor mayor que 100 en una casilla de porcentaje, asi que no es un porcentaje. Hay 1.867 filas asi en 680 planes; que significan no esta establecido. Aplicarlo pagaria mas que la factura. Escalar, no pagar.'' WHEN a.Pct = 0 THEN ''El plan cubre 0% este beneficio por esta via. Es una respuesta valida: NO cubre.'' ELSE NULL END AS Alerta, ''CodigoProcedimiento es el CodigoHarvard de Lr05: es el que la liquidacion escribe en Lr04DetalleReclamo. NumeroProcedimiento es la fila de Lr05, NO es lo mismo. Resueltas las ramas de convenio y accidente; NO evaluadas: coordinacion de beneficios, exceso, beneficio propio del prestador, convenio ALIADO, castigo por nivel y castigo Veris. Si alguna aplica, la cifra final la fija api-liquidaciones.'' AS Advertencia FROM Salud.dbo.Lr05Procedimientos p WITH (NOLOCK) LEFT JOIN Salud.dbo.Pr07CatalogoBeneficios cb WITH (NOLOCK) ON cb.CodigoBeneficio = p.CodigoBeneficio LEFT JOIN Salud.dbo.Pr05Beneficios b WITH (NOLOCK) ON b.CodigoBeneficio = p.CodigoBeneficio AND b.CodigoPlan = @codigoPlan AND b.VersionPlan = TRY_CAST(@versionPlan AS int) AND b.CodigoProducto = @codigoProducto AND (@tipoCobertura IS NULL OR LEN(@tipoCobertura) = 0 OR b.TipoCobertura = @tipoCobertura OR b.TipoCobertura = ''Ambos'') AND (@region IS NULL OR LEN(@region) = 0 OR b.Region = @region) CROSS APPLY ( SELECT CASE WHEN LOWER(ISNULL(@prestadorEnConvenio,'''')) IN (''1'',''true'',''si'') THEN b.PorcentajeConConvenio WHEN LOWER(ISNULL(@esAccidente,'''')) IN (''1'',''true'',''si'') THEN b.PorcentajeConConvenio ELSE b.PorcentajeSinConvenio END AS Pct, CASE WHEN LOWER(ISNULL(@prestadorEnConvenio,'''')) IN (''1'',''true'',''si'') THEN ''prestador EN convenio con Saludsa'' WHEN LOWER(ISNULL(@esAccidente,'''')) IN (''1'',''true'',''si'') THEN ''sin convenio, pero el reclamo es por ACCIDENTE: se aplica el porcentaje de convenio'' ELSE ''prestador SIN convenio (si el convenio no se verifico, verificarlo: cambia el porcentaje)'' END AS Por ) a WHERE (p.NumeroProcedimiento = TRY_CAST(@numeroProcedimiento AS int) OR p.CodigoHarvard = TRY_CAST(@codigoProcedimiento AS int)) ORDER BY CASE WHEN b.TipoCobertura = ''Ambos'' THEN 1 ELSE 0 END, b.CodigoSecuencia"
+  "query": "WITH cand AS ( SELECT p.NumeroProcedimiento, p.CodigoHarvard AS CodigoProcedimiento, p.NombreEspanol AS NombreProcedimiento, p.CodigoBeneficio, cb.NombreBeneficio, b.CodigoPlan, b.VersionPlan, b.CodigoProducto, b.CodigoCobertura, b.TipoCobertura, b.Region, b.PorcentajeConConvenio, b.PorcentajeSinConvenio, b.PorcentajeRedEspecifica, b.PorcentajeOtrosNoAfiliados, b.PorcentajeExceso, b.MontoPorPrestacion, b.CantidadPorPrestacion, b.PeriodoMonto, b.PeriodoCantidad, b.AplicaDeducible, b.AplicaCarencia, b.DiasCarenciaBeneficios, b.DiasReclamo, b.EdadDesde, b.EdadHasta, b.BeneficioGenero, b.TopaProcedimiento, b.ValorProcedimiento, b.CodigoSecuencia, a.Pct, a.Por FROM Salud.dbo.Lr05Procedimientos p WITH (NOLOCK) LEFT JOIN Salud.dbo.Pr07CatalogoBeneficios cb WITH (NOLOCK) ON cb.CodigoBeneficio = p.CodigoBeneficio LEFT JOIN Salud.dbo.Pr05Beneficios b WITH (NOLOCK) ON b.CodigoBeneficio = p.CodigoBeneficio AND b.CodigoPlan = @codigoPlan AND b.VersionPlan = TRY_CAST(@versionPlan AS int) AND b.CodigoProducto = @codigoProducto AND (@codigoCobertura IS NULL OR LEN(@codigoCobertura) = 0 OR b.CodigoCobertura = @codigoCobertura) AND (@tipoCobertura IS NULL OR LEN(@tipoCobertura) = 0 OR b.TipoCobertura = @tipoCobertura OR b.TipoCobertura = ''Ambos'') AND (@region IS NULL OR LEN(@region) = 0 OR b.Region = @region) CROSS APPLY ( SELECT CASE WHEN LOWER(ISNULL(@prestadorEnConvenio,'''')) IN (''1'',''true'',''si'') THEN b.PorcentajeConConvenio WHEN LOWER(ISNULL(@esAccidente,'''')) IN (''1'',''true'',''si'') THEN b.PorcentajeConConvenio ELSE b.PorcentajeSinConvenio END AS Pct, CASE WHEN LOWER(ISNULL(@prestadorEnConvenio,'''')) IN (''1'',''true'',''si'') THEN ''prestador EN convenio con Saludsa'' WHEN LOWER(ISNULL(@esAccidente,'''')) IN (''1'',''true'',''si'') THEN ''sin convenio, pero el reclamo es por ACCIDENTE: se aplica el porcentaje de convenio'' ELSE ''prestador SIN convenio (si el convenio no se verifico, verificarlo: cambia el porcentaje)'' END AS Por ) a WHERE (p.NumeroProcedimiento = TRY_CAST(@numeroProcedimiento AS int) OR p.CodigoHarvard = TRY_CAST(@codigoProcedimiento AS int)) ) SELECT TOP 5 NumeroProcedimiento, CodigoProcedimiento, NombreProcedimiento, CodigoBeneficio, NombreBeneficio, CodigoPlan, VersionPlan, CodigoProducto, CodigoCobertura, TipoCobertura, Region, PorcentajeConConvenio, PorcentajeSinConvenio, PorcentajeRedEspecifica, PorcentajeOtrosNoAfiliados, PorcentajeExceso, MontoPorPrestacion, CantidadPorPrestacion, PeriodoMonto, PeriodoCantidad, AplicaDeducible, AplicaCarencia, DiasCarenciaBeneficios, DiasReclamo, EdadDesde, EdadHasta, BeneficioGenero, TopaProcedimiento, ValorProcedimiento, Pct AS PorcentajeQueAplica, Por AS PorQueEsePorcentaje, CASE WHEN CodigoBeneficio IS NULL OR CodigoPlan IS NULL THEN ''El plan no lista este beneficio. No es un 0%: es que no hay fila. Revisar plan, version, producto y region antes de concluir nada.'' WHEN (@codigoCobertura IS NULL OR LEN(@codigoCobertura) = 0) AND MIN(Pct) OVER (PARTITION BY CodigoBeneficio) <> MAX(Pct) OVER (PARTITION BY CodigoBeneficio) THEN ''AMBIGUO: no se paso codigoCobertura y este beneficio tiene porcentajes DISTINTOS segun la cobertura (de '' + CONVERT(varchar(12), MIN(Pct) OVER (PARTITION BY CodigoBeneficio)) + '' a '' + CONVERT(varchar(12), MAX(Pct) OVER (PARTITION BY CodigoBeneficio)) + ''). Pasar codigoCobertura: pasa en 1 de cada 3 llaves.'' WHEN Pct IS NULL THEN ''SIN DATO: la casilla viene vacia en el plan. No inventar un porcentaje: escalar.'' WHEN Pct > 100 THEN ''NO USAR: valor mayor que 100 en una casilla de porcentaje, asi que no es un porcentaje. Hay 1.867 filas asi en 680 planes. Aplicarlo pagaria mas que la factura. Escalar, no pagar.'' WHEN Pct = 0 THEN ''El plan cubre 0% este beneficio por esta via. Es una respuesta valida: NO cubre.'' ELSE NULL END AS Alerta, ''CodigoProcedimiento es el CodigoHarvard de Lr05: el que la liquidacion escribe en Lr04DetalleReclamo. NumeroProcedimiento es la fila de Lr05, NO es lo mismo. El motor (api-liquidaciones, DatosBeneficioPlan.ObtenerBeneficio) busca por Region + Producto + Plan + Version + CodigoCobertura + TipoCobertura + Beneficio: sin esas seis la fila puede no ser la que el elegiria. Resueltas las ramas de convenio y accidente; NO evaluadas: coordinacion de beneficios, exceso, beneficio propio del prestador, convenio ALIADO, castigo por nivel y castigo Veris.'' AS Advertencia FROM cand ORDER BY CASE WHEN TipoCobertura = ''Ambos'' THEN 1 ELSE 0 END, CodigoBeneficio, CodigoSecuencia"
 }';
 
 IF EXISTS (SELECT 1 FROM dbo.OPAITool WHERE Code = @code)

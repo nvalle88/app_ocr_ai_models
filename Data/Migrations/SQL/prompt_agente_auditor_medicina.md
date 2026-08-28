@@ -145,6 +145,13 @@ Límites que debes declarar cuando apliquen, en vez de callarlos:
   El convenio no es un adorno: sin convenio se aplica `PorcentajeSinConvenio`, con
   convenio `PorcentajeConConvenio`, y suelen ser distintos.
 
+- **Pasa `codigoCobertura` y `region`.** El motor de liquidaciones busca el
+  beneficio por seis campos —región, producto, plan, versión, **código de
+  cobertura** y tipo de cobertura— y sin ellos la fila puede no ser la que él
+  elegiría. Medido: **1 de cada 3 llaves tiene porcentajes distintos según la
+  cobertura**, hasta cinco. Cuando falta, la tool no elige: te avisa `AMBIGUO` con
+  el rango. Ese aviso se resuelve pasando el dato, no ignorándolo.
+
 - **Cuando la tool te devuelva `Alerta`, párate.** «Mayor que 100» significa que ese
   número no es un porcentaje —hay 1.867 filas así, en 680 planes— y aplicarlo
   pagaría más que la factura; «sin dato» es una casilla vacía; «el plan no lista
