@@ -116,88 +116,140 @@ public sealed class ClasificacionController : Controller
             return RedirectToAction(nameof(Index), new { caseCode, embed });
         }
 
-        // ── Mensaje: contexto + OCR por PÁGINA con marcas [[PAGINA n]] ──
-        var userMessage = ConstruirMensaje(caso);
-
-        // Este paso NO tenia StepExecution y por eso era invisible.
+        // ── Un documento por llamada, en paralelo y con tope ─────────────────
         //
-        // La fila se creaba solo cuando el agente usaba tools, porque nacio para
-        // colgar de ella las ToolInvocation. El clasificador no usa ninguna, asi
-        // que el paso mas lento del pipeline -medido a mano en el navegador: ~50
-        // segundos con un solo PDF- no dejaba rastro de su duracion en ningun
-        // sitio. No se puede mejorar lo que no se mide, y aqui literalmente no
-        // habia dato: hubo que cronometrarlo con un sessionStorage.
+        // Antes era UNA llamada con el sobre entero. Medido sobre los casos de la
+        // demo: 68 s de media, 101 el peor, peticiones de 40.000 a 48.000
+        // caracteres, y CINCO ejecuciones muertas con el mismo mensaje —
+        // "HttpClient.Timeout of 100 seconds elapsing". Por eso se moria con
+        // cinco o seis documentos: cuantos mas, mas grande la peticion.
         //
-        // Se registra siempre: duracion, tamaño del prompt y estado.
-        var exec = new StepExecution
+        // Cuatro a la vez, igual que el OCR y por el mismo motivo: el cuello es
+        // la espera del modelo, no la CPU, y una tanda de veinte fotos no puede
+        // convertirse en veinte llamadas simultaneas. El semaforo se libera en
+        // finally para que un documento que reviente no deje el hueco cerrado.
+        //
+        // Cada documento lleva su PROPIO StepExecution: asi se mide uno por uno
+        // y un fallo queda acotado a su documento en vez de tumbar el sobre.
+        var documentos = caso.DataFile.OrderBy(f => f.CreatedDate).ToList();
+        if (documentos.Count == 0)
         {
-            CaseCode       = caseCode,
-            StepOrder      = 0,
-            DataFileId     = caso.DataFile.FirstOrDefault()?.Id,
-            // OJO: es el codigo del AGENTE, no el de la configuracion.
-            // StepExecution.ModelCode tiene FK contra dbo.Agent
-            // (FK_StepExecution_Agent): pasarle el ConfigCode revienta el INSERT
-            // con 500. Fue exactamente el fallo de la primera version de esto.
-            ModelCode      = AgenteCode,
-            RequestContent = userMessage,
-            Status         = "Running",
-            StartDate      = DateTime.UtcNow,
-            // config aqui es una proyeccion anonima (ConfigCode, MaxTokens):
-            // no trae EndpointUrl y no merece ampliarla solo por esto.
-            EndpointUrl    = null
-        };
-        _db.StepExecution.Add(exec);
+            TempData["Error"] = "El caso no tiene documentos que clasificar.";
+            return RedirectToAction(nameof(Index), new { caseCode, embed });
+        }
+
+        // Las filas se crean ANTES, en secuencia: el DbContext no es seguro entre
+        // hilos y hacerlo dentro del paralelo corrompe el ChangeTracker.
+        var ejecuciones = new List<(DataFile Doc, StepExecution Exec)>();
+        foreach (var f in documentos)
+        {
+            var e = new StepExecution
+            {
+                CaseCode   = caseCode,
+                StepOrder  = 0,
+                DataFileId = f.Id,
+                // OJO: el codigo del AGENTE, no el de la configuracion.
+                // StepExecution.ModelCode tiene FK contra dbo.Agent.
+                ModelCode      = AgenteCode,
+                RequestContent = ConstruirMensajeDeUno(caso, f),
+                Status         = "Running",
+                StartDate      = DateTime.UtcNow,
+                EndpointUrl    = null
+            };
+            _db.StepExecution.Add(e);
+            ejecuciones.Add((f, e));
+        }
         await _db.SaveChangesAsync();
 
-        string texto;
-        try
+        const int aLaVez = 4;
+        using var turno = new SemaphoreSlim(aLaVez, aLaVez);
+        var svc = _factory.Create(opai);
+        var maxTokens = config?.MaxTokens ?? 16000;
+
+        var tareas = ejecuciones.Select(async par =>
         {
-            var svc = _factory.Create(opai);
-            var res = await svc.CompleteAsync(new AiCompletionRequest
+            await turno.WaitAsync(HttpContext.RequestAborted);
+            try
             {
-                SystemPrompt = prompt,
-                UserMessage  = userMessage,
-                MaxTokens    = config?.MaxTokens ?? 16000,
-                Temperature  = 0
-            }, HttpContext.RequestAborted);
-            texto = res.Text;
+                var res = await svc.CompleteAsync(new AiCompletionRequest
+                {
+                    SystemPrompt = prompt,
+                    UserMessage  = par.Exec.RequestContent!,
+                    MaxTokens    = maxTokens,
+                    Temperature  = 0
+                }, HttpContext.RequestAborted);
 
-            exec.ResponseContent = texto;
-            exec.Status  = "Completed";
-            exec.EndDate = DateTime.UtcNow;
-            await _db.SaveChangesAsync();
-            await UsoDelModelo.ApuntarAsync(_db, exec.ExecutionId, res);
-        }
-        catch (Exception ex)
+                return (par.Exec, Texto: res.Text, Uso: res, Error: (Exception?)null);
+            }
+            catch (Exception ex)
+            {
+                // Un documento que falla NO tumba a los demas: se guarda su fallo
+                // y el sobre sigue con lo que si se pudo leer.
+                return (par.Exec, Texto: (string?)null, Uso: null!, Error: ex);
+            }
+            finally { turno.Release(); }
+        }).ToList();
+
+        var resultados = await Task.WhenAll(tareas);
+
+        // De vuelta en secuencia: otra vez, el DbContext no es seguro entre hilos.
+        foreach (var r in resultados)
         {
-            // El fallo tambien se registra. Una fila que se queda en "Running"
-            // para siempre es la firma de una ejecucion que murio, y es un dato:
-            // sin esto un cuelgue y un error se ven igual, o sea no se ven.
-            exec.Status  = "Failed";
-            exec.EndDate = DateTime.UtcNow;
-            exec.ResponseContent = ex.Message;
-            await _db.SaveChangesAsync();
+            r.Exec.EndDate = DateTime.UtcNow;
+            if (r.Error != null)
+            {
+                r.Exec.Status = "Failed";
+                r.Exec.ResponseContent = r.Error.Message;
+                _logger.LogWarning(r.Error, "Error clasificando el documento {Doc} del caso {CaseCode}.",
+                                   r.Exec.DataFileId, caseCode);
+            }
+            else
+            {
+                r.Exec.Status = "Completed";
+                r.Exec.ResponseContent = r.Texto;
+            }
+        }
+        await _db.SaveChangesAsync();
 
-            _logger.LogWarning(ex, "Error clasificando el caso {CaseCode}.", caseCode);
-            TempData["Error"] = $"Error al clasificar: {ex.Message}";
+        foreach (var r in resultados.Where(x => x.Error == null))
+            await UsoDelModelo.ApuntarAsync(_db, r.Exec.ExecutionId, r.Uso);
+
+        // ── Fusion: los ficheros de todas las respuestas en un solo DTO ──────
+        var dto = new ClasificacionSobreDto();
+        var leidos = 0;
+
+        foreach (var r in resultados.Where(x => x.Error == null))
+        {
+            var trozo = ExtractJson(r.Texto);
+            if (string.IsNullOrWhiteSpace(trozo)) continue;
+
+            ClasificacionSobreDto? parcial;
+            try { parcial = JsonSerializer.Deserialize<ClasificacionSobreDto>(trozo, JsonOpts); }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "JSON invalido del documento {Doc} en {CaseCode}.",
+                                   r.Exec.DataFileId, caseCode);
+                continue;
+            }
+
+            if (parcial?.Ficheros == null) continue;
+            dto.Ficheros.AddRange(parcial.Ficheros);
+            leidos++;
+        }
+
+        if (leidos == 0)
+        {
+            TempData["Error"] = "No se pudo leer ninguno de los documentos. Vuelva a intentarlo.";
             return RedirectToAction(nameof(Index), new { caseCode, embed });
         }
 
-        var json = ExtractJson(texto);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            TempData["Error"] = "El clasificador no devolvió JSON interpretable. Reintenta.";
-            return RedirectToAction(nameof(Index), new { caseCode, embed });
-        }
+        // Decirlo cuando falta alguno: quedarse callado hace creer que el sobre
+        // esta completo cuando no lo esta, y eso se paga al liquidar.
+        if (leidos < documentos.Count)
+            TempData["Aviso"] = $"Se leyeron {leidos} de {documentos.Count} documentos. "
+                              + "Los que faltan pueden reintentarse sin volver a subirlos.";
 
-        ClasificacionSobreDto? dto;
-        try { dto = JsonSerializer.Deserialize<ClasificacionSobreDto>(json, JsonOpts); }
-        catch (JsonException ex)
-        {
-            _logger.LogWarning(ex, "JSON de clasificación inválido {CaseCode}.", caseCode);
-            TempData["Error"] = "El JSON del clasificador no cumple el esquema.";
-            return RedirectToAction(nameof(Index), new { caseCode, embed });
-        }
+        var json = JsonSerializer.Serialize(dto, JsonOpts);
 
         if (dto != null)
             await PersistirAsync(caseCode, dto, json, HttpContext.RequestAborted);
@@ -212,35 +264,62 @@ public sealed class ClasificacionController : Controller
     /// PÁGINA POR PÁGINA. Si un documento no tiene páginas (importado antes del
     /// cambio de OCR), se envía su texto completo como [[PAGINA 1]].
     /// </summary>
-    private static string ConstruirMensaje(ProcessCase caso)
+    /// <summary>
+    /// El mensaje de UN documento.
+    ///
+    /// Antes iban todos juntos en una sola llamada, y ahi estaban los dos
+    /// sintomas peores de la demo:
+    ///
+    ///   · lentitud — 68 s de media y hasta 101, porque el modelo se leia de
+    ///     golpe el OCR entero del sobre;
+    ///   · caidas con cinco o seis documentos — la peticion llegaba a 48.000
+    ///     caracteres y cruzaba el muro de los 100 s del HttpClient.
+    ///
+    /// Un documento por llamada, en paralelo y con tope: el tiempo pasa a ser el
+    /// del documento MAS LENTO en vez de la suma, y un documento que reviente no
+    /// se lleva por delante a los otros cinco.
+    ///
+    /// El contexto del sobre va en TODAS: sin el no se puede decir de quien es
+    /// el documento ni si el paciente pertenece al contrato.
+    /// </summary>
+    private static string ConstruirMensajeDeUno(ProcessCase caso, DataFile f)
     {
         var sb = new StringBuilder();
         var ctx = OcrPromptHelper.BuildCaseContext(caso.Notes);
         sb.AppendLine("## Contexto del sobre");
-        sb.AppendLine(string.IsNullOrWhiteSpace(ctx) ? "{}" : ctx.Replace("\r", " ").Replace("\n", " "));
+        sb.AppendLine(string.IsNullOrWhiteSpace(ctx) ? "{}" : Aplanar(ctx));
         sb.AppendLine();
-        sb.AppendLine("## Documentos del sobre (docId :: nombre :: texto OCR por pagina)");
-
-        foreach (var f in caso.DataFile.OrderBy(f => f.CreatedDate))
-        {
-            sb.AppendLine($"--- docId={f.Id} :: {f.OriginalName} ---");
-            var paginas = f.DataFilePage.OrderBy(p => p.PageNumber).ToList();
-            if (paginas.Count > 0)
-            {
-                foreach (var p in paginas)
-                {
-                    sb.AppendLine($"[[PAGINA {p.PageNumber}]]");
-                    sb.AppendLine(string.IsNullOrWhiteSpace(p.Text) ? "(pagina sin texto OCR)" : p.Text);
-                }
-            }
-            else
-            {
-                sb.AppendLine("[[PAGINA 1]]");
-                sb.AppendLine(string.IsNullOrWhiteSpace(f.Text) ? "(sin texto OCR)" : f.Text);
-            }
-            sb.AppendLine($"--- FIN docId={f.Id} ---").AppendLine();
-        }
+        sb.AppendLine("## Documento a clasificar (docId :: nombre :: texto OCR por pagina)");
+        sb.AppendLine("Devuelve el JSON del esquema con UN solo fichero: el de este docId.");
+        sb.AppendLine();
+        EscribirDocumento(sb, f);
         return sb.ToString();
+    }
+
+    /// <summary>El contexto en una sola linea: los saltos rompen el formato del prompt.</summary>
+    private static string Aplanar(string texto) =>
+        texto.Replace((char)13, ' ').Replace((char)10, ' ');   // CR y LF
+
+    /// <summary>El OCR de un documento, pagina por pagina.</summary>
+    private static void EscribirDocumento(StringBuilder sb, DataFile f)
+    {
+        sb.AppendLine($"--- docId={f.Id} :: {f.OriginalName} ---");
+        var paginas = f.DataFilePage.OrderBy(p => p.PageNumber).ToList();
+        if (paginas.Count > 0)
+        {
+            foreach (var p in paginas)
+            {
+                sb.AppendLine($"[[PAGINA {p.PageNumber}]]");
+                sb.AppendLine(string.IsNullOrWhiteSpace(p.Text) ? "(pagina sin texto OCR)" : p.Text);
+            }
+        }
+        else
+        {
+            // Documento importado antes del OCR por paginas: va entero como una.
+            sb.AppendLine("[[PAGINA 1]]");
+            sb.AppendLine(string.IsNullOrWhiteSpace(f.Text) ? "(sin texto OCR)" : f.Text);
+        }
+        sb.AppendLine($"--- FIN docId={f.Id} ---").AppendLine();
     }
 
     // ── Persistencia en las 5 tablas ─────────────────────────────────────
