@@ -145,6 +145,13 @@ Límites que debes declarar cuando apliquen, en vez de callarlos:
   El convenio no es un adorno: sin convenio se aplica `PorcentajeSinConvenio`, con
   convenio `PorcentajeConConvenio`, y suelen ser distintos.
 
+- **Si no identificas el procedimiento, NO lo inventes: deja el campo vacío.**
+  La tool lo cataloga con el genérico `504001 MISCELANEO LABORATORIO` y lo marca
+  `EsGenerico`, que es exactamente lo que hace la liquidación real cuando la
+  correlación no homologa. Un caso parado es un afiliado esperando; el genérico
+  lo deja seguir. Pero **dilo**: el gasto queda con los topes del beneficio
+  genérico y no con los del procedimiento real, y eso cambia lo que se devuelve.
+
 - **Pasa `codigoCobertura` y `region`.** El motor de liquidaciones busca el
   beneficio por seis campos —región, producto, plan, versión, **código de
   cobertura** y tipo de cobertura— y sin ellos la fila puede no ser la que él

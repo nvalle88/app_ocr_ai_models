@@ -196,6 +196,17 @@ public static class NarradorDeTools
 
         var f = filas[0];
 
+        // Genérico: el procedimiento no se identificó y se catalogó como
+        // misceláneo, igual que hace la liquidación real. Al afiliado NO se le
+        // dice «no se identificó» —no es cosa suya y no puede hacer nada— pero
+        // tampoco se le canta un porcentaje como si fuera el de su
+        // procedimiento, porque son los topes del genérico. Se le dice que lo
+        // está revisando una persona, que es lo que va a pasar.
+        if (f.TryGetProperty("EsGenerico", out var gen) &&
+            (gen.ValueKind == JsonValueKind.True ||
+             (gen.ValueKind == JsonValueKind.String && gen.GetString() == "True")))
+            return ("Lo está revisando un especialista", "atencion");
+
         if (f.TryGetProperty("Alerta", out var al) && al.ValueKind == JsonValueKind.String
             && !string.IsNullOrWhiteSpace(al.GetString()))
             return ("Necesita una comprobación más", "atencion");

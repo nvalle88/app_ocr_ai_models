@@ -126,6 +126,27 @@ public class NarradorDeToolsTests
     }
 
     [Fact]
+    public void Generico_no_le_canta_un_porcentaje_al_afiliado()
+    {
+        // Cuando el procedimiento no se identifica, la liquidacion lo cataloga
+        // como misceláneo. El porcentaje que sale es el del beneficio GENERICO,
+        // no el del procedimiento real. Cantarle "su plan cubre el 80%" al
+        // afiliado seria darle por bueno un numero que todavia puede cambiar.
+        const string real = """
+        {"rowCount":1,"rows":[{"CodigoProcedimiento":504001,"EsGenerico":true,
+          "CodigoBeneficio":"A003","PorcentajeQueAplica":80.00,
+          "Alerta":"GENERICO: no se identifico el procedimiento..."}]}
+        """;
+        var v = NarradorDeTools.Narrar(1, "codigo_liquidacion_y_cobertura", real, false, T0, T1);
+
+        Assert.Equal("Lo está revisando un especialista", v.Resultado);
+        Assert.DoesNotContain("%", v.Resultado!);
+        // Y nunca en el idioma de dentro: al afiliado no le dice nada.
+        foreach (var jerga in new[] { "504001", "GENERICO", "MISCELANEO", "A003" })
+            Assert.DoesNotContain(jerga, v.Que + " " + v.Resultado, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Sin_fila_de_plan_no_se_dice_que_no_cubre()
     {
         // "El plan no lista esa prestacion" NO es "no se cubre": es que no hay
