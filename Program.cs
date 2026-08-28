@@ -75,6 +75,12 @@ namespace app_ocr_ai_models
             builder.Services.AddScoped<app_ocr_ai_models.Services.IBuscadorFacturaRepetida,
                                        app_ocr_ai_models.Services.BuscadorFacturaRepetida>();
 
+            // Comprobar la factura contra el SRI. El BLOQUEO por "no existe en el
+            // SRI" esta apagado por defecto -Saludsa:BloquearSiNoEstaEnSri- porque
+            // hoy la respuesta de pruebas no lo permite: ver VerificadorSri.cs.
+            builder.Services.AddScoped<app_ocr_ai_models.Services.IVerificadorSri,
+                                       app_ocr_ai_models.Services.VerificadorSri>();
+
             builder.Services.AddScoped<app_ocr_ai_models.Services.Ai.IHomologadorProcedimientos,
                                         app_ocr_ai_models.Services.Ai.HomologadorProcedimientos>();
             builder.Services.AddScoped<IOcrIngestService, OcrIngestService>();
