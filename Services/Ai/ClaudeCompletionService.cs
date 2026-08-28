@@ -696,19 +696,40 @@ public sealed class ClaudeCompletionService : IAiCompletionService
     /// </remarks>
     /// <param name="apiKey">API key explícita, o <see langword="null"/> para resolución por entorno.</param>
     /// <param name="baseUrl">URL base Anthropic-compatible, o <see langword="null"/> para el default del SDK.</param>
+    /// <summary>
+    /// Cuánto se le da al modelo antes de cortar.
+    ///
+    /// El SDK no trae timeout propio, así que heredaba los 100 segundos por
+    /// defecto de HttpClient. Y eso NO era un margen holgado: medido sobre los
+    /// casos del portal, la clasificación de documentos tarda 68 s de media y
+    /// llega a 101 s, con peticiones de 40.000 a 48.000 caracteres. Cinco
+    /// ejecuciones murieron exactamente así:
+    ///
+    ///     The request was canceled due to the configured
+    ///     HttpClient.Timeout of 100 seconds elapsing.
+    ///
+    /// Por eso "con cinco o seis documentos se muere": más documentos, petición
+    /// más grande, y se cruza el muro. No era una caída aleatoria.
+    ///
+    /// Subirlo NO arregla la lentitud —eso se arregla mandando menos— pero
+    /// convierte una caída en una espera, que es otra cosa.
+    /// </summary>
+    private static readonly TimeSpan TiempoDelModelo = TimeSpan.FromMinutes(5);
+
     private static AnthropicClient BuildAnthropicClient(string? apiKey, string? baseUrl)
     {
         var hasKey     = !string.IsNullOrWhiteSpace(apiKey);
         var hasBaseUrl = !string.IsNullOrWhiteSpace(baseUrl);
 
-        // APIKey y BaseUrl son init-only en AnthropicClient v10.4.0 (CS8852);
-        // se deben asignar en el inicializador de objeto, no después de la construcción.
+        // APIKey, BaseUrl y Timeout son init-only en AnthropicClient v10.4.0
+        // (CS8852): hay que asignarlas en el inicializador, no después.
         return (hasKey, hasBaseUrl) switch
         {
-            (true,  true)  => new AnthropicClient { APIKey = apiKey!, BaseUrl = new Uri(baseUrl!) },
-            (true,  false) => new AnthropicClient { APIKey = apiKey! },
-            (false, true)  => new AnthropicClient { BaseUrl = new Uri(baseUrl!) },
-            (false, false) => new AnthropicClient()
+            (true,  true)  => new AnthropicClient
+                              { APIKey = apiKey!, BaseUrl = new Uri(baseUrl!), Timeout = TiempoDelModelo },
+            (true,  false) => new AnthropicClient { APIKey = apiKey!, Timeout = TiempoDelModelo },
+            (false, true)  => new AnthropicClient { BaseUrl = new Uri(baseUrl!), Timeout = TiempoDelModelo },
+            (false, false) => new AnthropicClient { Timeout = TiempoDelModelo }
         };
     }
 }

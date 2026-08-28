@@ -88,6 +88,37 @@ public sealed class InternalApiToolExecutor : IToolExecutor
     private static void ApuntarCaido(string clave) =>
         _noContesta[clave] = DateTime.UtcNow.AddSeconds(SegundosRecordandoElHostCaido);
 
+    // ── El mismo caso no pregunta dos veces lo mismo ─────────────────────────
+    //
+    // Medido sobre los ocho ultimos casos del portal: resolver_contrato_por_cedula
+    // se llamo 2,4 veces POR CASO, factura_ya_pagada_bd 2,5 y resolver_convenio_
+    // por_ruc 2,0. Son lecturas, y dentro de un mismo caso la respuesta es la
+    // misma: cada repeticion es una ida a la VPN y unos segundos de espera que el
+    // afiliado paga mirando una pantalla quieta.
+    //
+    // El memo vive DIEZ MINUTOS y se llavea por caso + tool + argumentos. No es
+    // una cache de datos de negocio: es no repetir la misma pregunta dentro de la
+    // misma conversacion. Pasados los diez minutos se vuelve a preguntar, porque
+    // un caso que se retoma al rato merece datos frescos.
+    //
+    // Solo se memoriza lo que SALIO BIEN. Un fallo se reintenta: cachearlo
+    // convertiria un tropiezo de red en una respuesta equivocada durante diez
+    // minutos.
+    private static readonly Microsoft.Extensions.Caching.Memory.MemoryCache _memo =
+        new(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions { SizeLimit = 4000 });
+
+    private static readonly TimeSpan VidaDelMemo = TimeSpan.FromMinutes(10);
+
+    /// <summary>La misma pregunta: mismo caso, misma tool y mismos argumentos.</summary>
+    private static string LlaveDelMemo(string caso, string toolCode,
+                                       IReadOnlyDictionary<string, object?> entrada)
+    {
+        var partes = entrada
+            .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(kv => kv.Key.ToLowerInvariant() + "=" + (kv.Value?.ToString() ?? string.Empty));
+        return caso + "|" + toolCode + "|" + string.Join("&", partes);
+    }
+
     public InternalApiToolExecutor(
         OCRDbContext db,
         IHttpClientFactory httpClientFactory,
@@ -115,6 +146,19 @@ public sealed class InternalApiToolExecutor : IToolExecutor
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(toolCode);
         ArgumentException.ThrowIfNullOrWhiteSpace(agentCode);
+
+        // ¿Ya se pregunto esto en este mismo caso? Entonces no se vuelve a
+        // preguntar. Sin caso identificado no hay memo: no habria con que llavear.
+        var llaveMemo = string.IsNullOrWhiteSpace(caseIdentity)
+            ? null
+            : LlaveDelMemo(caseIdentity!, toolCode, toolInput);
+
+        if (llaveMemo != null && _memo.TryGetValue(llaveMemo, out var guardado)
+            && guardado is string yaSabido)
+        {
+            _logger.LogDebug("[T5] '{Tool}' ya se habia consultado en este caso: no se repite.", toolCode);
+            return yaSabido;
+        }
 
         // ── 1. Cargar la tool del catálogo ───────────────────────────────
         var tool = await _db.OPAITool
@@ -297,6 +341,15 @@ public sealed class InternalApiToolExecutor : IToolExecutor
         if (isError)
             throw new InvalidOperationException(
                 $"[T5] La tool '{toolCode}' respondió con error. Detalle: {responseJson}");
+
+        // Solo se memoriza lo que salio bien.
+        if (llaveMemo != null)
+        {
+            using var entrada = _memo.CreateEntry(llaveMemo);
+            entrada.Value = responseJson;
+            entrada.AbsoluteExpirationRelativeToNow = VidaDelMemo;
+            entrada.Size = 1;
+        }
 
         return responseJson;
     }

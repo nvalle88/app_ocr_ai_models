@@ -318,8 +318,13 @@ public sealed class ClienteController : Controller
                 edad              = b.Edad,
                 genero            = b.Genero,
                 deducibleCubierto = b.DeducibleCubierto,
-                enCarencia        = b.EnCarencia,
-                diasFinCarencia   = b.DiasFinCarencia,
+                // Son DOS carencias, no una: se puede estar fuera de la
+                // ambulatoria y dentro de la hospitalaria a la vez. La
+                // hospitalaria se leia del contrato y NO se le mandaba al
+                // agente, asi que no podia aplicarla aunque quisiera.
+                enCarenciaAmbulatoria  = b.EnCarencia,
+                enCarenciaHospitalaria = b.EnCarenciaHosp,
+                diasFinCarencia        = b.DiasFinCarencia,
                 preexistencias    = b.Preexistencias
             },
 

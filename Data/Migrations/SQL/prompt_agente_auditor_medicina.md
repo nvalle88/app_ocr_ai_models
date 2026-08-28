@@ -159,6 +159,14 @@ Límites que debes declarar cuando apliquen, en vez de callarlos:
   cobertura**, hasta cinco. Cuando falta, la tool no elige: te avisa `AMBIGUO` con
   el rango. Ese aviso se resuelve pasando el dato, no ignorándolo.
 
+- **La carencia son DOS, y hay que aplicar la que toca.** El contrato te da
+  `enCarenciaAmbulatoria` y `enCarenciaHospitalaria` por separado, porque se
+  puede estar fuera de una y dentro de la otra. Un gasto ambulatorio se juzga
+  contra la ambulatoria y uno hospitalario contra la hospitalaria: cruzarlas
+  niega consultas que sí están cubiertas o paga hospitalizaciones que no.
+  Si no sabes de qué tipo es el gasto y hay una carencia activa, **no decidas**:
+  déjalo en control humano y dilo.
+
 - **Para saber si ya se pagó, busca en TODA la base.** No limites por el contrato
   que se presenta ni exijas que sea la misma persona: **la factura es única**, y si
   ya se pagó en cualquier sitio, no se vuelve a pagar. Y el duplicado más grave es
