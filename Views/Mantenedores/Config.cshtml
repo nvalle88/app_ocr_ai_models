@@ -139,6 +139,14 @@
                 <i class="fa fa-file-text-o"></i> Prompts
                 <span class="cfg-nav-count">@Model.Prompts.Count</span>
             </a>
+            <a class="cfg-nav-link" data-panel="tools">
+                <i class="fa fa-wrench"></i> Herramientas
+                <span class="cfg-nav-count">@Model.Tools.Count</span>
+            </a>
+            <a class="cfg-nav-link" data-panel="skills">
+                <i class="fa fa-graduation-cap"></i> Skills
+                <span class="cfg-nav-count">@Model.Skills.Count</span>
+            </a>
         </div>
 
         <div class="cfg-nav-group">
@@ -146,6 +154,10 @@
             <a class="cfg-nav-link" data-panel="procesos">
                 <i class="fa fa-random"></i> Procesos
                 <span class="cfg-nav-count">@Model.Procesos.Count</span>
+            </a>
+            <a class="cfg-nav-link" data-panel="pasos">
+                <i class="fa fa-list-ol"></i> Pasos
+                <span class="cfg-nav-count">@Model.Pasos.Count</span>
             </a>
         </div>
 
@@ -423,6 +435,123 @@
             </div>
         </div>
 
+        @* ══ TOOLS ══════════════════════════════════════════════════════════
+           El catálogo de herramientas del motor. Hasta ahora sólo se podía
+           tocar por migración SQL. *@
+        <div class="cfg-panel" id="panel-tools">
+            <div class="cfg-panel-topbar">
+                <h3 class="cfg-panel-title"><i class="fa fa-wrench"></i> Herramientas del agente</h3>
+                <button class="btn btn-primary btn-sm" onclick="cfgOpenNew('tools')">
+                    <i class="fa fa-plus"></i> Nueva Herramienta
+                </button>
+            </div>
+            <div class="cfg-panel-body">
+                <table id="dt-tools" class="table table-striped table-hover table-bordered cfg-table" width="100%">
+                    <thead><tr><th>Código</th><th>Tipo</th><th>Qué hace</th><th>Agentes</th><th>Estado</th><th style="width:80px"></th></tr></thead>
+                    <tbody>
+                    @foreach (var t in Model.Tools)
+                    {
+                        var agentesTool = Model.ToolAsignaciones.Where(a => a.ToolCode == t.Code)
+                                               .Select(a => a.ModelCode).ToList();
+                        <tr>
+                            <td><strong>@t.Code</strong></td>
+                            <td><span class="cfg-badge" style="background:#0ea5e9">@t.BindingType</span></td>
+                            <td><small class="text-muted">@(t.Description?.Length > 90 ? t.Description.Substring(0, 90) + "…" : t.Description)</small></td>
+                            <td><span class="cfg-badge" style="background:#6366f1">@agentesTool.Count</span></td>
+                            <td>
+                                @if (t.IsActive) { <span class="cfg-badge" style="background:#16a34a">Activa</span> }
+                                else { <span class="cfg-badge" style="background:#64748b">Inactiva</span> }
+                            </td>
+                            <td class="text-center">
+                                <a onclick='cfgEdit("tools",@Html.Raw(JsonSerializer.Serialize(new{t.Code,t.Description,t.InputSchema,t.BindingType,t.BindingConfig,t.Strict,t.IsActive,t.VersionNumber,Agentes=agentesTool})))' class="fa fa-edit txt-color-blue" style="cursor:pointer"></a>
+                                &nbsp;<a onclick='cfgDelete("Tool","@t.Code",this)' class="fa fa-trash-o txt-color-red" style="cursor:pointer"></a>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+                @if (!Model.Tools.Any()) { <p class="text-muted">Todavía no hay herramientas registradas.</p> }
+            </div>
+        </div>
+
+        @* ══ SKILLS ═════════════════════════════════════════════════════════ *@
+        <div class="cfg-panel" id="panel-skills">
+            <div class="cfg-panel-topbar">
+                <h3 class="cfg-panel-title"><i class="fa fa-graduation-cap"></i> Skills</h3>
+                <button class="btn btn-primary btn-sm" onclick="cfgOpenNew('skills')">
+                    <i class="fa fa-plus"></i> Nueva Skill
+                </button>
+            </div>
+            <div class="cfg-panel-body">
+                <table id="dt-skills" class="table table-striped table-hover table-bordered cfg-table" width="100%">
+                    <thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Id</th><th>Agentes</th><th style="width:80px"></th></tr></thead>
+                    <tbody>
+                    @foreach (var k in Model.Skills)
+                    {
+                        var agentesSkill = Model.SkillAsignaciones.Where(a => a.SkillCode == k.Code)
+                                                .Select(a => a.ModelCode).ToList();
+                        <tr>
+                            <td><strong>@k.Code</strong></td>
+                            <td>@k.Name</td>
+                            <td><span class="cfg-badge" style="background:#8b5cf6">@k.SkillType</span></td>
+                            <td><small class="text-muted">@k.SkillId @k.SkillVersion</small></td>
+                            <td><span class="cfg-badge" style="background:#6366f1">@agentesSkill.Count</span></td>
+                            <td class="text-center">
+                                <a onclick='cfgEdit("skills",@Html.Raw(JsonSerializer.Serialize(new{k.Code,k.Name,k.SkillType,k.SkillId,k.SkillVersion,k.Description,k.IsActive,k.VersionNumber,Agentes=agentesSkill})))' class="fa fa-edit txt-color-blue" style="cursor:pointer"></a>
+                                &nbsp;<a onclick='cfgDelete("Skill","@k.Code",this)' class="fa fa-trash-o txt-color-red" style="cursor:pointer"></a>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+                @if (!Model.Skills.Any()) { <p class="text-muted">Todavía no hay skills registradas.</p> }
+            </div>
+        </div>
+
+        @* ══ PASOS DE PROCESO ═══════════════════════════════════════════════
+           Un proceso sin pasos no hace nada: el orquestador recorre una lista
+           vacía y devuelve texto vacío. Pasó con PORTAL_CLIENTE. *@
+        <div class="cfg-panel" id="panel-pasos">
+            <div class="cfg-panel-topbar">
+                <h3 class="cfg-panel-title"><i class="fa fa-list-ol"></i> Pasos de cada proceso</h3>
+            </div>
+            <div class="cfg-panel-body">
+                <table id="dt-pasos" class="table table-striped table-hover table-bordered cfg-table" width="100%">
+                    <thead><tr><th>Proceso</th><th>Pasos</th><th>Agentes que corren</th><th style="width:110px"></th></tr></thead>
+                    <tbody>
+                    @foreach (var pr in Model.Procesos)
+                    {
+                        var pasosDe = Model.Pasos.Where(x => x.ProcessCode == pr.Code)
+                                           .OrderBy(x => x.StepOrder).ToList();
+                        <tr>
+                            <td><strong>@pr.Name</strong><br /><small class="text-muted">@pr.Code</small></td>
+                            <td>
+                                @if (pasosDe.Count == 0)
+                                {
+                                    <span class="cfg-badge" style="background:#dc2626">sin pasos — no hace nada</span>
+                                }
+                                else
+                                {
+                                    <span class="cfg-badge" style="background:#16a34a">@pasosDe.Count</span>
+                                }
+                            </td>
+                            <td>
+                                @foreach (var ps in pasosDe)
+                                {
+                                    <div><small>@(ps.StepOrder + 1). <strong>@ps.ModelCode</strong> — @ps.StepName</small></div>
+                                }
+                            </td>
+                            <td class="text-center">
+                                <a onclick='cfgEditPasos("@pr.Code","@pr.Name",@Html.Raw(JsonSerializer.Serialize(pasosDe.Select(x => new { x.StepOrder, x.ModelCode, x.StepName, x.StepsToInclude, SourceType = (int)x.SourceType, x.AggregateExecution }))))'
+                                   class="btn btn-xs btn-default" style="cursor:pointer"><i class="fa fa-edit"></i> Pasos</a>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
     </div><!-- /cfg-content -->
 </div><!-- /cfg-shell -->
 
@@ -679,6 +808,159 @@
   </div>
 </div>
 
+<!-- Modal: Herramienta -->
+<div id="modal-tools" class="modal fade" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button class="close" data-dismiss="modal">&times;</button>
+        <h4 class="modal-title"><i class="fa fa-wrench"></i> Herramienta del agente</h4>
+      </div>
+      <div class="modal-body">
+        <div class="row">
+          <div class="col-sm-6 form-group">
+            <label>Código</label>
+            <input id="tl-Code" class="form-control" placeholder="consultar_sobre_bd" />
+            <small class="text-muted">Es el nombre con el que el modelo la invoca. Se guarda también como Name: si difieren, el motor devuelve BadRequest.</small>
+          </div>
+          <div class="col-sm-3 form-group">
+            <label>Tipo</label>
+            <select id="tl-BindingType" class="form-control">
+              <option value="Sql">Sql</option>
+              <option value="InternalApi">InternalApi</option>
+              <option value="Armonix">Armonix</option>
+              <option value="Mcp">Mcp</option>
+            </select>
+          </div>
+          <div class="col-sm-3 form-group">
+            <label>Estado</label>
+            <select id="tl-IsActive" class="form-control">
+              <option value="true">Activa</option>
+              <option value="false">Inactiva</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Qué hace <small class="text-muted">(máximo 500 caracteres — <span id="tl-cuenta">0</span>)</small></label>
+          <textarea id="tl-Description" class="form-control" rows="3"
+                    placeholder="Lo que el modelo lee para decidir si la usa. Di qué pregunta responde y cuál NO."></textarea>
+          <small class="text-muted">El modelo elige la herramienta por esta frase, no por su nombre: es la parte que más decide si se usa bien.</small>
+        </div>
+
+        <div class="form-group">
+          <label>InputSchema <small class="text-muted">(JSON Schema de los parámetros)</small></label>
+          <textarea id="tl-InputSchema" class="form-control" rows="6" style="font-family:monospace;font-size:12px"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>BindingConfig <small class="text-muted">(JSON: la consulta o el endpoint)</small></label>
+          <textarea id="tl-BindingConfig" class="form-control" rows="7" style="font-family:monospace;font-size:12px"></textarea>
+        </div>
+
+        <div class="cfg-modal-section">
+          <div class="cfg-modal-section-title"><i class="fa fa-android"></i> Agentes que podrán usarla</div>
+          <div class="cfg-check-grid" id="tl-agentes-grid">
+            @foreach (var a in Model.Agentes)
+            {
+              <label class="cfg-check-item">
+                <input type="checkbox" class="tl-agente-check" value="@a.Code" />
+                <span>@a.Name</span>
+              </label>
+            }
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-default" data-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" onclick="cfgSaveToolFull()"><i class="fa fa-save"></i> Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Skill -->
+<div id="modal-skills" class="modal fade" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button class="close" data-dismiss="modal">&times;</button>
+        <h4 class="modal-title"><i class="fa fa-graduation-cap"></i> Skill</h4>
+      </div>
+      <div class="modal-body">
+        <div class="row">
+          <div class="col-sm-6 form-group"><label>Código</label><input id="sk-Code" class="form-control" /></div>
+          <div class="col-sm-6 form-group"><label>Nombre</label><input id="sk-Name" class="form-control" /></div>
+          <div class="col-sm-4 form-group"><label>Tipo</label><input id="sk-SkillType" class="form-control" /></div>
+          <div class="col-sm-4 form-group"><label>Id</label><input id="sk-SkillId" class="form-control" /></div>
+          <div class="col-sm-4 form-group"><label>Versión</label><input id="sk-SkillVersion" class="form-control" /></div>
+        </div>
+        <div class="form-group"><label>Descripción</label><textarea id="sk-Description" class="form-control" rows="3"></textarea></div>
+        <div class="form-group">
+          <label>Estado</label>
+          <select id="sk-IsActive" class="form-control"><option value="true">Activa</option><option value="false">Inactiva</option></select>
+        </div>
+        <div class="cfg-modal-section">
+          <div class="cfg-modal-section-title"><i class="fa fa-android"></i> Agentes que la llevan</div>
+          <div class="cfg-check-grid" id="sk-agentes-grid">
+            @foreach (var a in Model.Agentes)
+            {
+              <label class="cfg-check-item">
+                <input type="checkbox" class="sk-agente-check" value="@a.Code" />
+                <span>@a.Name</span>
+              </label>
+            }
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-default" data-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" onclick="cfgSaveSkillFull()"><i class="fa fa-save"></i> Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Pasos de un proceso -->
+<div id="modal-pasos" class="modal fade" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button class="close" data-dismiss="modal">&times;</button>
+        <h4 class="modal-title"><i class="fa fa-list-ol"></i> Pasos de <span id="ps-nombre"></span></h4>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="ps-ProcessCode" />
+        <p class="text-muted">
+          El orden es el de ejecución. Un proceso sin pasos no hace nada: el orquestador
+          recorre una lista vacía y devuelve texto vacío.
+        </p>
+        <table class="table table-condensed">
+          <thead><tr><th style="width:40px">#</th><th>Agente</th><th>Nombre del paso</th><th style="width:70px">Incluye</th><th style="width:60px"></th></tr></thead>
+          <tbody id="ps-lista"></tbody>
+        </table>
+        <div class="row">
+          <div class="col-sm-4">
+            <select id="ps-nuevoAgente" class="form-control input-sm">
+              <option value="">— agente —</option>
+              @foreach (var a in Model.Agentes)
+              {
+                <option value="@a.Code">@a.Name</option>
+              }
+            </select>
+          </div>
+          <div class="col-sm-5"><input id="ps-nuevoNombre" class="form-control input-sm" placeholder="Nombre del paso" /></div>
+          <div class="col-sm-3"><button class="btn btn-sm btn-default btn-block" onclick="psAdd()"><i class="fa fa-plus"></i> Añadir</button></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-default" data-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" onclick="cfgSavePasos()"><i class="fa fa-save"></i> Guardar pasos</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 @section Scripts {
 @{ await Html.RenderPartialAsync("_BootboxPartial"); }
 
@@ -706,7 +988,7 @@ $(function () {
     // ni botones a todo el mantenedor es justo lo que paso.
     try {
         if ($.fn.DataTable) {
-            ['configai','agentes','prompts','procesos','politicas','usuarios','azureblob'].forEach(function(id) {
+            ['configai','agentes','prompts','tools','skills','procesos','pasos','politicas','usuarios','azureblob'].forEach(function(id) {
                 var el = document.getElementById('dt-' + id);
                 if (el) $(el).DataTable({ pageLength:15, dom:'<"row"<"col-sm-6"l><"col-sm-6"f>>tp', language:{ url:'' } });
             });
@@ -738,6 +1020,9 @@ function activatePanel(id) {
 // ── Abrir modal nuevo ──────────────────────────────────────────────────────
 function cfgOpenNew(entity) {
     switch(entity) {
+        case 'tools':  tlLimpiar(); $('#modal-tools').modal('show');  return;
+        case 'skills': skLimpiar(); $('#modal-skills').modal('show'); return;
+
         case 'configai':
             $('#cai-Code').val('').prop('readonly',false);
             $('#cai-Name,#cai-EndpointUrl,#cai-ApiKey,#cai-Notes').val('');
@@ -785,6 +1070,9 @@ function cfgOpenNew(entity) {
 // ── Abrir modal editar ─────────────────────────────────────────────────────
 function cfgEdit(entity, d) {
     switch(entity) {
+        case 'tools':  tlCargar(d); $('#modal-tools').modal('show');  return;
+        case 'skills': skCargar(d); $('#modal-skills').modal('show'); return;
+
         case 'configai':
             $('#cai-Code').val(d.Code).prop('readonly',true);
             $('#cai-Name').val(d.Name); $('#cai-EndpointUrl').val(d.EndpointUrl);
@@ -869,15 +1157,36 @@ function renderAgPrompts() {
 }
 
 // ── Delete genérico ────────────────────────────────────────────────────────
+// Los cinco botones de papelera llamaban a /{Entidad}/Delete. Esos
+// controladores existen pero ninguno tiene accion Delete: los cinco daban 404,
+// y como el callback no mira el fallo, pulsar no hacia absolutamente nada.
+// Ahora van al mantenedor, por POST, y cada accion comprueba sus dependencias.
+var CFG_BORRADOS = {
+    'Agente':           'DeleteMantAgente',
+    'ConfiguracionAi':  'DeleteMantConfigAi',
+    'Prompt':           'DeleteMantPrompt',
+    'Proceso':          'DeleteMantProceso',
+    'AzureBlobConf':    'DeleteMantBlob',
+    'Tool':             'DeleteMantTool',
+    'Skill':            'DeleteMantSkill'
+};
+
 function cfgDelete(ctrl, id, el) {
+    var accion = CFG_BORRADOS[ctrl];
+    if (!accion) { mostrarNotificacion('Error', 'No se sabe cómo borrar «' + ctrl + '».'); return; }
+
     bootbox.confirm({ title:'¿Eliminar?', message:'Esta acción no se puede deshacer.',
         buttons:{ cancel:{ label:'<i class="fa fa-times"></i> Cancelar' }, confirm:{ label:'<i class="fa fa-trash"></i> Eliminar', className:'btn-danger' } },
         callback: function(ok) {
             if (!ok) return;
-            $.get('/' + ctrl + '/Delete?id=' + encodeURIComponent(id), function(r) {
+            $.post('/Mantenedores/' + accion, { code: id })
+             .done(function(r) {
                 if (r.Estado === 'OK') $(el).closest('tr').fadeOut(300, function(){ $(this).remove(); });
                 else mostrarNotificacion('Error', r.Mensaje);
-            });
+             })
+             // Y si la peticion falla, se dice. Antes un 404 era indistinguible
+             // de un borrado correcto: la fila se quedaba y no salia nada.
+             .fail(function(x) { mostrarNotificacion('Error', 'No se pudo borrar (HTTP ' + x.status + ').'); });
         }
     });
 }
@@ -905,6 +1214,140 @@ function cfgDeleteUsuario(id, el) {
         }
     });
 }
+
+// ── Herramientas ──────────────────────────────────────────────────────────
+function tlLimpiar() {
+    $('#tl-Code').val('').prop('readonly', false);
+    $('#tl-Description,#tl-InputSchema,#tl-BindingConfig').val('');
+    $('#tl-BindingType').val('Sql');
+    $('#tl-IsActive').val('true');
+    $('.tl-agente-check').prop('checked', false);
+    tlContar();
+}
+function tlContar() {
+    var n = ($('#tl-Description').val() || '').length;
+    // 500 caracteres es el limite REAL: la columna es nvarchar(1000) pero
+    // max_length va en bytes. Pasarse no trunca, revienta el guardado entero.
+    $('#tl-cuenta').text(n).css('color', n > 500 ? '#dc2626' : '');
+}
+function tlCargar(d) {
+    $('#tl-Code').val(d.Code).prop('readonly', true);
+    $('#tl-Description').val(d.Description || '');
+    $('#tl-InputSchema').val(d.InputSchema || '');
+    $('#tl-BindingConfig').val(d.BindingConfig || '');
+    $('#tl-BindingType').val(d.BindingType || 'Sql');
+    $('#tl-IsActive').val(String(!!d.IsActive));
+    $('.tl-agente-check').prop('checked', false);
+    (d.Agentes || []).forEach(function (a) {
+        $('.tl-agente-check[value="' + a + '"]').prop('checked', true);
+    });
+    tlContar();
+}
+function cfgSaveToolFull() {
+    cfgPost('/Mantenedores/SaveToolFull', {
+        Code: $('#tl-Code').val(),
+        Name: $('#tl-Code').val(),
+        Description: $('#tl-Description').val(),
+        InputSchema: $('#tl-InputSchema').val(),
+        BindingType: $('#tl-BindingType').val(),
+        BindingConfig: $('#tl-BindingConfig').val(),
+        Strict: false,
+        IsActive: $('#tl-IsActive').val() === 'true',
+        VersionNumber: 1,
+        Agentes: $('.tl-agente-check:checked').map(function () { return this.value; }).get()
+    }).done(function (r) { r.Estado === 'OK' ? cfgSaveOk('#modal-tools') : cfgSaveErr(r); });
+}
+
+// ── Skills ────────────────────────────────────────────────────────────────
+function skLimpiar() {
+    $('#sk-Code').val('').prop('readonly', false);
+    $('#sk-Name,#sk-SkillType,#sk-SkillId,#sk-SkillVersion,#sk-Description').val('');
+    $('#sk-IsActive').val('true');
+    $('.sk-agente-check').prop('checked', false);
+}
+function skCargar(d) {
+    $('#sk-Code').val(d.Code).prop('readonly', true);
+    $('#sk-Name').val(d.Name || '');
+    $('#sk-SkillType').val(d.SkillType || '');
+    $('#sk-SkillId').val(d.SkillId || '');
+    $('#sk-SkillVersion').val(d.SkillVersion || '');
+    $('#sk-Description').val(d.Description || '');
+    $('#sk-IsActive').val(String(!!d.IsActive));
+    $('.sk-agente-check').prop('checked', false);
+    (d.Agentes || []).forEach(function (a) {
+        $('.sk-agente-check[value="' + a + '"]').prop('checked', true);
+    });
+}
+function cfgSaveSkillFull() {
+    cfgPost('/Mantenedores/SaveSkillFull', {
+        Code: $('#sk-Code').val(), Name: $('#sk-Name').val(),
+        SkillType: $('#sk-SkillType').val(), SkillId: $('#sk-SkillId').val(),
+        SkillVersion: $('#sk-SkillVersion').val(), Description: $('#sk-Description').val(),
+        IsActive: $('#sk-IsActive').val() === 'true', VersionNumber: 1,
+        Agentes: $('.sk-agente-check:checked').map(function () { return this.value; }).get()
+    }).done(function (r) { r.Estado === 'OK' ? cfgSaveOk('#modal-skills') : cfgSaveErr(r); });
+}
+
+// ── Pasos de un proceso ───────────────────────────────────────────────────
+var psPasos = [];
+
+function cfgEditPasos(code, nombre, pasos) {
+    $('#ps-ProcessCode').val(code);
+    $('#ps-nombre').text(nombre);
+    psPasos = (pasos || []).map(function (p) {
+        return { ModelCode: p.ModelCode, StepName: p.StepName || '',
+                 StepsToInclude: p.StepsToInclude || 0,
+                 SourceType: p.SourceType || 0,
+                 AggregateExecution: !!p.AggregateExecution };
+    });
+    psRender();
+    $('#modal-pasos').modal('show');
+}
+function psRender() {
+    var $t = $('#ps-lista').empty();
+    if (!psPasos.length) {
+        $t.append('<tr><td colspan="5" class="text-muted">Sin pasos: este proceso no hace nada.</td></tr>');
+        return;
+    }
+    $.each(psPasos, function (i, p) {
+        $t.append(
+            '<tr>' +
+            '<td>' + (i + 1) + '</td>' +
+            '<td><strong>' + p.ModelCode + '</strong></td>' +
+            '<td>' + (p.StepName || '') + '</td>' +
+            '<td>' + p.StepsToInclude + '</td>' +
+            '<td class="text-center">' +
+              '<a onclick="psUp(' + i + ')" class="fa fa-arrow-up" style="cursor:pointer"></a>&nbsp;' +
+              '<a onclick="psDel(' + i + ')" class="fa fa-trash-o txt-color-red" style="cursor:pointer"></a>' +
+            '</td></tr>');
+    });
+}
+function psAdd() {
+    var ag = $('#ps-nuevoAgente').val();
+    if (!ag) { mostrarNotificacion('Error', 'Elija el agente que corre este paso.'); return; }
+    psPasos.push({ ModelCode: ag, StepName: $('#ps-nuevoNombre').val() || ag,
+                   StepsToInclude: 0, SourceType: 0, AggregateExecution: false });
+    $('#ps-nuevoAgente').val(''); $('#ps-nuevoNombre').val('');
+    psRender();
+}
+function psDel(i) { psPasos.splice(i, 1); psRender(); }
+function psUp(i) {
+    if (i === 0) return;
+    var t = psPasos[i - 1]; psPasos[i - 1] = psPasos[i]; psPasos[i] = t;
+    psRender();
+}
+function cfgSavePasos() {
+    cfgPost('/Mantenedores/SavePasosProceso', {
+        ProcessCode: $('#ps-ProcessCode').val(),
+        Pasos: psPasos.map(function (p, i) {
+            return { StepOrder: i, ModelCode: p.ModelCode, StepName: p.StepName,
+                     StepsToInclude: p.StepsToInclude, SourceType: p.SourceType,
+                     AggregateExecution: p.AggregateExecution };
+        })
+    }).done(function (r) { r.Estado === 'OK' ? cfgSaveOk('#modal-pasos') : cfgSaveErr(r); });
+}
+
+$(function () { $('#tl-Description').on('input', tlContar); });
 
 // ── Helpers AJAX ──────────────────────────────────────────────────────────
 function cfgPost(url, data) {

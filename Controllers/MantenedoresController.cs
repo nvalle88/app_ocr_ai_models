@@ -58,7 +58,16 @@ namespace SmartAdmin.Web.Controllers
                 BlobConfs       = await _db.AzureBlobConf.ToListAsync(),
                 Usuarios        = await _userManager.Users.ToListAsync(),
                 ListaPolicys    = await _db.Policies.OrderBy(x => x.PolicyName).ToListAsync(),
-                PolicyUsers     = await _db.PolicyUsers.ToListAsync()
+                PolicyUsers     = await _db.PolicyUsers.ToListAsync(),
+
+                Tools            = await _db.OPAITool.OrderBy(x => x.Name).ToListAsync(),
+                ToolAsignaciones = await _db.OPAIModelTool
+                                       .OrderBy(x => x.ModelCode).ThenBy(x => x.SortOrder).ToListAsync(),
+                Skills           = await _db.OPAISkill.OrderBy(x => x.Name).ToListAsync(),
+                SkillAsignaciones= await _db.OPAIModelSkill
+                                       .OrderBy(x => x.ModelCode).ThenBy(x => x.SortOrder).ToListAsync(),
+                Pasos            = await _db.ProcessStep
+                                       .OrderBy(x => x.ProcessCode).ThenBy(x => x.StepOrder).ToListAsync()
             };
             return View(model);
         }
@@ -116,6 +125,14 @@ namespace SmartAdmin.Web.Controllers
                 {
                     ex.Name = dto.Name; ex.ConfigCode = dto.ConfigCode; ex.VersionNumber = dto.VersionNumber;
                     ex.Description = dto.Description; ex.IsActive = dto.IsActive; ex.ModifiedDate = DateTime.Now;
+
+                    // Solo lo que venga: la pantalla puede mandar unos campos y
+                    // no otros, y un null aqui borraria el prompt del agente.
+                    if (!string.IsNullOrWhiteSpace(dto.ModelId))      ex.ModelId      = dto.ModelId;
+                    if (dto.MaxTokens is > 0)                         ex.MaxTokens    = dto.MaxTokens;
+                    if (dto.SystemPrompt != null)                     ex.SystemPrompt = dto.SystemPrompt;
+                    if (!string.IsNullOrWhiteSpace(dto.ThinkingMode)) ex.ThinkingMode = dto.ThinkingMode;
+                    if (!string.IsNullOrWhiteSpace(dto.ToolChoice))   ex.ToolChoice   = dto.ToolChoice;
                 }
                 await _db.SaveChangesAsync();
 
@@ -124,6 +141,27 @@ namespace SmartAdmin.Web.Controllers
                 _db.OPAIModelPrompt.RemoveRange(oldPrompts);
                 foreach (var p in dto.Prompts)
                     _db.OPAIModelPrompt.Add(new OPAIModelPrompt { ModelCode = dto.Code, PromptCode = p.PromptCode, Order = p.Order, IsDefault = p.IsDefault });
+
+                // Sync de tools y skills. Se rehacen enteras, como los prompts:
+                // son tablas de enlace pequeñas y asi el orden queda tal cual lo
+                // dejo la pantalla, sin huecos ni duplicados.
+                _db.OPAIModelTool.RemoveRange(
+                    await _db.OPAIModelTool.Where(x => x.ModelCode == dto.Code).ToListAsync());
+                foreach (var t in dto.Tools)
+                    _db.OPAIModelTool.Add(new OPAIModelTool
+                    {
+                        ModelCode = dto.Code, ToolCode = t.Code,
+                        SortOrder = t.SortOrder, IsEnabled = t.IsEnabled
+                    });
+
+                _db.OPAIModelSkill.RemoveRange(
+                    await _db.OPAIModelSkill.Where(x => x.ModelCode == dto.Code).ToListAsync());
+                foreach (var k in dto.Skills)
+                    _db.OPAIModelSkill.Add(new OPAIModelSkill
+                    {
+                        ModelCode = dto.Code, SkillCode = k.Code,
+                        SortOrder = k.SortOrder, IsEnabled = k.IsEnabled
+                    });
 
                 // Sync processes (cascade-aware: remove AccessAgentPolicies before AgentProcess)
                 var existingAp = await _db.AgentProcesses.Where(x => x.AgentCode == dto.Code).ToListAsync();
@@ -302,6 +340,355 @@ namespace SmartAdmin.Web.Controllers
                     return Json(new { Estado = "Error",
                                       Mensaje = string.Join(", ", r.Errors.Select(e => e.Description)) });
 
+                return Json(new { Estado = "OK" });
+            }
+            catch (Exception e) { return Json(new { Estado = "Error", Mensaje = e.Message }); }
+        }
+
+        // ══ TOOLS ════════════════════════════════════════════════════════════
+        //
+        // El mantenedor que no existía. Dar de alta una tool eran tres
+        // migraciones SQL y acordarse de tres trampas que no avisan:
+        //   * Name DEBE ser igual a Code, o el motor devuelve BadRequest y el
+        //     paso del agente vuelve en un segundo sin haber hecho nada.
+        //   * Description es nvarchar(1000) pero max_length va en BYTES: son
+        //     500 CARACTERES. Pasarse no trunca, revienta el INSERT entero y la
+        //     tool se queda en la versión anterior aparentando estar guardada.
+        //   * InputSchema y BindingConfig son JSON: si no parsean, la tool
+        //     existe y falla en ejecución.
+        // Aquí se comprueban las tres antes de tocar la base.
+
+        private const int MaxCaracteresDescripcion = 500;
+
+        [HttpPost, IgnoreAntiforgeryToken]
+        public async Task<IActionResult> SaveToolFull([FromBody] SaveToolFullDto dto)
+        {
+            try
+            {
+                var mal = ValidarTool(dto);
+                if (mal != null) return Json(new { Estado = "Error", Mensaje = mal });
+
+                var ex = await _db.OPAITool.FindAsync(dto.Code);
+                if (ex == null)
+                {
+                    _db.OPAITool.Add(new OPAITool
+                    {
+                        Code = dto.Code, Name = dto.Code,   // Name = Code, siempre
+                        Description = dto.Description, InputSchema = dto.InputSchema,
+                        Strict = dto.Strict, BindingType = dto.BindingType,
+                        BindingConfig = dto.BindingConfig, IsActive = dto.IsActive,
+                        VersionNumber = dto.VersionNumber, CreatedDate = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    ex.Name = dto.Code;
+                    ex.Description = dto.Description; ex.InputSchema = dto.InputSchema;
+                    ex.Strict = dto.Strict; ex.BindingType = dto.BindingType;
+                    ex.BindingConfig = dto.BindingConfig; ex.IsActive = dto.IsActive;
+                    ex.VersionNumber = dto.VersionNumber;
+                }
+                await _db.SaveChangesAsync();
+
+                // A qué agentes se la damos. El orden se calcula solo: al modelo
+                // no le importa, y pedírselo a la persona es una decisión de más.
+                _db.OPAIModelTool.RemoveRange(
+                    await _db.OPAIModelTool.Where(x => x.ToolCode == dto.Code).ToListAsync());
+                await _db.SaveChangesAsync();
+
+                foreach (var agente in dto.Agentes.Distinct())
+                {
+                    var ultimo = await _db.OPAIModelTool
+                        .Where(x => x.ModelCode == agente)
+                        .MaxAsync(x => (int?)x.SortOrder) ?? 0;
+                    _db.OPAIModelTool.Add(new OPAIModelTool
+                    {
+                        ModelCode = agente, ToolCode = dto.Code,
+                        SortOrder = ultimo + 1, IsEnabled = true
+                    });
+                }
+                await _db.SaveChangesAsync();
+                return Json(new { Estado = "OK" });
+            }
+            catch (Exception e) { return Json(new { Estado = "Error", Mensaje = e.Message }); }
+        }
+
+        /// <summary>Las tres trampas, comprobadas antes de tocar la base.</summary>
+        private static string? ValidarTool(SaveToolFullDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Code))
+                return "El código es obligatorio: es el nombre con el que el modelo la invoca.";
+
+            if ((dto.Description ?? "").Length > MaxCaracteresDescripcion)
+                return $"La descripción tiene {dto.Description!.Length} caracteres y el máximo real "
+                     + $"son {MaxCaracteresDescripcion}. La columna dice 1000, pero cuenta bytes.";
+
+            foreach (var par in new[] { (Json: dto.InputSchema, Campo: "InputSchema"),
+                                        (Json: dto.BindingConfig, Campo: "BindingConfig") })
+            {
+                if (string.IsNullOrWhiteSpace(par.Json)) continue;
+                try { System.Text.Json.JsonDocument.Parse(par.Json!); }
+                catch (System.Text.Json.JsonException je)
+                { return $"{par.Campo} no es JSON válido: {je.Message}"; }
+            }
+            return null;
+        }
+
+        [HttpPost, IgnoreAntiforgeryToken]
+        public async Task<IActionResult> DeleteMantTool(string code)
+        {
+            try
+            {
+                // Primero los enlaces: si no, la FK impide borrarla y el mensaje
+                // que sale no le dice nada a nadie.
+                _db.OPAIModelTool.RemoveRange(
+                    await _db.OPAIModelTool.Where(x => x.ToolCode == code).ToListAsync());
+                var t = await _db.OPAITool.FindAsync(code);
+                if (t == null) return Json(new { Estado = "Error", Mensaje = "Esa herramienta ya no existe." });
+                _db.OPAITool.Remove(t);
+                await _db.SaveChangesAsync();
+                return Json(new { Estado = "OK" });
+            }
+            catch (Exception e) { return Json(new { Estado = "Error", Mensaje = e.Message }); }
+        }
+
+        // ══ SKILLS ═══════════════════════════════════════════════════════════
+
+        [HttpPost, IgnoreAntiforgeryToken]
+        public async Task<IActionResult> SaveSkillFull([FromBody] SaveSkillFullDto dto)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(dto.Code))
+                    return Json(new { Estado = "Error", Mensaje = "El código es obligatorio." });
+
+                var ex = await _db.OPAISkill.FindAsync(dto.Code);
+                if (ex == null)
+                {
+                    _db.OPAISkill.Add(new OPAISkill
+                    {
+                        Code = dto.Code, Name = dto.Name, SkillType = dto.SkillType,
+                        SkillId = dto.SkillId, SkillVersion = dto.SkillVersion,
+                        Description = dto.Description, IsActive = dto.IsActive,
+                        VersionNumber = dto.VersionNumber, CreatedDate = DateTime.UtcNow
+                    });
+                }
+                else
+                {
+                    ex.Name = dto.Name; ex.SkillType = dto.SkillType; ex.SkillId = dto.SkillId;
+                    ex.SkillVersion = dto.SkillVersion; ex.Description = dto.Description;
+                    ex.IsActive = dto.IsActive; ex.VersionNumber = dto.VersionNumber;
+                }
+                await _db.SaveChangesAsync();
+
+                _db.OPAIModelSkill.RemoveRange(
+                    await _db.OPAIModelSkill.Where(x => x.SkillCode == dto.Code).ToListAsync());
+                await _db.SaveChangesAsync();
+
+                foreach (var agente in dto.Agentes.Distinct())
+                {
+                    var ultimo = await _db.OPAIModelSkill
+                        .Where(x => x.ModelCode == agente)
+                        .MaxAsync(x => (int?)x.SortOrder) ?? 0;
+                    _db.OPAIModelSkill.Add(new OPAIModelSkill
+                    {
+                        ModelCode = agente, SkillCode = dto.Code,
+                        SortOrder = ultimo + 1, IsEnabled = true
+                    });
+                }
+                await _db.SaveChangesAsync();
+                return Json(new { Estado = "OK" });
+            }
+            catch (Exception e) { return Json(new { Estado = "Error", Mensaje = e.Message }); }
+        }
+
+        [HttpPost, IgnoreAntiforgeryToken]
+        public async Task<IActionResult> DeleteMantSkill(string code)
+        {
+            try
+            {
+                _db.OPAIModelSkill.RemoveRange(
+                    await _db.OPAIModelSkill.Where(x => x.SkillCode == code).ToListAsync());
+                var k = await _db.OPAISkill.FindAsync(code);
+                if (k == null) return Json(new { Estado = "Error", Mensaje = "Esa skill ya no existe." });
+                _db.OPAISkill.Remove(k);
+                await _db.SaveChangesAsync();
+                return Json(new { Estado = "OK" });
+            }
+            catch (Exception e) { return Json(new { Estado = "Error", Mensaje = e.Message }); }
+        }
+
+        // ══ PASOS DE UN PROCESO ══════════════════════════════════════════════
+        //
+        // El proceso ya se podía crear; sus PASOS no, y son los que deciden qué
+        // agente corre y en qué orden. Un proceso sin pasos no hace nada: el
+        // orquestador recorre una lista vacía y devuelve texto vacío. Pasó
+        // exactamente eso con PORTAL_CLIENTE y costó una tarde entenderlo.
+
+        [HttpPost, IgnoreAntiforgeryToken]
+        public async Task<IActionResult> SavePasosProceso([FromBody] SavePasosDto dto)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(dto.ProcessCode))
+                    return Json(new { Estado = "Error", Mensaje = "Falta el proceso." });
+
+                _db.ProcessStep.RemoveRange(
+                    await _db.ProcessStep.Where(x => x.ProcessCode == dto.ProcessCode).ToListAsync());
+                await _db.SaveChangesAsync();
+
+                // Se renumera al guardar: si se borra el paso 2, no tiene sentido
+                // dejar un hueco entre el 1 y el 3.
+                var orden = 0;
+                foreach (var paso in dto.Pasos)
+                {
+                    _db.ProcessStep.Add(new ProcessStep
+                    {
+                        ProcessCode        = dto.ProcessCode,
+                        StepOrder          = orden++,
+                        ModelCode          = paso.ModelCode,
+                        StepName           = paso.StepName,
+                        StepsToInclude     = paso.StepsToInclude,
+                        SourceType         = (InputSourceType)paso.SourceType,
+                        AggregateExecution = paso.AggregateExecution
+                    });
+                }
+                await _db.SaveChangesAsync();
+                return Json(new { Estado = "OK", Mensaje = $"{dto.Pasos.Count} paso(s) guardados." });
+            }
+            catch (Exception e) { return Json(new { Estado = "Error", Mensaje = e.Message }); }
+        }
+
+        // ══ BORRADOS QUE NUNCA EXISTIERON ════════════════════════════════════
+        //
+        // Los cinco botones de la papelera llamaban a /{Entidad}/Delete —
+        // /Agente/Delete, /ConfiguracionAi/Delete, /Proceso/Delete,
+        // /Prompt/Delete, /AzureBlobConf/Delete. Esos controladores existen,
+        // pero NINGUNO tiene una acción Delete: los cinco devolvían 404 y el
+        // callback de bootbox no comprueba el fallo, así que la fila ni
+        // desaparecía ni salía aviso. Pulsar y que no pase nada.
+        //
+        // Se implementan aquí, junto a los otros borrados, y cada uno se hace
+        // cargo de sus dependencias: dejar que salte la FK produce un mensaje
+        // que no le dice nada a nadie.
+
+        [HttpPost, IgnoreAntiforgeryToken]
+        public async Task<IActionResult> DeleteMantAgente(string code)
+        {
+            try
+            {
+                var ag = await _db.Agent.FindAsync(code);
+                if (ag == null) return Json(new { Estado = "Error", Mensaje = "Ese agente ya no existe." });
+
+                // Un agente puede estar en medio de un proceso. Borrarlo dejaría
+                // el proceso sin ese paso y sin decírselo a nadie.
+                var pasos = await _db.ProcessStep.CountAsync(x => x.ModelCode == code);
+                if (pasos > 0)
+                    return Json(new { Estado = "Error",
+                                      Mensaje = $"No se puede borrar: es el agente de {pasos} paso(s) de proceso. "
+                                              + "Quítelo primero de esos procesos." });
+
+                var ap = await _db.AgentProcesses.Where(x => x.AgentCode == code).ToListAsync();
+                if (ap.Count > 0)
+                {
+                    var ids = ap.Select(x => x.Id).ToList();
+                    _db.AccessAgentPolicies.RemoveRange(
+                        await _db.AccessAgentPolicies.Where(x => ids.Contains(x.AgentProcessId)).ToListAsync());
+                    _db.AgentProcesses.RemoveRange(ap);
+                }
+                _db.OPAIModelPrompt.RemoveRange(await _db.OPAIModelPrompt.Where(x => x.ModelCode == code).ToListAsync());
+                _db.OPAIModelTool.RemoveRange(await _db.OPAIModelTool.Where(x => x.ModelCode == code).ToListAsync());
+                _db.OPAIModelSkill.RemoveRange(await _db.OPAIModelSkill.Where(x => x.ModelCode == code).ToListAsync());
+                await _db.SaveChangesAsync();
+
+                _db.Agent.Remove(ag);
+                await _db.SaveChangesAsync();
+                return Json(new { Estado = "OK" });
+            }
+            catch (Exception e) { return Json(new { Estado = "Error", Mensaje = e.Message }); }
+        }
+
+        [HttpPost, IgnoreAntiforgeryToken]
+        public async Task<IActionResult> DeleteMantConfigAi(string code)
+        {
+            try
+            {
+                var cfg = await _db.OPAIConfiguration.FindAsync(code);
+                if (cfg == null) return Json(new { Estado = "Error", Mensaje = "Esa configuración ya no existe." });
+
+                var usada = await _db.Agent.CountAsync(a => a.ConfigCode == code);
+                if (usada > 0)
+                    return Json(new { Estado = "Error",
+                                      Mensaje = $"No se puede borrar: la usan {usada} agente(s)." });
+
+                _db.OPAIConfiguration.Remove(cfg);
+                await _db.SaveChangesAsync();
+                return Json(new { Estado = "OK" });
+            }
+            catch (Exception e) { return Json(new { Estado = "Error", Mensaje = e.Message }); }
+        }
+
+        [HttpPost, IgnoreAntiforgeryToken]
+        public async Task<IActionResult> DeleteMantPrompt(string code)
+        {
+            try
+            {
+                var pr = await _db.OPAIPrompt.FindAsync(code);
+                if (pr == null) return Json(new { Estado = "Error", Mensaje = "Ese prompt ya no existe." });
+
+                var asignado = await _db.OPAIModelPrompt.CountAsync(x => x.PromptCode == code);
+                if (asignado > 0)
+                    return Json(new { Estado = "Error",
+                                      Mensaje = $"No se puede borrar: está asignado a {asignado} agente(s)." });
+
+                _db.OPAIPrompt.Remove(pr);
+                await _db.SaveChangesAsync();
+                return Json(new { Estado = "OK" });
+            }
+            catch (Exception e) { return Json(new { Estado = "Error", Mensaje = e.Message }); }
+        }
+
+        [HttpPost, IgnoreAntiforgeryToken]
+        public async Task<IActionResult> DeleteMantProceso(string code)
+        {
+            try
+            {
+                var pc = await _db.Process.FindAsync(code);
+                if (pc == null) return Json(new { Estado = "Error", Mensaje = "Ese proceso ya no existe." });
+
+                var casos = await _db.ProcessCase.CountAsync(x => x.DefinitionCode == code);
+                if (casos > 0)
+                    return Json(new { Estado = "Error",
+                                      Mensaje = $"No se puede borrar: tiene {casos} caso(s) procesados. "
+                                              + "Un proceso con historia no se borra, se desactiva." });
+
+                var ap = await _db.AgentProcesses.Where(x => x.DefinitionCode == code).ToListAsync();
+                if (ap.Count > 0)
+                {
+                    var ids = ap.Select(x => x.Id).ToList();
+                    _db.AccessAgentPolicies.RemoveRange(
+                        await _db.AccessAgentPolicies.Where(x => ids.Contains(x.AgentProcessId)).ToListAsync());
+                    _db.AgentProcesses.RemoveRange(ap);
+                }
+                _db.ProcessStep.RemoveRange(await _db.ProcessStep.Where(x => x.ProcessCode == code).ToListAsync());
+                await _db.SaveChangesAsync();
+
+                _db.Process.Remove(pc);
+                await _db.SaveChangesAsync();
+                return Json(new { Estado = "OK" });
+            }
+            catch (Exception e) { return Json(new { Estado = "Error", Mensaje = e.Message }); }
+        }
+
+        [HttpPost, IgnoreAntiforgeryToken]
+        public async Task<IActionResult> DeleteMantBlob(string code)
+        {
+            try
+            {
+                var b = await _db.AzureBlobConf.FindAsync(code);
+                if (b == null) return Json(new { Estado = "Error", Mensaje = "Esa configuración ya no existe." });
+                _db.AzureBlobConf.Remove(b);
+                await _db.SaveChangesAsync();
                 return Json(new { Estado = "OK" });
             }
             catch (Exception e) { return Json(new { Estado = "Error", Mensaje = e.Message }); }
