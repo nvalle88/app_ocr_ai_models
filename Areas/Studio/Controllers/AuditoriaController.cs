@@ -160,14 +160,18 @@ public sealed class AuditoriaController : Controller
                 _db.StepExecution.Add(exec);
                 await _db.SaveChangesAsync();
 
-                // ── Lo que se va a consultar SI o SI, ya consultado ──────────
+                // ── Al agente solo lo que hace falta pensar ──────────────────
                 //
-                // Cada herramienta que el modelo pide es una ida y vuelta
-                // completa. Medido: 6,6 herramientas por ejecucion y 87 s de
-                // media, contra los 4 s del agente que solo pide una. El
-                // contrato, las preexistencias y el convenio del prestador se
-                // consultan SIEMPRE, asi que se lanzan a la vez y entran ya en
-                // el mensaje. Si alguna falla se omite y el agente la pide.
+                // El contrato del afiliado NO hay que ir a buscarlo: ya se
+                // resolvio cuando se identifico en el portal y esta entero en
+                // SolicitudCliente -producto, region, plan, persona, deducible
+                // cubierto, carencias, preexistencias-. Pedirlo otra vez por una
+                // herramienta, y encima haciendo que el modelo lo descubra en una
+                // vuelta entera de conversacion, es trabajo regalado dos veces.
+                //
+                // Aqui se le da leido. Lo unico que se consulta de verdad es el
+                // convenio del prestador, porque su RUC sale de la factura y no
+                // se conoce hasta que el documento esta leido.
                 if (_previas != null)
                 {
                     var rucs = caso.DataFile
@@ -177,7 +181,7 @@ public sealed class AuditoriaController : Controller
                         .ToList();
 
                     var bloque = await _previas.BloqueAsync(
-                        agent.Code, exec.ExecutionId, caseCedula, rucs, caseCedula,
+                        caseCode, agent.Code, exec.ExecutionId, rucs, caseCedula,
                         HttpContext.RequestAborted);
 
                     if (!string.IsNullOrWhiteSpace(bloque))

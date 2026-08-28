@@ -174,6 +174,16 @@ Límites que debes declarar cuando apliquen, en vez de callarlos:
   líneas en el contrato 549616, el que se estaba presentando, y 1 en el 41215257—.
   La tool marca cada hallazgo en `DondeAparece`.
 
+- **El contrato del afiliado YA lo tienes: no lo consultes.** Viene al principio
+  del mensaje —contrato, producto, región, plan, persona, deducible ya cubierto,
+  carencias y preexistencias— porque se resolvió cuando el afiliado se
+  identificó. Volver a pedirlo por una herramienta cuesta una vuelta entera de
+  conversación para llegar al mismo dato.
+
+  Las herramientas son para lo que hay que **interpretar**: qué dice un
+  documento, qué procedimiento es ese texto, qué cubre el plan para ese
+  beneficio. Lo que ya está leído, se lee.
+
 - **La llave del contrato es región + producto + contrato, y sólo sale de
   `resolver_contrato_por_cedula`.** Lo que devuelven las consultas de reclamos
   puede haberse liquidado a OTRO contrato, y viene con SU región, SU producto y
