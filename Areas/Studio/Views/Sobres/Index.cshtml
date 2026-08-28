@@ -1,59 +1,102 @@
 @model ImportarSobreViewModel
 @{
-    ViewData["Title"] = "Importar Sobre";
+    ViewData["Title"] = "Sobres — Studio";
+
+    // Esta pantalla usaba .jarviswidget de la plantilla: cabecera negra sobre
+    // fondo claro, que no se parece ni a la portada, ni al portal del afiliado,
+    // ni a la configuración. Cuatro lenguajes visuales en la misma aplicación
+    // obligan a reorientarse en cada pantalla.
+    //
+    // Y era plana: buscar en Armonix —que es por donde se entra— y traer un
+    // ticket de Zendesk —que es la excepción— se veían igual de importantes.
+    // Ahora la principal manda y la otra vive plegada.
 }
 
-<div class="studio-breadcrumb">Studio / Sobres</div>
-
-<div class="studio-card">
-    <h4>Importar sobre Zendesk como Caso OCR</h4>
-    <p style="color:#555; font-size:0.9em;">
-        Busca un sobre por su número para importarlo como un Caso OCR.
-        Los adjuntos del ticket serán procesados por OCR automáticamente.
-    </p>
-
-    <form asp-area="Studio" asp-controller="Sobres" asp-action="Buscar" method="post">
-        @Html.AntiForgeryToken()
-
-        <div style="margin-bottom: 14px;">
-            <label style="font-weight:600; display:block; margin-bottom:4px;">
-                Número de sobre <span style="color:#c00;">*</span>
-            </label>
-            <input asp-for="NumeroSobre"
-                   type="text"
-                   class="form-control"
-                   style="max-width:320px;"
-                   placeholder="Ej: 20240001234"
-                   required />
-            <span asp-validation-for="NumeroSobre" class="text-danger"></span>
-        </div>
-
-        <div style="margin-bottom: 14px;">
-            <label style="font-weight:600; display:block; margin-bottom:4px;">
-                Proceso de destino <span style="color:#c00;">*</span>
-            </label>
-            <select asp-for="ProcessCode"
-                    class="form-control"
-                    style="max-width:320px;">
-                @foreach (var p in Model.ProcesosDisponibles)
-                {
-                    <option value="@p.Code">@p.Name (@p.Code)</option>
-                }
-            </select>
-            <small style="color:#888;">Define la plantilla de pasos y agentes que usará el caso.</small>
-        </div>
-
-        <button type="submit" class="btn-studio btn-primary-studio">Buscar sobre</button>
-    </form>
+<div class="st-head">
+    <div class="st-head-main">
+        <div class="st-crumbs">Studio / Sobres</div>
+        <h1 class="st-title"><i class="fa fa-inbox"></i>Analizar un sobre de reembolso</h1>
+        <p class="st-sub">Busque el sobre, impórtelo —el OCR corre solo— y analícelo contra el plan del cliente.</p>
+    </div>
+    <div class="st-actions">
+        <a class="st-btn is-suave" asp-area="Studio" asp-controller="Sobres" asp-action="Bandeja">
+            <i class="fa fa-list"></i> Ver bandeja de casos
+        </a>
+    </div>
 </div>
 
-<div class="studio-card" style="margin-top:16px;">
-    <h5>Otras fuentes de documentos</h5>
-    <p style="font-size:0.9em; color:#555;">
-        ¿El sobre proviene de Armonix (MFiles)? Use la importación directa desde Armonix.
-    </p>
-    <a asp-area="Studio" asp-controller="Sobres" asp-action="ImportarArmonix"
-       class="btn-studio btn-secondary-studio">
-        Importar desde Armonix
-    </a>
+<ol class="st-steps">
+    <li class="st-step is-active"><span class="st-step-num">1</span> Buscar sobre</li>
+    <li class="st-step"><span class="st-step-num">2</span> Importar</li>
+    <li class="st-step"><span class="st-step-num">3</span> Revisar documentos</li>
+    <li class="st-step"><span class="st-step-num">4</span> Analizar con IA</li>
+</ol>
+
+@* ── Por donde se entra casi siempre ── *@
+<div class="st-card is-principal">
+    <div class="st-card-cab">
+        <i class="fa fa-database"></i>
+        <div>
+            <h2 class="st-card-tit">Buscar el sobre en Armonix</h2>
+            <p class="st-card-sub">Por su número, por la cédula del afiliado o por su nombre.</p>
+        </div>
+    </div>
+    <div class="st-card-cuerpo">
+        <form asp-area="Studio" asp-controller="Sobres" asp-action="BuscarArmonix" method="post"
+              onsubmit="mostrarLoadingPanel('content', 'Buscando sobres…');">
+            @Html.AntiForgeryToken()
+            <div class="st-buscador">
+                <input name="Criterio" type="text"
+                       placeholder="N.º de sobre, cédula o nombre del cliente"
+                       autofocus />
+                <button type="submit" class="st-btn">
+                    <i class="fa fa-search"></i> Buscar
+                </button>
+            </div>
+
+            <div class="st-pistas">
+                Por ejemplo:
+                <code class="st-pista">NA-2612551</code>
+                <code class="st-pista">1701234567</code>
+                <code class="st-pista">Viteri Ramirez</code>
+                &nbsp;·&nbsp;
+                <a asp-area="Studio" asp-controller="Sobres" asp-action="ImportarArmonix">búsqueda avanzada</a>
+            </div>
+
+            @* El proceso destino: por defecto el primero activo. Elegirlo es cosa
+               de la búsqueda avanzada, no de aquí. *@
+            <input type="hidden" name="ProcessCode" value="@Model.ProcessCode" />
+        </form>
+    </div>
 </div>
+
+@* ── La excepción: cuando el sobre llega por un ticket ── *@
+<details class="st-plegado">
+    <summary>
+        <i class="fa fa-life-ring"></i>
+        ¿El sobre llegó por un ticket de Zendesk?
+    </summary>
+    <div class="st-plegado-cuerpo">
+        <p class="st-card-sub" style="margin-bottom:12px">
+            Se busca el ticket por el número de sobre y se importan sus adjuntos, con OCR.
+        </p>
+        <form asp-area="Studio" asp-controller="Sobres" asp-action="Buscar" method="post" class="form-inline">
+            @Html.AntiForgeryToken()
+            <div class="form-group" style="margin-right:8px;margin-bottom:8px">
+                <input asp-for="NumeroSobre" type="text" class="form-control"
+                       style="min-width:250px;" placeholder="Número de sobre del ticket" required />
+            </div>
+            <div class="form-group" style="margin-right:8px;margin-bottom:8px">
+                <select asp-for="ProcessCode" class="form-control">
+                    @foreach (var p in Model.ProcesosDisponibles)
+                    {
+                        <option value="@p.Code">@p.Name</option>
+                    }
+                </select>
+            </div>
+            <button type="submit" class="st-btn is-suave is-bajo" style="margin-bottom:8px">
+                <i class="fa fa-search"></i> Buscar ticket
+            </button>
+        </form>
+    </div>
+</details>

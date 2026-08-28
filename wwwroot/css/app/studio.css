@@ -1,0 +1,918 @@
+/* =====================================================================
+   studio.css — Sistema de diseño del Área "Studio" (Nexus IA) · REQ-019
+   ---------------------------------------------------------------------
+   Objetivo: que el Área Studio se vea como parte del producto Nexus
+   (SmartAdmin / skin smart-style-4) y no como un wireframe.
+   - Centraliza el azul institucional (#003366) en UN solo lugar.
+   - Reemplaza los ~133 estilos inline y el <style> ad-hoc que tenía
+     el _Layout propio del área.
+   - Componentes: cabecera de página, breadcrumb, stepper de flujo,
+     KPIs, tarjetas de fuente, tabla/acciones de documentos, caja OCR,
+     visor embebido de documentos y chat IA.
+   Se carga en TODAS las vistas del área desde Areas/Studio/Views/Shared/_Layout.cshtml.
+   ===================================================================== */
+
+:root {
+    --st-blue: #003366;   /* azul institucional Saludsa */
+    --st-blue-2: #004a99; /* hover */
+    --st-accent: #1a73e8; /* acento IA / enlaces de acción */
+    --st-ok: #137333;
+    --st-err: #c5221f;
+    --st-line: #e3e8ef;
+    --st-bg-soft: #f6f8fb;
+    --st-ink: #2a3342;
+    --st-muted: #6b7688;
+}
+
+/* ---- Cabecera de página + breadcrumb -------------------------------- */
+.st-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    padding: 14px 4px 12px;
+    margin-bottom: 16px;
+    border-bottom: 2px solid var(--st-line);
+}
+.st-head-main { flex: 1 1 320px; min-width: 0; }
+.st-crumbs { font-size: 12px; color: var(--st-muted); margin-bottom: 4px; }
+.st-crumbs a { color: var(--st-accent); text-decoration: none; }
+.st-crumbs a:hover { text-decoration: underline; }
+.st-title {
+    margin: 0; font-size: 22px; font-weight: 700; color: var(--st-blue);
+    line-height: 1.2;
+}
+.st-title .fa { color: var(--st-accent); margin-right: 6px; }
+.st-sub { margin: 3px 0 0; font-size: 13px; color: var(--st-muted); }
+.st-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* Botón de acción de IA destacado (usa el acento, no el btn-primary azul) */
+.btn-ia { background: var(--st-accent); border-color: var(--st-accent); color: #fff; }
+.btn-ia:hover, .btn-ia:focus { background: #1660c8; border-color: #1660c8; color: #fff; }
+
+/* ---- Stepper del flujo (Buscar → Importar → Revisar → Analizar) ------ */
+.st-steps { display: flex; flex-wrap: wrap; gap: 0; margin: 0 0 18px; padding: 0; list-style: none; }
+.st-step {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; color: var(--st-muted); padding: 6px 16px 6px 0; position: relative;
+}
+.st-step:not(:last-child)::after {
+    content: ""; width: 26px; height: 2px; background: var(--st-line); margin-left: 10px;
+}
+.st-step-num {
+    width: 24px; height: 24px; border-radius: 50%; background: #fff;
+    border: 2px solid var(--st-line); color: var(--st-muted);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 12px; flex: none;
+}
+.st-step.is-active { color: var(--st-blue); font-weight: 700; }
+.st-step.is-active .st-step-num { border-color: var(--st-accent); color: var(--st-accent); }
+.st-step.is-done .st-step-num { background: var(--st-ok); border-color: var(--st-ok); color: #fff; }
+.st-step.is-done { color: var(--st-ink); }
+
+/* ---- KPIs (contadores del caso) ------------------------------------- */
+.st-kpis { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.st-kpi {
+    flex: 1 1 150px; background: #fff; border: 1px solid var(--st-line);
+    border-left: 4px solid var(--st-accent); border-radius: 6px; padding: 12px 16px;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04);
+}
+.st-kpi-value { font-size: 24px; font-weight: 700; color: var(--st-blue); line-height: 1; }
+.st-kpi-label { font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--st-muted); margin-top: 6px; }
+.st-kpi.st-kpi--soft { border-left-color: #c9d2e0; }
+
+/* ---- Tabla clave/valor (metadatos) ---------------------------------- */
+.st-meta { width: 100%; font-size: 13.5px; }
+.st-meta th {
+    text-align: left; font-weight: 600; color: var(--st-muted);
+    width: 170px; padding: 4px 14px 4px 0; vertical-align: top; white-space: nowrap;
+}
+.st-meta td { padding: 4px 0; color: var(--st-ink); }
+.st-meta code { font-size: 12.5px; }
+
+/* ---- Acciones por documento ----------------------------------------- */
+.st-doc-actions { display: inline-flex; gap: 6px; white-space: nowrap; }
+.st-doc-name { font-weight: 600; color: var(--st-ink); word-break: break-word; }
+
+/* ---- Caja de texto OCR (legible, seleccionable, copiable) ------------ */
+.st-ocr {
+    max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    background: var(--st-bg-soft); border: 1px solid var(--st-line); border-radius: 4px;
+    padding: 10px 12px; font-size: 12.5px; line-height: 1.5; color: #3a4351;
+    user-select: text; -webkit-user-select: text;
+}
+.st-ocr.is-empty { color: var(--st-muted); font-style: italic; }
+.st-ocr-tools { margin-top: 6px; display: flex; gap: 8px; align-items: center; }
+
+/* ---- Visor embebido de documentos (PDF / imagen) -------------------- */
+.st-viewer { border: 1px solid var(--st-line); border-radius: 6px; overflow: hidden; background: #fff; }
+.st-viewer-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 14px; background: var(--st-blue); color: #fff; font-size: 13px;
+}
+.st-viewer-head .st-viewer-file { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Botones de la cabecera del visor: antes heredaban btn-default (fondo blanco)
+   con color:#fff -> el icono quedaba invisible (cuadros blancos). */
+.st-viewer-head a, .st-viewer-head button {
+    color: #fff; background: rgba(255,255,255,.14);
+    border: 1px solid rgba(255,255,255,.45); border-radius: 3px;
+    padding: 2px 9px; line-height: 18px; text-shadow: none;
+}
+.st-viewer-head a:hover, .st-viewer-head button:hover,
+.st-viewer-head a:focus, .st-viewer-head button:focus {
+    color: #fff; background: rgba(255,255,255,.30); border-color: #fff;
+}
+.st-viewer-head button[disabled] { opacity: .35; cursor: default; }
+.st-viewer-body { min-height: 480px; background: #525659; display: flex; align-items: center; justify-content: center; }
+.st-viewer-body iframe { width: 100%; height: 620px; border: 0; background: #fff; }
+.st-viewer-body img { max-width: 100%; max-height: 620px; display: block; }
+.st-viewer-empty {
+    padding: 48px 20px; text-align: center; color: var(--st-muted);
+    background: var(--st-bg-soft); border: 1px dashed var(--st-line); border-radius: 6px;
+}
+.st-viewer-empty .fa { font-size: 34px; display: block; margin-bottom: 10px; opacity: .5; }
+.st-viewer-loading { padding: 40px; color: #cfd4da; }
+
+/* ---- Tarjetas de fuente (pantalla de inicio: Zendesk / Armonix / Archivo) */
+.st-sources { display: flex; flex-wrap: wrap; gap: 14px; }
+.st-source {
+    flex: 1 1 240px; display: block; background: #fff; border: 1px solid var(--st-line);
+    border-radius: 8px; padding: 18px 20px; text-decoration: none; color: var(--st-ink);
+    transition: box-shadow .15s ease, transform .15s ease, border-color .15s ease;
+}
+.st-source:hover, .st-source:focus {
+    box-shadow: 0 6px 18px rgba(16,24,40,.10); transform: translateY(-2px);
+    border-color: var(--st-accent); text-decoration: none; color: var(--st-ink);
+}
+.st-source-ico { font-size: 26px; color: var(--st-accent); margin-bottom: 8px; }
+.st-source h4 { margin: 0 0 4px; font-size: 16px; color: var(--st-blue); }
+.st-source p { margin: 0; font-size: 12.5px; color: var(--st-muted); }
+.st-source.is-soft { background: var(--st-bg-soft); }
+
+/* ---- Estado vacío genérico ------------------------------------------ */
+.st-empty { padding: 30px 20px; text-align: center; color: var(--st-muted); }
+.st-empty .fa { font-size: 30px; opacity: .5; display: block; margin-bottom: 8px; }
+
+/* ---- Alerta de flujo (TempData["Error"]) ---------------------------- */
+.studio-alert { margin-bottom: 16px; }
+
+/* ==== Chat IA (streaming SSE) ======================================== */
+.st-chat-log {
+    max-height: 540px; overflow-y: auto; padding: 6px 2px; margin-bottom: 12px;
+    display: flex; flex-direction: column; gap: 12px;
+    background: var(--st-bg-soft); border: 1px solid var(--st-line); border-radius: 8px;
+}
+.st-chat-log:empty::after {
+    content: "Escribe una pregunta sobre el caso para iniciar la conversación.";
+    color: var(--st-muted); font-size: 13px; padding: 24px; text-align: center;
+}
+.st-msg { display: flex; }
+.st-msg--user { justify-content: flex-end; }
+.st-msg--ai { justify-content: flex-start; flex-direction: column; align-items: flex-start; width: 100%; }
+.st-bubble-user {
+    background: var(--st-blue); color: #fff; padding: 10px 14px;
+    border-radius: 14px 14px 2px 14px; font-size: 14px; white-space: pre-wrap; max-width: 80%;
+}
+.st-bubble-ai {
+    background: #fff; border: 1px solid var(--st-line); border-left: 3px solid var(--st-accent);
+    padding: 12px 16px; border-radius: 4px; font-size: 14px; white-space: pre-wrap;
+    color: var(--st-ink); width: 100%; box-shadow: 0 1px 2px rgba(16,24,40,.04);
+}
+.st-think {
+    background: #eef2fb; border: 1px solid #d3ddef; border-radius: 6px;
+    padding: 8px 12px; margin-bottom: 6px; width: 100%;
+}
+.st-think summary { cursor: pointer; font-size: 12.5px; color: #4b5e82; font-weight: 600; }
+.st-think pre { font-size: 12px; color: #445; white-space: pre-wrap; margin: 8px 0 0; max-height: 200px; overflow-y: auto; }
+.st-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.st-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: #e8f0fe; color: var(--st-accent); border: 1px solid #aecbfa;
+    border-radius: 14px; padding: 3px 10px; font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.st-chip.is-ok  { background: #e6f4ea; color: var(--st-ok);  border-color: #81c995; }
+.st-chip.is-err { background: #fce8e6; color: var(--st-err); border-color: #f28b82; }
+/* Preguntas sugeridas del chat: chips clicables */
+button.st-sugerida { cursor: pointer; transition: background .15s ease; }
+button.st-sugerida:hover { background: #d7e5fd; }
+button.st-sugerida.is-disabled { opacity: .45; pointer-events: none; }
+
+/* Indicador "escribiendo…" (tres puntos que rebotan) — visible mientras el
+   agente trabaja y aún no llega el primer texto. */
+.st-typing { display: inline-flex; gap: 5px; padding: 4px 2px; }
+.st-typing span {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--st-accent); opacity: .35;
+    animation: st-bounce 1.2s infinite ease-in-out;
+}
+.st-typing span:nth-child(2) { animation-delay: .18s; }
+.st-typing span:nth-child(3) { animation-delay: .36s; }
+@keyframes st-bounce {
+    0%, 70%, 100% { transform: translateY(0);    opacity: .35; }
+    35%           { transform: translateY(-6px); opacity: 1;   }
+}
+.st-composer { display: flex; gap: 8px; align-items: flex-end; }
+.st-composer textarea { flex: 1; resize: vertical; }
+.st-status { font-size: 12px; color: var(--st-muted); margin-top: 6px; min-height: 16px; }
+
+/* ---- Detalle de pasos del análisis (Analizar) ----------------------- */
+.st-step-card { border: 1px solid var(--st-line); border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; background: #fff; }
+.st-step-card h5 { margin: 0 0 6px; font-size: 14px; color: var(--st-blue); }
+.st-step-meta { font-size: 12px; color: var(--st-muted); margin-bottom: 6px; }
+.st-response {
+    font-size: 13.5px; color: var(--st-ink); white-space: pre-wrap;
+    background: var(--st-bg-soft); border-left: 3px solid var(--st-accent);
+    padding: 10px 12px; border-radius: 0 4px 4px 0;
+}
+.st-response--final { border-left-color: var(--st-blue); font-size: 14px; }
+.st-req-pre { font-size: 12px; background: #f3f4f6; padding: 8px; overflow-x: auto; max-height: 200px; white-space: pre-wrap; border-radius: 4px; }
+
+/* =====================================================================
+   REQ-019 — Resolución de reembolso (semáforo por estado + liquidación + carta)
+   El color nace del ESTADO (una sola fuente de verdad vía --reso*).
+   ===================================================================== */
+.is-liquida  { --reso: #137333; --reso-bg: #e6f4ea; --reso-bd: #81c995; }
+.is-semi     { --reso: #b06000; --reso-bg: #fef3e0; --reso-bd: #f0c078; }
+.is-ch       { --reso: #8430ce; --reso-bg: #f3e8fd; --reso-bd: #d0a8f0; }
+.is-negativa { --reso: #c5221f; --reso-bg: #fce8e6; --reso-bd: #f28b82; }
+
+/* Banner de estado */
+.st-reso-head {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
+    background: var(--reso-bg, #f6f8fb); border: 1px solid var(--st-line);
+    border-left: 6px solid var(--reso, #6b7688); border-radius: 8px;
+    padding: 16px 20px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(16,24,40,.04);
+}
+.st-reso-light {
+    width: 52px; height: 52px; border-radius: 50%; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #fff; border: 2px solid var(--reso, #6b7688);
+    color: var(--reso, #6b7688); font-size: 26px;
+}
+.st-reso-body { flex: 1 1 260px; min-width: 0; }
+.st-reso-estado { font-size: 18px; font-weight: 700; color: var(--reso, var(--st-blue)); line-height: 1.2; }
+.st-reso-desc { font-size: 13px; color: var(--st-ink); margin-top: 2px; }
+.st-reso-total { text-align: right; }
+.st-reso-total .v { font-size: 26px; font-weight: 700; color: var(--reso, var(--st-blue)); line-height: 1; }
+.st-reso-total .l { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--st-muted); margin-top: 4px; }
+
+/* Píldora de estado reutilizable */
+.st-estado {
+    display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px; border-radius: 14px;
+    background: var(--reso-bg, #eef); color: var(--reso, #333); border: 1px solid var(--reso-bd, #ccd);
+    font-size: 12.5px; font-weight: 600;
+}
+
+/* KPIs money */
+.st-kpi-value.money-ok  { color: var(--st-ok); }
+.st-kpi-value.money-err { color: var(--st-err); }
+
+/* Tabla de liquidación */
+.st-liq { width: 100%; border-collapse: collapse; font-size: 13px; }
+.st-liq thead th { background: var(--st-blue); color: #fff; padding: 8px 10px; text-align: left; font-weight: 600; }
+.st-liq thead th.num { text-align: right; }
+.st-liq tbody td { padding: 7px 10px; border-bottom: 1px solid var(--st-line); vertical-align: top; }
+.st-liq tbody tr:nth-child(even) { background: #fafbfe; }
+.st-liq tbody tr:hover { background: #f0f4fb; }
+.st-liq td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.st-liq td.money-cubierto  { color: var(--st-ok); font-weight: 600; }
+.st-liq td.money-nocubierto { color: var(--st-err); }
+.st-liq tfoot td { font-weight: 700; color: var(--st-blue); border-top: 2px solid var(--st-blue); padding: 8px 10px; }
+.st-liq tfoot td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Badge de regla aplicada */
+.st-regla {
+    display: inline-block; font-size: 11.5px; padding: 2px 8px; border-radius: 4px;
+    background: #eef2f8; color: #3a4a6b; border: 1px solid var(--st-line); cursor: help;
+}
+.st-regla.is-neg { background: #fce8e6; color: var(--st-err); border-color: #f4c7c3; }
+.st-regla.is-ch  { background: #f3e8fd; color: #7a29c4; border-color: #ddc3f5; }
+
+/* Panel carta al cliente */
+.st-carta { border: 1px solid var(--st-line); border-radius: 8px; overflow: hidden; }
+.st-carta-head {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+    background: var(--st-bg-soft); padding: 10px 14px; border-bottom: 1px solid var(--st-line);
+}
+.st-carta-head .t { font-weight: 600; color: var(--st-blue); }
+.st-carta-tools { display: flex; gap: 8px; }
+.st-carta-body {
+    white-space: pre-wrap; word-break: break-word; padding: 16px 18px; font-size: 13.5px;
+    line-height: 1.55; color: var(--st-ink); max-height: 460px; overflow: auto; background: #fff;
+}
+
+/* Rótulo NO OFICIAL */
+.st-no-oficial {
+    display: inline-block; background: #fff3cd; color: #856404; border: 1px solid #ffe08a;
+    border-radius: 4px; padding: 4px 10px; font-size: 12px; font-weight: 600;
+}
+
+/* =====================================================================
+   REQ-019 — Workspace del caso: pestañas + iframe de contenido
+   ===================================================================== */
+#casoTabs.nav-tabs { border-bottom: 1px solid var(--st-line); margin-top: 4px; }
+#casoTabs.nav-tabs > li > a { color: var(--st-muted); border: 0; margin-right: 2px; padding: 9px 16px; }
+#casoTabs.nav-tabs > li > a:hover { background: var(--st-bg-soft); border: 0; color: var(--st-blue); }
+#casoTabs.nav-tabs > li > a .fa { margin-right: 6px; }
+#casoTabs.nav-tabs > li.active > a,
+#casoTabs.nav-tabs > li.active > a:hover,
+#casoTabs.nav-tabs > li.active > a:focus {
+    color: var(--st-blue); font-weight: 600; background: #fff;
+    border: 0; border-bottom: 3px solid var(--st-accent);
+}
+.st-tabframe { width: 100%; border: 0; min-height: 780px; background: #fff; border-radius: 6px; }
+
+/* =====================================================================
+   REQ-019 — Expediente documental: ficha, tarjetas por documento y árbol
+   ===================================================================== */
+.st-ficha { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.st-ficha-item { background: var(--st-bg-soft); border: 1px solid var(--st-line); border-radius: 6px; padding: 9px 12px; }
+.st-ficha-item .l { font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--st-muted); }
+.st-ficha-item .v { font-size: 13.5px; font-weight: 600; color: var(--st-ink); margin-top: 2px; word-break: break-word; }
+
+/* Tarjeta por documento (color por tipo) */
+.st-doc-card {
+    display: flex; gap: 12px; align-items: flex-start;
+    background: #fff; border: 1px solid var(--st-line); border-left: 4px solid var(--doc, #90a4c0);
+    border-radius: 6px; padding: 10px 14px; box-shadow: 0 1px 2px rgba(16,24,40,.04);
+}
+.st-doc-card--mini { padding: 7px 12px; }
+.st-doc-card.is-factura { --doc: #1a73e8; }
+.st-doc-card.is-receta  { --doc: #137333; }
+.st-doc-card.is-pedido  { --doc: #b06000; }
+.st-doc-card.is-examen  { --doc: #8430ce; }
+.st-doc-card.is-informe { --doc: #00695c; }
+.st-doc-card.is-otro    { --doc: #90a4c0; }
+.st-doc-tipo {
+    flex: none; display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
+    color: var(--doc, var(--st-muted)); padding-top: 2px; min-width: 92px;
+}
+.st-doc-body { min-width: 0; flex: 1; }
+.st-doc-titulo { font-weight: 600; font-size: 13px; color: var(--st-ink); word-break: break-word; }
+.st-doc-resumen { font-size: 12.5px; color: var(--st-muted); margin-top: 1px; }
+.st-doc-ents { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.st-ent {
+    font-size: 11.5px; background: var(--st-bg-soft); border: 1px solid var(--st-line);
+    border-radius: 10px; padding: 2px 9px; color: var(--st-ink);
+}
+.st-ent b { color: var(--st-muted); font-weight: 600; }
+
+/* Árbol de evidencia */
+.st-arbol-nodo { margin-bottom: 14px; }
+.st-arbol-hijos { margin: 6px 0 0 28px; padding-left: 14px; border-left: 2px dashed var(--st-line); }
+.st-arbol-hijo { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
+.st-rel {
+    flex: none; font-size: 11px; font-weight: 600; color: var(--st-ok);
+    padding-top: 8px; min-width: 74px; text-transform: lowercase;
+}
+.st-rel.is-bad { color: var(--st-err); }
+.st-rel.is-dup { color: #b06000; }
+
+/* Reglas evaluadas + herramientas ejecutadas (audit trail) */
+.st-reglas { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.st-reglas th { background: #eef2f8; color: var(--st-blue); text-align: left; padding: 6px 10px; border-bottom: 2px solid var(--st-line); }
+.st-reglas td { padding: 6px 10px; border-bottom: 1px solid var(--st-line); vertical-align: top; }
+.st-regla-res { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 8px; }
+.st-regla-res.is-cumple   { background: #e6f4ea; color: var(--st-ok); }
+.st-regla-res.is-nocumple { background: #fce8e6; color: var(--st-err); }
+.st-regla-res.is-noaplica { background: #eef2f8; color: var(--st-muted); }
+.st-regla-res.is-ch       { background: #f3e8fd; color: #7a29c4; }
+.st-tools-audit { font-size: 12.5px; }
+.st-tools-audit .ok  { color: var(--st-ok); }
+.st-tools-audit .err { color: var(--st-err); }
+
+/* =====================================================================
+   REQ-019 — Auditoría de medicina: tarjetas de alerta por severidad
+   ===================================================================== */
+.st-alerta {
+    display: flex; gap: 14px; align-items: flex-start;
+    border: 1px solid var(--st-line); border-left: 5px solid var(--al, var(--st-muted));
+    background: var(--al-bg, #fff); border-radius: 6px;
+    padding: 11px 15px; margin-bottom: 9px;
+}
+.st-alerta.is-critica     { --al: #c5221f; --al-bg: #fdeeed; }
+.st-alerta.is-advertencia { --al: #b06000; --al-bg: #fdf5e9; }
+.st-alerta.is-ok          { --al: #137333; --al-bg: #eef8f1; }
+.st-alerta-nivel {
+    flex: none; min-width: 116px; font-size: 11px; font-weight: 700;
+    letter-spacing: .4px; color: var(--al, var(--st-muted)); padding-top: 2px;
+}
+.st-alerta-body { min-width: 0; flex: 1; }
+.st-alerta-titulo { font-weight: 600; font-size: 13.5px; color: var(--st-ink); }
+.st-alerta-detalle { font-size: 12.5px; color: #4a5462; margin-top: 2px; }
+.st-alerta-accion { font-size: 12.5px; color: var(--st-blue); margin-top: 5px; font-weight: 500; }
+
+/* =====================================================================
+   REQ-019 — Tipificación: chips de tipo por FAMILIA (sólido = FACTURA,
+   contorno = SOPORTE) + tags por página.
+   El color nunca es el único canal: cada chip lleva su etiqueta de texto.
+   ===================================================================== */
+.st-tipo-chip {
+    display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+    font-size: 11.5px; font-weight: 600; border-radius: 12px; padding: 2px 10px;
+    border: 1px solid var(--fam, #90a4c0); color: var(--fam, #5b6b83); background: #fff;
+}
+.st-tipo-chip.is-factura { background: var(--fam, #90a4c0); color: #fff; }
+.st-tipo-chip.is-soporte { background: #fff; border-style: dashed; }
+
+/* Paleta por familia de reembolso */
+.fam-med      { --fam: #137333; }  /* Medicina           */
+.fam-ate-hos  { --fam: #1a73e8; }  /* Hospitalización    */
+.fam-pro      { --fam: #8430ce; }  /* Procedimientos     */
+.fam-con-med  { --fam: #00695c; }  /* Consulta médica    */
+.fam-lab-cli  { --fam: #b06000; }  /* Laboratorio        */
+.fam-lab-ima  { --fam: #c2185b; }  /* Imagen             */
+.fam-ter      { --fam: #0277bd; }  /* Terapias           */
+.fam-ben-adi  { --fam: #6d4c41; }  /* Beneficio adicional*/
+.fam-general  { --fam: #6b7688; }  /* General            */
+
+.st-tipos-lista { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+
+/* Páginas etiquetadas */
+.st-paginas { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+.st-pagina {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    background: var(--st-bg-soft); border: 1px solid var(--st-line);
+    border-radius: 5px; padding: 5px 10px; cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+}
+.st-pagina:hover { border-color: var(--st-accent); background: #eef4fd; }
+.st-pagina-num {
+    flex: none; font-size: 11px; font-weight: 700; color: var(--st-muted);
+    min-width: 52px; text-transform: uppercase; letter-spacing: .3px;
+}
+.st-tag-mini {
+    font-size: 10.5px; background: #fff; border: 1px solid var(--st-line);
+    border-radius: 9px; padding: 1px 7px; color: #4a5462;
+}
+.st-tag-mini.is-total { border-color: #81c995; color: var(--st-ok); font-weight: 600; }
+
+/* Tipificacion: pagina actualmente abierta en el visor embebido */
+.st-pagina.is-abierta { background:#e8f0fe; border-color:var(--st-accent); box-shadow: inset 3px 0 0 var(--st-accent); }
+
+
+/* ==========================================================================
+   REQ-019 - UN SOLO PROCESO en el workspace del caso
+   Barra de identidad del cliente (fija) + el proceso como pasos con estado.
+   ========================================================================== */
+
+/* -- Identidad del cliente: pegada arriba mientras se trabaja ----------- */
+.st-cliente {
+    position: sticky; top: 0; z-index: 120;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 10px 14px; margin-bottom: 10px;
+    background: #fff; border: 1px solid var(--st-line);
+    border-left: 4px solid var(--st-blue); border-radius: 5px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.08);
+}
+.st-cliente-av {
+    width: 40px; height: 40px; flex: 0 0 40px; border-radius: 50%;
+    background: var(--st-blue); color: #fff; font-weight: 700; font-size: 14px;
+    display: flex; align-items: center; justify-content: center; letter-spacing: .5px;
+}
+.st-cliente-id { min-width: 210px; }
+.st-cliente-id strong {
+    display: block; font-size: 14.5px; color: var(--st-blue); line-height: 1.25;
+}
+.st-cliente-id span { font-size: 12px; color: var(--st-muted); }
+
+.st-cliente-datos { display: flex; flex-wrap: wrap; gap: 6px 22px; flex: 1 1 auto; }
+.st-cliente-datos span {
+    display: flex; flex-direction: column; font-size: 13px; color: var(--st-ink);
+    font-weight: 600; line-height: 1.3;
+}
+.st-cliente-datos span i {
+    font-style: normal; font-size: 10px; text-transform: uppercase;
+    letter-spacing: .5px; color: var(--st-muted); font-weight: 600;
+}
+.st-cliente-datos span.is-money { color: var(--st-blue); }
+.st-cliente-acc { display: flex; gap: 6px; }
+
+/* -- El proceso: pasos con estado real ---------------------------------- */
+.st-flow-wrap {
+    background: var(--st-bg-soft); border: 1px solid var(--st-line);
+    border-radius: 5px; padding: 12px 14px; margin-bottom: 14px;
+}
+.st-flow {
+    list-style: none; margin: 0 0 12px; padding: 0;
+    display: flex; flex-wrap: wrap; gap: 8px;
+}
+.st-flow-step {
+    flex: 1 1 190px; min-width: 170px; cursor: pointer;
+    display: flex; align-items: flex-start; gap: 9px;
+    background: #fff; border: 1px solid var(--st-line);
+    border-radius: 4px; padding: 9px 11px; position: relative;
+    transition: border-color .12s, box-shadow .12s;
+}
+.st-flow-step:hover { border-color: var(--st-accent); box-shadow: 0 2px 6px rgba(26,115,232,.15); }
+.st-flow-num {
+    width: 24px; height: 24px; flex: 0 0 24px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700;
+    background: #e7eaef; color: var(--st-muted);
+}
+.st-flow-txt { display: flex; flex-direction: column; min-width: 0; }
+.st-flow-tit { font-size: 13px; font-weight: 700; color: var(--st-blue); }
+.st-flow-sub {
+    font-size: 11px; color: var(--st-muted); line-height: 1.35; margin-top: 1px;
+}
+
+.st-flow-step.is-done { border-left: 3px solid var(--st-ok); }
+.st-flow-step.is-done .st-flow-num { background: var(--st-ok); color: #fff; }
+.st-flow-step.is-pend { border-left: 3px solid #d6dae1; }
+.st-flow-step.is-run { border-left: 3px solid var(--st-accent); background: #f4f8ff; }
+.st-flow-step.is-run .st-flow-num { background: var(--st-accent); color: #fff; }
+.st-flow-step.is-error { border-left: 3px solid var(--st-err); background: #fdf3f2; }
+.st-flow-step.is-error .st-flow-num { background: var(--st-err); color: #fff; }
+
+.st-flow-acc { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.st-flow-tools { margin-left: auto; display: flex; gap: 6px; }
+.st-flow-estado { font-size: 12.5px; color: var(--st-ink); }
+.st-flow-estado .ok { color: var(--st-ok); font-weight: 600; }
+.st-flow-estado .err { color: var(--st-err); font-weight: 600; }
+.st-flow-meta {
+    margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--st-line);
+    font-size: 11.5px; color: var(--st-muted);
+}
+
+/* -- Pestanas numeradas, en el mismo orden del proceso ------------------ */
+.st-tabs-flow .st-tab-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; margin-right: 5px;
+    font-size: 10px; font-weight: 700; background: #e7eaef; color: var(--st-muted);
+    vertical-align: 1px;
+}
+.st-tabs-flow .st-tab-num.is-done { background: var(--st-ok); color: #fff; }
+.st-tabs-flow > li.st-tab-sep { pointer-events: none; }
+.st-tabs-flow > li.st-tab-sep > span {
+    display: inline-block; padding: 10px 12px 8px; font-size: 10px;
+    text-transform: uppercase; letter-spacing: .6px; color: var(--st-muted);
+    border-left: 1px solid var(--st-line); margin-left: 6px;
+}
+
+@media (max-width: 800px) {
+    .st-cliente { position: static; }
+    .st-flow-tools { margin-left: 0; }
+}
+
+
+/* ==========================================================================
+   REQ-019m - Tipificacion profunda: tipo de atencion, ficha del emisor y
+   tipo clinico del soporte.
+   ========================================================================== */
+
+/* -- Tipo de atencion del sobre ---------------------------------------- */
+.st-atencion {
+    border: 1px solid var(--st-line); border-left: 4px solid var(--at, #6b7688);
+    border-radius: 5px; background: #fff; padding: 12px 14px; margin-bottom: 14px;
+}
+.st-atencion.is-hosp { --at: #c2185b; }
+.st-atencion.is-hdia { --at: #b06000; }
+.st-atencion.is-amb  { --at: #137333; }
+.st-atencion.is-desc { --at: #6b7688; }
+
+.st-atencion-head { display: flex; align-items: center; gap: 12px; }
+.st-atencion-icono {
+    width: 40px; height: 40px; flex: 0 0 40px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--at); color: #fff; font-size: 17px;
+}
+.st-atencion-tipo { font-size: 17px; font-weight: 700; color: var(--at); line-height: 1.2; }
+.st-atencion-sub { font-size: 12px; color: var(--st-muted); }
+.st-atencion-just {
+    margin: 10px 0 0; font-size: 13px; color: var(--st-ink); line-height: 1.5;
+    padding-left: 12px; border-left: 2px solid var(--st-line);
+}
+
+.st-indicadores { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 11px; }
+.st-indicador {
+    font-size: 11px; border-radius: 11px; padding: 2px 9px;
+    border: 1px solid #d6dae1; color: var(--st-muted); background: #fbfcfe;
+    text-transform: capitalize;
+}
+.st-indicador.is-si { border-color: #81c995; color: var(--st-ok); background: #e6f4ea; font-weight: 600; }
+.st-indicador.is-no { opacity: .6; }
+
+/* -- Ficha del documento: emisor / factura / medico / paciente --------- */
+.st-docmeta {
+    display: flex; flex-wrap: wrap; gap: 8px 26px; margin: 9px 0 4px;
+    padding: 9px 11px; background: var(--st-bg-soft);
+    border: 1px solid var(--st-line); border-radius: 4px;
+}
+.st-docmeta-grupo { display: flex; flex-direction: column; min-width: 150px; max-width: 340px; }
+.st-docmeta-lbl {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--st-muted); font-weight: 600;
+}
+.st-docmeta-val { font-size: 13px; font-weight: 600; color: var(--st-blue); line-height: 1.3; }
+.st-docmeta-sub { font-size: 11.5px; color: var(--st-muted); word-break: break-all; }
+.st-mono { font-family: Consolas, "Courier New", monospace; font-size: 12px; }
+
+/* -- Tipo clinico del soporte ------------------------------------------ */
+.st-soporte-tipo { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; margin: 6px 0 2px; }
+.st-chip.is-soporte { border-color: #1a73e8; color: #1a73e8; background: #e8f0fe; }
+.st-soporte-res { font-size: 12.5px; color: var(--st-ink); font-style: italic; }
+.st-tag-mini.is-soporte { border-color: #9fbdf0; color: #1a73e8; background: #f4f8ff; }
+
+/* Codigo de liquidacion emparejado por DESCRIPCION: es una sugerencia, no un
+   match por codigo. Se pinta distinto para que el analista lo valide. */
+.st-chip.is-sugerido { border-color: #e0b34d; color: #7a5200; background: #fff8e1; }
+.st-chip.is-sugerido small { opacity: .75; font-size: 9.5px; text-transform: uppercase; letter-spacing: .3px; }
+
+/* Estado de correlacion diagnostico <-> procedimiento (Lr46).
+   Tres estados, no dos: "sin validar" NO es una negativa — al 88% de los
+   procedimientos del catalogo no se les puede validar correlacion. */
+.st-corr { display: inline-block; font-size: 11.5px; font-weight: 600; border-radius: 11px; padding: 2px 9px; border: 1px solid; }
+.st-corr.is-si { color: var(--st-ok); border-color: #81c995; background: #e6f4ea; }
+.st-corr.is-no { color: var(--st-err); border-color: #f28b82; background: #fce8e6; }
+.st-corr.is-sv { color: #7a5200; border-color: #e0b34d; background: #fff8e1; }
+
+
+/* ==========================================================================
+   REQ-019 - Evidencia anclada al documento
+   La lupa lleva al trozo exacto del papel; "segmento" lo trae aqui recortado.
+   ========================================================================== */
+.st-evid { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; vertical-align: middle; }
+.st-evid-btn {
+    background: #fff; border: 1px solid #c4ccd8; border-radius: 3px;
+    color: var(--st-muted); font-size: 10.5px; line-height: 15px; padding: 0 6px;
+}
+.st-evid-btn:hover { border-color: var(--st-accent); color: var(--st-accent); background: #e8f0fe; }
+.st-evid-btn.is-seg { text-transform: lowercase; letter-spacing: .2px; }
+.st-evid-btn.is-abierto { border-color: #e0b34d; color: #7a5200; background: #fff8e1; }
+
+/* El recorte: se despliega en su propia linea, debajo del dato */
+.st-evid-recorte {
+    flex-basis: 100%; margin: 6px 0 2px; padding: 6px;
+    background: #fbfcfe; border: 1px solid var(--st-line); border-radius: 4px;
+    max-width: 500px;
+}
+.st-evid-recorte img {
+    display: block; max-width: 100%; border-radius: 3px; cursor: zoom-in;
+    box-shadow: 0 1px 4px rgba(0,0,0,.18);
+}
+.st-evid-pie { font-size: 10.5px; color: var(--st-muted); padding-top: 4px; }
+.st-evid-cargando { font-size: 11.5px; color: var(--st-muted); font-style: italic; }
+
+
+/* ==========================================================================
+   REQ-019 - El chat no muestra JSON crudo
+   La respuesta estructurada se pinta como fichas; el crudo queda plegado.
+   ========================================================================== */
+.st-json-ficha { display: flex; flex-direction: column; gap: 4px; margin: 2px 0; }
+.st-json-fila {
+    display: flex; gap: 10px; align-items: baseline;
+    padding: 3px 0; border-bottom: 1px dotted var(--st-line);
+}
+.st-json-fila:last-child { border-bottom: 0; }
+.st-json-fila.is-bloque { flex-direction: column; gap: 3px; }
+.st-json-k {
+    flex: 0 0 148px; font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: .4px; color: var(--st-muted); font-weight: 600;
+}
+.st-json-v { flex: 1 1 auto; font-size: 13px; color: var(--st-ink); min-width: 0; word-break: break-word; }
+.st-json-num { font-weight: 600; color: var(--st-blue); }
+.st-json-si { color: var(--st-ok); font-weight: 600; }
+.st-json-no { color: var(--st-err); font-weight: 600; }
+.st-json-nulo { color: var(--st-muted); }
+.st-json-lista { margin: 2px 0 2px 16px; padding: 0; font-size: 13px; }
+.st-json-lista > li { margin-bottom: 3px; }
+
+.st-json-tabla { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.st-json-tabla th {
+    text-align: left; padding: 4px 8px; background: var(--st-bg-soft);
+    border-bottom: 1px solid var(--st-line); font-size: 10.5px;
+    text-transform: uppercase; letter-spacing: .4px; color: var(--st-muted);
+}
+.st-json-tabla td { padding: 4px 8px; border-bottom: 1px solid var(--st-line); vertical-align: top; }
+
+.st-json-ver { margin-top: 10px; }
+.st-json-ver > summary { cursor: pointer; font-size: 11.5px; color: var(--st-muted); }
+.st-json-crudo {
+    margin-top: 6px; padding: 8px; background: #f6f8fb; border: 1px solid var(--st-line);
+    border-radius: 4px; font-size: 11.5px; max-height: 320px; overflow: auto; white-space: pre-wrap;
+}
+
+
+/* -- Notas del caso: ficha legible, no volcado de JSON ------------------ */
+.st-nota {
+    border: 1px solid var(--st-line); border-radius: 5px; background: #fff;
+    margin-bottom: 10px; overflow: hidden;
+}
+.st-nota-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 7px 12px; background: var(--st-bg-soft);
+    border-bottom: 1px solid var(--st-line);
+}
+.st-nota-tit { font-size: 13px; font-weight: 700; color: var(--st-blue); }
+.st-nota-fecha { font-size: 11.5px; color: var(--st-muted); }
+.st-nota-cuerpo { padding: 10px 12px; font-size: 13px; color: var(--st-ink); }
+
+
+/* -- Trazabilidad: el porque del fallo, no un "error" mudo -------------- */
+.st-fila-error { background: #fff7f7; }
+.st-tools-motivo {
+    margin-top: 4px; font-size: 11.5px; line-height: 1.45; color: #a33;
+    background: #fdecec; border-left: 3px solid #d9534f;
+    padding: 4px 7px; border-radius: 3px; word-break: break-word;
+    max-width: 420px;
+}
+
+
+/* ── Pie fiscal de la factura (REQ-019y) ──────────────────────────────── */
+.st-fiscal {
+    margin: 10px 0 4px; border: 1px solid var(--st-line); border-radius: 5px;
+    background: #fcfdff; overflow: hidden;
+}
+.st-fiscal-tit {
+    padding: 6px 11px; background: var(--st-bg-soft);
+    border-bottom: 1px solid var(--st-line);
+    font-size: 12.5px; font-weight: 700; color: var(--st-blue);
+}
+.st-fiscal-tit .st-chip { margin-left: 7px; font-weight: 600; }
+.st-fiscal-tabla { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.st-fiscal-tabla td { padding: 4px 11px; border-bottom: 1px solid #f0f2f5; vertical-align: top; }
+.st-fiscal-tabla td.lbl { color: var(--st-ink); }
+.st-fiscal-tabla td.val { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.st-fiscal-tabla td.ev  { width: 92px; text-align: right; }
+.st-fiscal-tabla tr.is-resta td.val { color: #b35; }
+.st-fiscal-tabla tr.is-total td { font-weight: 700; border-top: 2px solid var(--st-line); border-bottom: none; }
+.st-fiscal-tabla tr.is-base td { background: #f4f9f4; font-weight: 700; color: #2c6e49; border-bottom: none; }
+.st-fiscal-nota {
+    display: block; font-size: 11px; color: var(--st-muted); font-style: italic; margin-top: 1px;
+}
+
+/* ── El porque de la decision ─────────────────────────────────────────── */
+.st-porque {
+    margin: 8px 0 4px; border: 1px solid #e3e8ef; border-radius: 5px;
+    background: #fbfcfe; font-size: 12.5px;
+}
+.st-porque > summary {
+    padding: 6px 11px; cursor: pointer; color: var(--st-blue); font-weight: 600;
+    list-style: none; outline: none;
+}
+.st-porque > summary::-webkit-details-marker { display: none; }
+.st-porque > summary::before { content: "B8 "; color: var(--st-muted); }
+.st-porque[open] > summary::before { content: "BE "; }
+.st-porque-n {
+    margin-left: 8px; font-weight: 400; font-size: 11.5px; color: var(--st-muted);
+}
+.st-porque-cuerpo { padding: 2px 11px 10px; border-top: 1px solid #eef1f5; }
+.st-porque-txt { margin: 6px 0 0; line-height: 1.5; color: var(--st-ink); }
+.st-porque-bloque { margin-top: 9px; }
+.st-porque-lbl {
+    display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .4px;
+    color: var(--st-muted); font-weight: 700;
+}
+.st-porque-senales { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.st-senal {
+    display: inline-flex; align-items: center; gap: 3px;
+    background: #fff8e1; border: 1px solid #f0e0a8; border-radius: 3px;
+    padding: 2px 6px; font-family: Consolas, Menlo, monospace; font-size: 11.5px;
+    color: #7a5c00; max-width: 100%; word-break: break-word;
+}
+
+/* ── Diagnostico: de que documento salio ──────────────────────────────── */
+.st-dx-doc { font-size: 12px; color: var(--st-muted); }
+.st-dx-doc .fa { margin-right: 3px; }
+.st-dx-mas {
+    margin-left: 5px; font-size: 11px; color: var(--st-muted);
+    background: #eef1f5; border-radius: 8px; padding: 0 5px;
+}
+
+/* ── Tarjetas del Studio ──────────────────────────────────────────────────
+   Reemplazan a los .jarviswidget de la plantilla, que pintan una cabecera
+   negra sobre fondo claro y no se parecen a nada del resto del producto: ni a
+   la portada, ni al portal del afiliado, ni a la configuracion. Cuatro
+   lenguajes visuales en la misma aplicacion obligan a reorientarse en cada
+   pantalla.
+
+   Ademas de feo, era plano: la busqueda en Armonix -que es POR DONDE SE ENTRA-
+   y la importacion desde Zendesk -que es la excepcion- se veian exactamente
+   igual de importantes. */
+.st-card {
+    background: #fff;
+    border: 1px solid var(--st-line);
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(20,30,50,.05);
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+/* La via principal se distingue, no se decora: borde azul y un poco de aire. */
+.st-card.is-principal { border-color: #c9d8f2; box-shadow: 0 2px 10px rgba(0,51,102,.07); }
+
+.st-card-cab {
+    display: flex; align-items: center; gap: 10px;
+    padding: 15px 20px 0;
+}
+.st-card-cab > .fa { color: var(--st-blue); font-size: 15px; }
+.st-card-tit { font-size: 15.5px; font-weight: 700; color: var(--st-blue); margin: 0; }
+.st-card-sub { font-size: 12.5px; color: var(--st-muted); margin: 3px 0 0; line-height: 1.5; }
+.st-card-cuerpo { padding: 14px 20px 20px; }
+
+/* La caja de busqueda: es la accion de la pantalla, que se note. */
+.st-buscador { display: flex; gap: 9px; flex-wrap: wrap; max-width: 720px; }
+.st-buscador input[type=text] {
+    flex: 1 1 300px; min-width: 260px; height: 44px;
+    border: 1px solid var(--st-line); border-radius: 8px; padding: 0 14px;
+    font-size: 14.5px; color: var(--st-ink); outline: none;
+}
+.st-buscador input[type=text]:focus { border-color: var(--st-blue); box-shadow: 0 0 0 3px rgba(0,51,102,.10); }
+
+.st-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 44px; padding: 0 20px; border: 1px solid transparent; border-radius: 8px;
+    font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    background: var(--st-blue); color: #fff;
+}
+.st-btn:hover { background: var(--st-blue-2); color: #fff; text-decoration: none; }
+.st-btn.is-suave { background: #fff; color: var(--st-blue); border-color: var(--st-line); }
+.st-btn.is-suave:hover { background: var(--st-bg-soft); border-color: var(--st-blue); }
+.st-btn.is-bajo { height: 38px; padding: 0 15px; font-size: 13.5px; }
+
+/* Los ejemplos: ayudan, no gritan. Antes eran <code> rosa de bootstrap. */
+.st-pistas { margin-top: 10px; font-size: 12.5px; color: var(--st-muted); }
+.st-pista {
+    display: inline-block; background: var(--st-bg-soft); border: 1px solid var(--st-line);
+    border-radius: 5px; padding: 1px 7px; font-family: inherit; font-size: 12px;
+    color: var(--st-ink); margin: 0 2px;
+}
+.st-pistas a { color: var(--st-accent); font-weight: 600; }
+
+/* La via secundaria vive plegada: existe, pero no compite con la principal. */
+.st-plegado { border: 1px solid var(--st-line); border-radius: 10px; background: #fff; }
+.st-plegado > summary {
+    list-style: none; cursor: pointer; padding: 14px 20px;
+    font-size: 14px; font-weight: 600; color: var(--st-ink);
+    display: flex; align-items: center; gap: 10px;
+}
+.st-plegado > summary::-webkit-details-marker { display: none; }
+.st-plegado > summary::after { content: "\25BE"; margin-left: auto; color: var(--st-muted); }
+.st-plegado[open] > summary::after { content: "\25B4"; }
+.st-plegado > summary .fa { color: var(--st-muted); }
+.st-plegado-cuerpo { padding: 4px 20px 18px; border-top: 1px solid #f0f2f5; }
+.st-plegado-cuerpo .form-control { height: 38px; border-radius: 7px; }
+
+/* ── Los widgets de la plantilla, vestidos como el resto del producto ──────
+   Quedan 31 bloques .jarviswidget repartidos en diez vistas del Studio
+   -Auditoria 7, Resolucion 6, Analizar 5, Caso 3, Expediente 3,
+   Clasificacion 3, Confirmar 2 y cuatro sueltos-. La plantilla les pinta una
+   cabecera NEGRA sobre fondo claro, que no se parece a la portada, ni al
+   portal del afiliado, ni a la configuracion.
+
+   Reescribir diez vistas a mano es lento y se rompe cosas por el camino. Se
+   reviste la clase: mismo HTML, otro aspecto, y las diez quedan coherentes a
+   la vez. Cuando una vista se toque por otra razon, se pasa a .st-card y esta
+   regla deja de aplicarle sola.
+
+   Sube la especificidad con :is() para ganarle a la plantilla sin !important,
+   que es lo que hace imposible ajustar nada despues. */
+:is(.jarviswidget, .jarviswidget.jarviswidget-color-darken) {
+    background: #fff;
+    border: 1px solid var(--st-line);
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(20,30,50,.05);
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+:is(.jarviswidget, .jarviswidget.jarviswidget-color-darken) > header {
+    background: #fff;
+    border: 0;
+    border-bottom: 1px solid #f0f2f5;
+    padding: 14px 20px;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+:is(.jarviswidget, .jarviswidget.jarviswidget-color-darken) > header > h2,
+:is(.jarviswidget, .jarviswidget.jarviswidget-color-darken) > header h2 {
+    color: var(--st-blue);
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.3;
+    margin: 0;
+    padding: 0;
+    float: none;
+    text-transform: none;
+}
+
+:is(.jarviswidget, .jarviswidget.jarviswidget-color-darken) > header > .widget-icon {
+    background: transparent;
+    color: var(--st-blue);
+    width: auto; height: auto; line-height: 1;
+    margin: 0; padding: 0; float: none;
+    font-size: 15px;
+}
+
+:is(.jarviswidget, .jarviswidget.jarviswidget-color-darken) .widget-body {
+    padding: 16px 20px 18px;
+    background: #fff;
+}
+
+/* Los controles de la plantilla -contraer, borrar, editar el widget- no
+   pintan nada aqui: son de un escritorio configurable que este producto no es. */
+.jarviswidget > header .jarviswidget-ctrls { display: none; }
