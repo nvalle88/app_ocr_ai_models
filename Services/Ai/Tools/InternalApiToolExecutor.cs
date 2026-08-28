@@ -475,10 +475,22 @@ public sealed class InternalApiToolExecutor : IToolExecutor
         if (string.IsNullOrWhiteSpace(query))
             throw new InvalidOperationException("[T5 Sql] La tool no tiene 'query' en su BindingConfig.");
 
-        // Guard 1: SELECT-only, una sola sentencia.
+        // Guard 1: solo lectura, una sola sentencia.
+        //
+        // Se admite tambien WITH, porque una consulta con CTE sigue siendo una
+        // lectura y hay tools que la necesitan: codigo_liquidacion_y_cobertura
+        // resuelve primero el procedimiento -o cae al generico- y despues cruza
+        // el plan, y eso sin CTE se convierte en dos idas a la base.
+        //
+        // Admitir WITH no abre nada, porque los guardias 2 y 3 siguen enteros:
+        // `WITH x AS (SELECT 1) DELETE FROM t` cae en el guardia 3 por la palabra
+        // DELETE, igual que caeria sin el WITH delante. Lo que protege de verdad
+        // es la lista de verbos y la sentencia unica, no la primera palabra.
         var trimmed = query.Trim();
-        if (!trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("[T5 Sql] Solo se permiten consultas SELECT.");
+        if (!trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) &&
+            !trimmed.StartsWith("WITH",   StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "[T5 Sql] Solo se permiten consultas de lectura (SELECT, o WITH ... SELECT).");
         if (trimmed.TrimEnd(';').Contains(';'))
             throw new InvalidOperationException("[T5 Sql] Solo se permite una sentencia por tool.");
         if (Regex.IsMatch(trimmed,

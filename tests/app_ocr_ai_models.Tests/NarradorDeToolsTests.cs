@@ -147,6 +147,26 @@ public class NarradorDeToolsTests
     }
 
     [Fact]
+    public void Filtro_equivocado_NO_se_le_cuenta_como_que_no_cubre()
+    {
+        // Caso real del portal: se pidio el plan N4-D-C v33 con region Costa y
+        // cobertura INC01. Ese plan existe solo en Sierra y su beneficio vive en
+        // otras coberturas — y estaba cubierto al 80%. Decirle al afiliado que su
+        // plan no lo cubre seria negarle algo que tiene, por un parametro nuestro.
+        const string real = """
+        {"rowCount":1,"rows":[{"CodigoProcedimiento":504001,"CodigoBeneficio":"A003",
+          "RegionesDelPlan":"Sierra","CoberturasDelBeneficio":"ACC01, DIS01, EME01",
+          "PorcentajeQueAplica":null,
+          "Alerta":"FILTRO EQUIVOCADO, no falta de cobertura: el plan SI lista este beneficio"}]}
+        """;
+        var v = NarradorDeTools.Narrar(1, "codigo_liquidacion_y_cobertura", real, false, T0, T1);
+
+        Assert.Equal("Lo está revisando un especialista", v.Resultado);
+        foreach (var prohibido in new[] { "no lista", "no cubre", "no está cubierto" })
+            Assert.DoesNotContain(prohibido, v.Resultado!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Sin_fila_de_plan_no_se_dice_que_no_cubre()
     {
         // "El plan no lista esa prestacion" NO es "no se cubre": es que no hay

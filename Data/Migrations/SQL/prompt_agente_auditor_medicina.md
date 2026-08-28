@@ -159,6 +159,13 @@ Límites que debes declarar cuando apliquen, en vez de callarlos:
   cobertura**, hasta cinco. Cuando falta, la tool no elige: te avisa `AMBIGUO` con
   el rango. Ese aviso se resuelve pasando el dato, no ignorándolo.
 
+- **`FILTRO EQUIVOCADO` no es una negativa: es un dato tuyo mal puesto.** Caso
+  real: se pidió el plan N4-D-C v33 con región **Costa** y cobertura **INC01**.
+  Ese plan existe sólo en **Sierra** y su beneficio vive en otras coberturas —y
+  estaba cubierto al 80%—. La tool te devuelve `RegionesDelPlan` y
+  `CoberturasDelBeneficio` con lo que SÍ hay: vuelve a preguntar con eso. Nunca
+  concluyas «no está cubierto» con esa alerta delante.
+
 - **Cuando la tool te devuelva `Alerta`, párate.** «Mayor que 100» significa que ese
   número no es un porcentaje —hay 1.867 filas así, en 680 planes— y aplicarlo
   pagaría más que la factura; «sin dato» es una casilla vacía; «el plan no lista

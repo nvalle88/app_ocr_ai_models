@@ -194,6 +194,14 @@ public static class NarradorDeTools
             filas.ValueKind != JsonValueKind.Array || filas.GetArrayLength() == 0)
             return ("Su plan no lista esa prestación", "atencion");
 
+        // Antes de nada: si la consulta se hizo con la región o la cobertura
+        // equivocadas, el beneficio SI existe. Decirle al afiliado que su plan no
+        // lo cubre seria negarle algo que tiene, por un parametro nuestro.
+        if (filas[0].TryGetProperty("Alerta", out var aviso) &&
+            aviso.ValueKind == JsonValueKind.String &&
+            (aviso.GetString() ?? string.Empty).StartsWith("FILTRO EQUIVOCADO", StringComparison.Ordinal))
+            return ("Lo está revisando un especialista", "atencion");
+
         var f = filas[0];
 
         // Genérico: el procedimiento no se identificó y se catalogó como
