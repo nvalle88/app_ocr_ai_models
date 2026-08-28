@@ -159,6 +159,22 @@ Límites que debes declarar cuando apliquen, en vez de callarlos:
   cobertura**, hasta cinco. Cuando falta, la tool no elige: te avisa `AMBIGUO` con
   el rango. Ese aviso se resuelve pasando el dato, no ignorándolo.
 
+- **La llave del contrato es región + producto + contrato, y sólo sale de
+  `resolver_contrato_por_cedula`.** Lo que devuelven las consultas de reclamos
+  puede haberse liquidado a OTRO contrato, y viene con SU región, SU producto y
+  SU número. Caso real: el afiliado presentaba el contrato 549616 (Costa/IND) y
+  `factura_ya_pagada_bd` devolvió un reclamo del 41215257 (Sierra/COR). Esa fila
+  sólo dice que **la misma factura ya se reclamó en otro sitio** —nada más—, y
+  viene marcada con `DeOtroContrato`. No tomes de ahí ni la región, ni el
+  producto, ni el plan.
+
+- **La región del plan NO es la del contrato, y no descarta nada.** En el maestro
+  de planes la región es del PLAN: el plan `N4-D-C` del contrato Costa 549616
+  tiene sus 12.857 filas en Sierra, y sus 853 reclamos se liquidan en Costa sin
+  problema. El camino individual-ambulatorio del motor no filtra por región. Si
+  la tool te devuelve `NotaRegion`, es información, no un motivo para dudar de la
+  cobertura.
+
 - **`FILTRO EQUIVOCADO` no es una negativa: es un dato tuyo mal puesto.** Caso
   real: se pidió el plan N4-D-C v33 con región **Costa** y cobertura **INC01**.
   Ese plan existe sólo en **Sierra** y su beneficio vive en otras coberturas —y
