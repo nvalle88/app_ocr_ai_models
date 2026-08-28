@@ -1083,3 +1083,52 @@
     display: block; padding: 10px 12px; font-size: 12px; color: var(--pt-gris);
     font-style: italic;
 }
+
+/* ── El desglose del reembolso, en tabla ──────────────────────────────────
+   Estaba plegado detras de "Ver el detalle linea por linea" y el afiliado se
+   quedaba con una cifra y una frase generica. Va a ser autoservicio: si no
+   puede ver POR QUE le devolvemos lo que le devolvemos, llama por telefono, y
+   entonces el autoservicio no existe. */
+.st-tabla-wrap { overflow-x: auto; margin: 4px 0 2px; }
+
+.st-tabla-reso { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.st-tabla-reso th {
+    text-align: left; font-size: 11px; font-weight: 700; color: var(--pt-gris);
+    text-transform: uppercase; letter-spacing: .4px;
+    padding: 0 12px 8px; border-bottom: 1px solid var(--pt-linea); white-space: nowrap;
+}
+.st-tabla-reso th.num, .st-tabla-reso td.num { text-align: right; }
+.st-tabla-reso td { padding: 12px; border-bottom: 1px solid #f0f2f5; vertical-align: top; }
+.st-tabla-reso tbody tr.es-no { background: #fdfbf6; }
+.st-tabla-reso tbody tr.es-no .st-tabla-pct { color: var(--pt-ambar); }
+
+.st-tabla-reso td strong { font-weight: 600; color: var(--pt-tinta); }
+
+/* El porque va DEBAJO del concepto y en gris: acompaña, no compite con la cifra. */
+.st-tabla-porque {
+    display: block; font-size: 12px; color: var(--pt-gris);
+    line-height: 1.45; margin-top: 3px; max-width: 340px;
+}
+
+.st-tabla-pct {
+    display: inline-block; font-weight: 700; font-size: 12.5px;
+    color: var(--pt-verde); background: var(--pt-verde-sua);
+    border-radius: 999px; padding: 1px 9px;
+}
+.st-tabla-pct.is-cero { color: var(--pt-gris); background: #eef1f5; }
+
+.st-tabla-devolvemos { color: var(--pt-verde); font-weight: 700; }
+
+.st-tabla-reso tfoot td {
+    border-top: 2px solid var(--pt-linea); border-bottom: 0;
+    padding-top: 12px; font-size: 14px;
+}
+
+/* Los terminos, explicados donde se usan. */
+.st-terminos { display: grid; gap: 10px; margin-top: 16px; }
+.st-termino {
+    background: var(--pt-azul-sua); border: 1px solid #c9d8f2; border-radius: 8px;
+    padding: 11px 14px;
+}
+.st-termino strong { display: block; font-size: 13px; color: var(--pt-azul); margin-bottom: 2px; }
+.st-termino span   { display: block; font-size: 12.5px; color: var(--pt-tinta); line-height: 1.5; }

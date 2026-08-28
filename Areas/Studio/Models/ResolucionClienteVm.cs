@@ -50,6 +50,42 @@ public sealed class ItemResolucionVm
 
     public string? Motivo { get; set; }
     public string? ReglaAplicada { get; set; }
+
+    /// <summary>
+    /// Por qué esta línea quedó así, en el idioma del afiliado.
+    ///
+    /// El campo Motivo lo escribe el modelo para el auditor: "Retenido por CH:
+    /// posible duplicidad ... y discrepancia de CIE-10 factura vs informe. No se
+    /// liquida en automático". Eso, en una pantalla de autoservicio, no explica
+    /// nada. Se traduce de la regla, que es estable, y el texto libre se deja
+    /// para el auditor.
+    /// </summary>
+    public string PorQueEnCristiano
+    {
+        get
+        {
+            var r = ((ReglaAplicada ?? string.Empty) + " " + (Motivo ?? string.Empty)).ToUpperInvariant();
+
+            if (r.Contains("YA_PAGADA") || r.Contains("DUPLICID") || r.Contains("YA PAGADA"))
+                return "Esta factura ya se reembolsó en otra solicitud.";
+            if (r.Contains("EXCLUS"))
+                return "Su plan no cubre este tipo de gasto.";
+            if (r.Contains("CARENCIA"))
+                return "Todavía está en el periodo de espera de este beneficio.";
+            if (r.Contains("PREEXIST"))
+                return "Corresponde a una condición que ya tenía al entrar al plan.";
+            if (r.Contains("TOPE") || r.Contains("MAXIMO") || r.Contains("MÁXIMO"))
+                return "Supera el máximo que su plan paga por este beneficio.";
+            if (r.Contains("DX_DISCREPANCIA") || r.Contains("CORRELACI"))
+                return "Estamos correlacionando el diagnóstico con sus informes.";
+            if (r.Contains("EXTEMPOR") || r.Contains("PLAZO"))
+                return "Se presentó fuera del plazo de su contrato.";
+
+            // Cubierto y sin regla que explicar: no hay nada que decir, y decir
+            // algo genérico sería ruido.
+            return string.Empty;
+        }
+    }
     public List<string> Evidencia { get; set; } = new();
 
     public bool EsCubierto => !Estado.Equals("NO_CUBIERTO", StringComparison.OrdinalIgnoreCase);
@@ -155,20 +191,32 @@ public sealed class ReglaClienteVm
             if (f.Contains("DEDUCIBLE"))
                 return "Su deducible del año está calculado.";
 
+            // Una regla que YA se comprobó tiene que leerse como buena noticia.
+            // Estaba pasando lo contrario: en el bloque verde «Esto ya está
+            // comprobado» aparecía «Que el diagnóstico encaje…», redactado como
+            // si siguiera pendiente. Se arregló para carencias y se quedó a
+            // medias para el resto.
+            var ok = Resultado.Equals("CUMPLE", StringComparison.OrdinalIgnoreCase);
+
             if (r.Contains("DUPLICAD") || r.Contains("YA PAGADA"))
-                return "Que esta factura no se haya presentado ya en otro reembolso.";
+                return ok ? "Esta factura no se había presentado antes."
+                          : "Que esta factura no se haya presentado ya en otro reembolso.";
 
             if (f.Contains("COPAGO") || r.Contains("CONVENIO"))
-                return "El acuerdo que tenemos con este prestador, que decide cuánto le toca a usted.";
+                return ok ? "El acuerdo con este prestador está confirmado."
+                          : "El acuerdo que tenemos con este prestador, que decide cuánto le toca a usted.";
 
             if (f.Contains("DIAGNOSTIC") || f.Contains("DIAGNÓSTIC") || r.Contains("CORRELACI"))
-                return "Que el diagnóstico de la factura encaje con el de sus informes médicos.";
+                return ok ? "El diagnóstico encaja con sus informes médicos."
+                          : "Que el diagnóstico de la factura encaje con el de sus informes médicos.";
 
             if (f.Contains("TOPE") || f.Contains("MONTO"))
-                return "Que el importe entre dentro de los máximos de su plan.";
+                return ok ? "El importe entra dentro de los máximos de su plan."
+                          : "Que el importe entre dentro de los máximos de su plan.";
 
             if (f.Contains("EXCLUSION") || f.Contains("EXCLUSIÓN"))
-                return "Que lo atendido no esté entre las exclusiones de su contrato.";
+                return ok ? "Lo atendido no está entre las exclusiones de su contrato."
+                          : "Que lo atendido no esté entre las exclusiones de su contrato.";
 
             // La misma familia se dice distinto segun el resultado: en la
             // lista de lo comprobado tiene que sonar a buena noticia, no a
@@ -359,6 +407,48 @@ public sealed class ResolucionClienteVm
     /// <summary>Lo que de verdad no se cumple. Esto sí deja el gasto fuera.</summary>
     public List<ReglaClienteVm> LoQueNoSeCumple =>
         Reglas.Where(r => r.Resultado.Equals("NO_CUMPLE", StringComparison.OrdinalIgnoreCase)).ToList();
+
+    /// <summary>
+    /// POR QUÉ no se cubre, de verdad.
+    ///
+    /// La pantalla ponía siempre «fuera de su plan» debajo del importe no
+    /// cubierto. Medido en el caso 9da6b9f4: los dos ítems salieron
+    /// NO_CUBIERTO con la regla FACTURA_YA_PAGADA / DUPLICIDAD —la factura ya
+    /// se había reembolsado en otros reclamos— y al afiliado se le decía que su
+    /// colonoscopia está «fuera de su plan». Son dos cosas distintas y la
+    /// diferencia le importa: una es una exclusión de su póliza, la otra es que
+    /// ya cobró ese gasto.
+    ///
+    /// Se lee de la regla que aplicaron los propios ítems, no se supone.
+    /// </summary>
+    public string NotaNoCubierto
+    {
+        get
+        {
+            var reglas = string.Join(" ", NoCubiertos
+                .Select(i => (i.ReglaAplicada ?? string.Empty) + " " + (i.Motivo ?? string.Empty)))
+                .ToUpperInvariant();
+
+            if (reglas.Contains("YA_PAGADA") || reglas.Contains("DUPLICID") || reglas.Contains("YA PAGADA"))
+                return "esta factura ya se reembolsó antes";
+            if (reglas.Contains("EXCLUS"))
+                return "su plan no cubre este tipo de gasto";
+            if (reglas.Contains("CARENCIA"))
+                return "todavía está en periodo de espera";
+            if (reglas.Contains("PREEXIST"))
+                return "corresponde a una condición previa a su plan";
+            if (reglas.Contains("TOPE") || reglas.Contains("MAXIMO") || reglas.Contains("MÁXIMO"))
+                return "supera el máximo que cubre su plan";
+            if (reglas.Contains("EXTEMPOR") || reglas.Contains("PLAZO"))
+                return "se presentó fuera de plazo";
+            if (reglas.Contains("FACTURA") && reglas.Contains("INVALID"))
+                return "la factura no cumple los requisitos";
+
+            // Sin regla reconocible NO se inventa un motivo: se dice lo único
+            // que se sabe con certeza.
+            return "no entra en este reembolso";
+        }
+    }
 
     /// <summary>
     /// El titular de la pantalla. Es la cifra que la persona vino a buscar, y

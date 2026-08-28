@@ -258,7 +258,10 @@
                         <div class="st-reso-parte">
                             <span class="lbl">No cubierto</span>
                             <span class="val">@Dinero(r.TotalNoCubierto)</span>
-                            <span class="nota">fuera de su plan</span>
+                            @* El motivo REAL, no «fuera de su plan» siempre: en el
+                               caso medido eran dos cosas distintas y la diferencia
+                               le importa al afiliado. *@
+                            <span class="nota">@r.NotaNoCubierto</span>
                         </div>
                     }
                 </div>
@@ -284,67 +287,97 @@
             </div>
         }
 
-        @* El detalle, plegado: quien quiera el porqué lo abre. *@
-        <details class="st-plegable">
-            <summary><i class="fa fa-list-ul"></i> Ver el detalle línea por línea</summary>
-            <div class="st-plegable-cuerpo">
-                @foreach (var it in r.Cubiertos)
-                {
-                    <div class="st-item-reso is-si">
-                        <div class="st-item-reso-cab">
-                            <span class="st-item-reso-desc">@it.Descripcion</span>
-                            <span class="st-item-reso-cifras">
-                                @if (it.Porcentaje.HasValue)
-                                {
-                                    <span class="st-item-reso-pct">@it.Porcentaje.Value.ToString("0")%</span>
-                                }
-                                <span class="st-item-reso-val">@Dinero(it.ValorCubierto)</span>
-                            </span>
-                        </div>
-                        @if (!string.IsNullOrWhiteSpace(it.QuedaASuCargo))
-                        {
-                            <p class="st-item-reso-cargo"><i class="fa fa-user"></i> Queda a su cargo: @it.QuedaASuCargo</p>
-                        }
-                        @if (!string.IsNullOrWhiteSpace(it.Motivo))
-                        {
-                            <p class="st-item-reso-motivo">@it.Motivo</p>
-                        }
-                    </div>
-                }
-                @foreach (var it in r.NoCubiertos)
-                {
-                    <div class="st-item-reso is-no">
-                        <div class="st-item-reso-cab">
-                            <span class="st-item-reso-desc">@it.Descripcion</span>
-                            <span class="st-item-reso-cifras">
-                                <span class="st-item-reso-val">@Dinero(it.ValorPresentado)</span>
-                            </span>
-                        </div>
-                        @if (!string.IsNullOrWhiteSpace(it.Motivo))
-                        {
-                            <p class="st-item-reso-motivo">@it.Motivo</p>
-                        }
-                    </div>
-                }
-                @foreach (var g in r.ReglasQueLeAfectan)
-                {
-                    <div class="st-regla-cli">
-                        <div class="st-regla-cli-cab">
-                            <span class="st-regla-cli-fam">@g.Familia</span>
-                            <span class="st-regla-cli-res is-@(g.Resultado.ToLowerInvariant())">@g.ResultadoEnCristiano</span>
-                        </div>
-                        @if (!string.IsNullOrWhiteSpace(g.Detalle))
-                        {
-                            <p class="st-regla-cli-det">@g.Detalle</p>
-                        }
-                        @if (!string.IsNullOrWhiteSpace(g.TerminoExplicado))
-                        {
-                            <p class="st-regla-cli-term"><i class="fa fa-info-circle"></i> @g.TerminoExplicado</p>
-                        }
-                    </div>
-                }
+        @* ── El desglose, A LA VISTA y en una tabla ──────────────────────
+           Estaba plegado detrás de «Ver el detalle línea por línea», y el
+           afiliado se quedaba con una cifra y una frase genérica. Esto va a
+           ser autoservicio: si no puede ver POR QUÉ le devolvemos lo que le
+           devolvemos, llama por teléfono, y entonces el autoservicio no
+           existe. *@
+        <div class="st-foco">
+            <div class="st-foco-cab">
+                <h2><i class="fa fa-list-ul"></i> Lo que le facturaron, línea por línea</h2>
             </div>
-        </details>
+
+            <div class="st-tabla-wrap">
+                <table class="st-tabla-reso">
+                    <thead>
+                        <tr>
+                            <th>Concepto</th>
+                            <th class="num">Le costó</th>
+                            <th class="num">Su plan cubre</th>
+                            <th class="num">Le devolvemos</th>
+                            <th class="num">A su cargo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var it in r.Items)
+                    {
+                        var aCargo = it.ValorPresentado - it.ValorCubierto;
+                        <tr class="@(it.EsCubierto ? "es-si" : "es-no")">
+                            <td>
+                                <strong>@it.Descripcion</strong>
+                                @if (!string.IsNullOrWhiteSpace(it.PorQueEnCristiano))
+                                {
+                                    <span class="st-tabla-porque">@it.PorQueEnCristiano</span>
+                                }
+                            </td>
+                            <td class="num">@Dinero(it.ValorPresentado)</td>
+                            <td class="num">
+                                @if (it.Porcentaje.HasValue && it.ValorCubierto > 0)
+                                {
+                                    <span class="st-tabla-pct">@it.Porcentaje.Value.ToString("0")%</span>
+                                }
+                                else
+                                {
+                                    <span class="st-tabla-pct is-cero">0%</span>
+                                }
+                            </td>
+                            <td class="num st-tabla-devolvemos">@Dinero(it.ValorCubierto)</td>
+                            <td class="num">
+                                @Dinero(aCargo)
+                                @if (!string.IsNullOrWhiteSpace(it.QuedaASuCargo))
+                                {
+                                    <span class="st-tabla-porque">@it.QuedaASuCargo</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td><strong>Total</strong></td>
+                            <td class="num"><strong>@Dinero(r.TotalPresentado)</strong></td>
+                            <td class="num"></td>
+                            <td class="num st-tabla-devolvemos"><strong>@Dinero(r.Devolvemos)</strong></td>
+                            <td class="num"><strong>@Dinero(r.TotalPresentado - r.Devolvemos)</strong></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            @* Los términos que salen en la tabla, explicados. Nombrar
+               «deducible» o «copago» sin decir qué son es lo que hace que el
+               afiliado termine llamando para preguntar. *@
+            @if (r.TotalDeducible > 0 || r.TotalCopago > 0)
+            {
+                <div class="st-terminos">
+                    @if (r.TotalDeducible > 0)
+                    {
+                        <div class="st-termino">
+                            <strong>Deducible</strong>
+                            <span>@Terminos.Explicar("DEDUCIBLE")</span>
+                        </div>
+                    }
+                    @if (r.TotalCopago > 0)
+                    {
+                        <div class="st-termino">
+                            <strong>Copago</strong>
+                            <span>@Terminos.Explicar("COPAGO")</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
 
         @if (momento == "RESULTADO")
         {
