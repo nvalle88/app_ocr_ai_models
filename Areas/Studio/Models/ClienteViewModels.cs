@@ -517,6 +517,17 @@ public sealed class GrupoDocumentosVm
     /// <summary>La factura. Nula en el grupo de los que no cuelgan de ninguna.</summary>
     public ClienteDocumentoVm? Factura { get; set; }
 
+    /// <summary>
+    /// Si en la solicitud hay ALGUNA factura, aunque estos respaldos todavía no
+    /// cuelguen de ella.
+    ///
+    /// Sin este dato el grupo huérfano no puede distinguir dos situaciones que
+    /// no se parecen en nada: que falte la factura de verdad, o que esté ahí y
+    /// el expediente aún no la haya emparejado. Se le decía «no encontramos la
+    /// factura de ese gasto» con la factura delante, en el mismo caso.
+    /// </summary>
+    public bool HayFacturaEnLaSolicitud { get; set; }
+
     public List<ClienteDocumentoVm> Respaldos { get; set; } = new();
 
     public bool EsHuerfano => Factura is null;
@@ -526,13 +537,32 @@ public sealed class GrupoDocumentosVm
     /// suelto no, y hay que decir POR QUÉ y QUÉ falta — no dejarlo en una
     /// tarjeta más de la pila.
     /// </summary>
-    public string? Aviso => EsHuerfano
-        ? (Respaldos.Count == 1
-            ? "Este documento respalda un gasto, pero no encontramos la factura de ese gasto. "
-            + "Sin la factura no podemos reembolsarlo."
-            : "Estos documentos respaldan un gasto, pero no encontramos la factura de ese gasto. "
-            + "Sin la factura no podemos reembolsarlo.")
-        : null;
+    public string? Aviso
+    {
+        get
+        {
+            if (!EsHuerfano) return null;
+
+            var uno = Respaldos.Count == 1;
+
+            // Hay factura, sólo que todavía no se ha emparejado. Eso no es un
+            // problema del afiliado y no hay que asustarle: pasa entre que se
+            // identifican los documentos y se ordena el expediente.
+            if (HayFacturaEnLaSolicitud)
+                return uno
+                    ? "Todavía estamos viendo a qué factura corresponde este documento."
+                    : "Todavía estamos viendo a qué factura corresponden estos documentos.";
+
+            return uno
+                ? "Este documento respalda un gasto, pero no encontramos la factura de ese gasto. "
+                + "Sin la factura no podemos reembolsarlo."
+                : "Estos documentos respaldan un gasto, pero no encontramos la factura de ese gasto. "
+                + "Sin la factura no podemos reembolsarlo.";
+        }
+    }
+
+    /// <summary>Sólo falta de verdad cuando no hay ninguna factura en la solicitud.</summary>
+    public bool FaltaLaFactura => EsHuerfano && !HayFacturaEnLaSolicitud;
 
     /// <summary>
     /// A quién pedírsela, con nombre — y SOLO si de verdad lo sabemos.
@@ -552,7 +582,7 @@ public sealed class GrupoDocumentosVm
     {
         get
         {
-            if (!EsHuerfano) return null;
+            if (!FaltaLaFactura) return null;
             var emisores = Respaldos
                 .Select(r => r.Emisor?.Trim())
                 .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -571,7 +601,7 @@ public sealed class GrupoDocumentosVm
     {
         get
         {
-            if (!EsHuerfano || AQuienPedirla != null) return null;
+            if (!FaltaLaFactura || AQuienPedirla != null) return null;
             var medicos = Respaldos
                 .Select(r => r.Medico?.Trim())
                 .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -739,7 +769,11 @@ public sealed class ClienteSolicitudVm
                 .ToList();
 
             if (sueltos.Count > 0)
-                grupos.Add(new GrupoDocumentosVm { Respaldos = sueltos });
+                grupos.Add(new GrupoDocumentosVm
+                {
+                    Respaldos = sueltos,
+                    HayFacturaEnLaSolicitud = facturas.Count > 0
+                });
 
             return grupos;
         }

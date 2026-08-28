@@ -129,6 +129,52 @@ public class ArbolDocumentosTests
     }
 
     [Fact]
+    public void Con_la_factura_delante_no_se_dice_que_falta_la_factura()
+    {
+        // El defecto: entre que se identifican los documentos y se ordena el
+        // expediente, los respaldos aun no cuelgan de nada y caian en el grupo
+        // huerfano. La pantalla gritaba "Falta la factura de este gasto" con la
+        // factura ahi mismo, en el mismo caso. Es el mismo error que llevo el
+        // dia corrigiendo: confundir "todavia no emparejado" con "no existe".
+        var vm = new ClienteSolicitudVm
+        {
+            Documentos =
+            {
+                Doc(10898, factura: true),                 // la factura, presente
+                Doc(10896, factura: false),                // sin vinculo todavia
+                Doc(10897, factura: false),
+            }
+        };
+
+        var suelto = vm.Agrupados.Single(g => g.EsHuerfano);
+
+        Assert.True(suelto.HayFacturaEnLaSolicitud);
+        Assert.False(suelto.FaltaLaFactura);
+        Assert.Contains("Todavía estamos viendo a qué factura", suelto.Aviso);
+        Assert.DoesNotContain("no encontramos la factura", suelto.Aviso);
+
+        // Y no se manda a nadie a pedir una factura que ya tiene.
+        Assert.Null(suelto.AQuienPedirla);
+        Assert.Null(suelto.QuienLoFirma);
+    }
+
+    [Fact]
+    public void Sin_ninguna_factura_si_se_dice_que_falta()
+    {
+        var vm = new ClienteSolicitudVm
+        {
+            Documentos = { Doc(10896, factura: false, emisor: "Laboratorio Camacho") }
+        };
+
+        var suelto = vm.Agrupados.Single();
+
+        Assert.False(suelto.HayFacturaEnLaSolicitud);
+        Assert.True(suelto.FaltaLaFactura);
+        Assert.Contains("no encontramos la factura", suelto.Aviso);
+        Assert.Equal("Laboratorio Camacho", suelto.AQuienPedirla);
+    }
+
+    [Fact]
     public void Sin_expediente_todavia_no_se_cuelga_nada_a_la_fuerza()
     {
         // Recién subidos no hay vínculos. Colgar el respaldo de la única

@@ -699,6 +699,17 @@
 }
 .st-arbol-union > .fa { color: var(--pt-azul); opacity: .55; margin-top: 2px; }
 
+/* Emparejando: no es un problema, es un momento del proceso. Va en azul y en
+   una linea, no en ambar y con titular: la diferencia entre "espere" y "algo va
+   mal" es justo lo que el afiliado necesita distinguir. */
+.st-arbol-emparejando {
+    display: flex; gap: 8px; align-items: center;
+    background: var(--pt-azul-sua); border: 1px solid #c9d8f2; border-radius: 7px;
+    padding: 9px 13px; margin-bottom: 10px;
+    font-size: 12.5px; color: var(--pt-azul);
+}
+.st-arbol-emparejando > .fa { opacity: .8; }
+
 /* El caso malo: respaldos sin su factura. No es una tarjeta mas de la pila,
    es lo unico que impide que le paguen, y se dice con nombre y apellido. */
 .st-arbol.is-huerfano { border-left: 3px solid var(--pt-ambar); padding-left: 12px; }

@@ -569,7 +569,17 @@
             {
                 <div class="st-arbol @(grupo.EsHuerfano ? "is-huerfano" : "")">
 
-                    @if (grupo.EsHuerfano)
+                    @if (grupo.EsHuerfano && !grupo.FaltaLaFactura)
+                    {
+                        @* Hay factura, sólo falta emparejar. No es alarma: es un
+                           momento del proceso, y decirle "falta la factura" con
+                           la factura delante es asustarle por nada. *@
+                        <div class="st-arbol-emparejando">
+                            <i class="fa fa-clock-o"></i>
+                            <span>@grupo.Aviso</span>
+                        </div>
+                    }
+                    else if (grupo.EsHuerfano)
                     {
                         <div class="st-arbol-falta">
                             <i class="fa fa-exclamation-triangle"></i>
