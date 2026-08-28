@@ -521,8 +521,29 @@ public sealed class InternalApiToolExecutor : IToolExecutor
 
         await using var cmd = new SqlCommand(query, conn) { CommandTimeout = 30 };
 
-        // Parametrización: por cada @param del SQL, tomar el valor del input (case-insensitive).
-        // Valores como NVARCHAR; SQL Server convierte implícitamente para comparaciones numéricas.
+        // ── Parametrización: por cada @param del SQL, el valor del input ─────────
+        //
+        // El tipo NO es un detalle. Todos los parámetros iban como NVARCHAR, y la
+        // mitad de las columnas contra las que se comparan son VARCHAR. Cuando se
+        // comparan un varchar y un nvarchar, SQL Server convierte LA COLUMNA
+        // -nvarchar tiene más precedencia-, el predicado deja de poder usar el
+        // índice y la consulta se come la tabla entera.
+        //
+        // Medido sobre factura_ya_pagada_bd, con su índice IdxNroFactNumConvenio
+        // delante y las mismas 9 filas de resultado:
+        //
+        //     NroFacturaPrestador varchar(30) = @p nvarchar ....... 47.034 ms
+        //     NroFacturaPrestador varchar(30) = @p varchar ........      0 ms
+        //
+        // Cuarenta y siete segundos contra un CommandTimeout de 30: la herramienta
+        // no iba lenta, MORÍA, y al afiliado le salía "No se pudo consultar ahora".
+        //
+        // La regla: si el valor es ASCII puro va como VARCHAR, y entonces sirve
+        // para los dos casos —contra columna varchar hay seek, y contra columna
+        // nvarchar es el PARÁMETRO el que se promueve, así que la columna y su
+        // índice quedan intactos—. Si trae acentos o ñ va como NVARCHAR, porque
+        // varchar no los guardaría bien; esos son nombres, y las columnas de
+        // nombres ya son nvarchar.
         var inputCi = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var (k, v) in toolInput) inputCi[k] = v;
 
@@ -530,10 +551,19 @@ public sealed class InternalApiToolExecutor : IToolExecutor
         {
             var pName = m.Groups[1].Value;
             if (cmd.Parameters.Contains("@" + pName)) continue;
-            var val = inputCi.TryGetValue(pName, out var raw) && raw != null
-                ? (object)raw.ToString()!
-                : DBNull.Value;
-            cmd.Parameters.Add(new SqlParameter("@" + pName, System.Data.SqlDbType.NVarChar, 400) { Value = val });
+
+            var texto = inputCi.TryGetValue(pName, out var raw) && raw != null
+                ? raw.ToString()
+                : null;
+
+            var tipo = EsAsciiPuro(texto)
+                ? System.Data.SqlDbType.VarChar
+                : System.Data.SqlDbType.NVarChar;
+
+            cmd.Parameters.Add(new SqlParameter("@" + pName, tipo, 400)
+            {
+                Value = (object?)texto ?? DBNull.Value
+            });
         }
 
         // Ejecutar y materializar filas como diccionarios (JSON-friendly).
@@ -721,5 +751,21 @@ public sealed class InternalApiToolExecutor : IToolExecutor
                 "[T5] No se pudo persistir ToolInvocation para tool '{ToolCode}' / execution {ExecutionId}.",
                 toolCode, executionId);
         }
+    }
+
+    /// <summary>
+    /// ¿El valor cabe entero en VARCHAR sin perder nada? Un código, un RUC, una
+    /// clave de acceso o una fecha sí; «Muñoz» o «Hipófisis» no.
+    ///
+    /// Un null cuenta como ASCII: va a ser DBNull y el tipo da igual, pero VarChar
+    /// mantiene el predicado utilizable por el índice cuando la consulta hace
+    /// `(@p IS NULL OR col = @p)`, que es como están escritos los opcionales.
+    /// </summary>
+    private static bool EsAsciiPuro(string? texto)
+    {
+        if (string.IsNullOrEmpty(texto)) return true;
+        foreach (var c in texto)
+            if (c > 127) return false;
+        return true;
     }
 }
