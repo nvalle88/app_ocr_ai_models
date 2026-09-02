@@ -77,7 +77,14 @@ public sealed class AfiliadoParaChatVm
     public string? Producto { get; set; }
     public string? Region { get; set; }
 
+    /// <summary>
+    /// El NÚMERO de contrato, no el código. Verificado contra ContratoJson: de
+    /// 30 filas, las 30 coinciden con $.Numero y ninguna con $.Codigo — que para
+    /// el contrato 70200015 es 1642570, un número distinto que no se le enseña a
+    /// nadie porque es la llave interna.
+    /// </summary>
     public string? Contrato { get; set; }
+
     public DateTime? Desde { get; set; }
 
     /// <summary>

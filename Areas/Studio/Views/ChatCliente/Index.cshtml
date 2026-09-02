@@ -179,7 +179,7 @@
                         <tr>
                             <th>Afiliado</th><th>Cédula</th>
                             <th>Producto</th><th>Plan</th><th>Región</th>
-                            <th>Contrato</th><th>Consultado</th><th></th>
+                            <th>N.&ordm; de contrato</th><th>Consultado</th><th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -233,7 +233,11 @@ else
                     <text> (@Model.CodigoPlan@(Model.VersionPlan.HasValue ? $" v{Model.VersionPlan}" : ""))</text>
                 }
             }
-            @if (!string.IsNullOrWhiteSpace(Model.NumeroContrato)) { <text> · contrato @Model.NumeroContrato</text> }
+            @* Es el NUMERO de contrato, no el codigo. Verificado contra
+               ContratoJson: las 30 filas coinciden con $.Numero y ninguna con
+               $.Codigo -que para este afiliado es 1642570, otro numero-. La
+               etiqueta lo dice para que no haya que volver a comprobarlo. *@
+            @if (!string.IsNullOrWhiteSpace(Model.NumeroContrato)) { <text> · contrato n.º @Model.NumeroContrato</text> }
         </p>
 
         @* Consultar sobre OTRO plan, para comparar. Va con aviso permanente: una
