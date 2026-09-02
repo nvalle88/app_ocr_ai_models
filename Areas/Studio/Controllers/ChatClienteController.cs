@@ -52,6 +52,9 @@ public sealed class ChatClienteController : Controller
 
     private readonly OCRDbContext _db;
     private readonly AiCompletionServiceFactory _factory;
+    private readonly IConfiguration _config;
+    private readonly IHttpClientFactory _http;
+    private readonly ISaludsaTokenProvider _token;
     private readonly IToolExecutor? _toolExecutor;
     private readonly Services.Ai.IPreValidaciones? _previas;
     private readonly ILogger<ChatClienteController> _log;
@@ -60,10 +63,14 @@ public sealed class ChatClienteController : Controller
         OCRDbContext db,
         AiCompletionServiceFactory factory,
         ILogger<ChatClienteController> log,
+        IConfiguration config,
+        IHttpClientFactory http,
+        ISaludsaTokenProvider token,
         IToolExecutor? toolExecutor = null,
         Services.Ai.IPreValidaciones? previas = null)
     {
         _db = db; _factory = factory; _log = log;
+        _config = config; _http = http; _token = token;
         _toolExecutor = toolExecutor; _previas = previas;
     }
 
@@ -481,5 +488,116 @@ public sealed class ChatClienteController : Controller
             return t[(i + ini.Length)..j].Trim();
 
         return t.Length <= 600 ? t : t[..600];
+    }
+
+    // GET /Studio/ChatCliente/Carta?caseCode=&id=
+    //
+    // La carta de una autorización, en PDF. La tool devuelve el enlace y esta
+    // acción es la que trae el papel.
+    //
+    // -- El caseCode lo pone la PANTALLA, no el modelo -----------------------
+    // El enlace que devuelve la tool trae solo el id. El caseCode lo añade el
+    // navegador, que ya sabe de quién es el caso. Es a propósito: si el modelo
+    // pudiera escribir el caseCode, bastaría con que redactara otro para bajar
+    // la carta de otra persona. La identidad sale de la pantalla, nunca del
+    // texto que genera un modelo.
+    //
+    // -- Y aun así se comprueba ---------------------------------------------
+    // Antes de pedirle nada a Armonix se verifica en la base que esa
+    // autorización es de la cédula o del contrato del caso. Un id numérico es
+    // fácil de teclear a mano en la barra de direcciones, y una carta trae el
+    // prestador, el diagnóstico y el motivo: se enseña solo la propia.
+    [HttpGet]
+    public async Task<IActionResult> Carta(Guid caseCode, int id, CancellationToken ct)
+    {
+        if (caseCode == Guid.Empty || id <= 0) return BadRequest("Falta el caso o la autorización.");
+
+        var sol = await _db.SolicitudCliente.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.CaseCode == caseCode, ct);
+        if (sol == null) return NotFound("No encuentro su contrato en este caso.");
+
+        var cedula   = (sol.CedulaBeneficiario ?? sol.Cedula ?? string.Empty).Trim();
+        var contrato = (sol.NumeroContrato ?? string.Empty).Trim();
+
+        var cs = _config.GetConnectionString("SaludConsultas");
+        if (string.IsNullOrWhiteSpace(cs)) return StatusCode(500, "Sin conexión a autorizaciones.");
+
+        string? estado, numero, ciudad;
+        bool esSuya;
+        await using (var cn = new Microsoft.Data.SqlClient.SqlConnection(cs))
+        {
+            await cn.OpenAsync(ct);
+            await using var cmd = cn.CreateCommand();
+            cmd.CommandText =
+                "SELECT TOP 1 a.EstadoCobertura, a.NumeroAutorizacion, a.CedulaBeneficiario, " +
+                "       a.ContratoNumero, a.RegionPrestadorEmpresa " +
+                "  FROM dbo.Autorizacion a WITH (NOLOCK) WHERE a.Id = @id";
+            cmd.Parameters.Add(new Microsoft.Data.SqlClient.SqlParameter(
+                "@id", System.Data.SqlDbType.Int) { Value = id });
+
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            if (!await rd.ReadAsync(ct)) return NotFound("Esa autorización no existe.");
+
+            estado = rd.IsDBNull(0) ? null : rd.GetString(0);
+            numero = rd.IsDBNull(1) ? id.ToString() : rd.GetValue(1)?.ToString();
+            var cedFila = rd.IsDBNull(2) ? string.Empty : rd.GetString(2).Trim();
+            var conFila = rd.IsDBNull(3) ? string.Empty : rd.GetValue(3)?.ToString()?.Trim() ?? string.Empty;
+            ciudad = rd.IsDBNull(4) ? null : rd.GetString(4);
+
+            esSuya = (cedula.Length > 0 && string.Equals(cedFila, cedula, StringComparison.OrdinalIgnoreCase))
+                  || (contrato.Length > 0 && string.Equals(conFila, contrato, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!esSuya)
+        {
+            // No se dice de quién es ni si existe: eso ya sería un dato.
+            _log.LogWarning("Carta {Id} pedida desde el caso {Caso}, que no es su dueño.", id, caseCode);
+            return StatusCode(403, "Esa autorización no corresponde a este contrato.");
+        }
+
+        try
+        {
+            var pdf = await CartaDesdeArmonixAsync(id, estado, ciudad, ct);
+            if (pdf == null || pdf.Length < 5 || pdf[0] != 0x25)      // 0x25 = '%' de %PDF
+                return StatusCode(502, "No pude traer la carta ahora. Inténtelo en un momento.");
+            return File(pdf, "application/pdf", $"Carta_Autorizacion_{numero}.pdf");
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "No se pudo traer la carta {Id}.", id);
+            return StatusCode(502, "No pude traer la carta ahora. Inténtelo en un momento.");
+        }
+    }
+
+    /// <summary>Pide la carta a Armonix, que la genera al momento y la manda en base64.</summary>
+    private async Task<byte[]?> CartaDesdeArmonixAsync(int id, string? estado, string? ciudad,
+                                                       CancellationToken ct)
+    {
+        var baseUrl = (_config["Saludsa:BaseUrls:ApiArmonix"] ?? string.Empty).TrimEnd('/');
+        if (baseUrl.Length == 0) throw new InvalidOperationException("Falta Saludsa:BaseUrls:ApiArmonix.");
+
+        // La ciudad es cosmética -sale impresa en la carta- y viene vacía casi
+        // siempre, así que se pone una en vez de dejar el segmento vacío y que
+        // la ruta quede mal formada.
+        var url = $"{baseUrl}/api/autorizacion/getLetterBase64/{id}/"
+                + $"{Uri.EscapeDataString(string.IsNullOrWhiteSpace(estado) ? "Cubierto" : estado)}/"
+                + $"{Uri.EscapeDataString(string.IsNullOrWhiteSpace(ciudad) ? "QUITO" : ciudad)}";
+
+        var headers = await _token.GetAuthHeadersAsync(ct);
+        using var http = _http.CreateClient("SaludsaInternalApi");
+        using var msg = new HttpRequestMessage(HttpMethod.Get, url);
+        foreach (var (nombre, valor) in headers)
+            msg.Headers.TryAddWithoutValidation(nombre, valor);
+
+        using var resp = await http.SendAsync(msg, ct);
+        if (!resp.IsSuccessStatusCode) return null;
+
+        var cuerpo = (await resp.Content.ReadAsStringAsync(ct)).Trim();
+        // Vuelve como cadena JSON, y a veces con el prefijo data:...;base64,
+        if (cuerpo.Length > 0 && cuerpo[0] == '"')
+            cuerpo = System.Text.Json.JsonSerializer.Deserialize<string>(cuerpo) ?? string.Empty;
+        var marca = cuerpo.IndexOf("base64,", StringComparison.OrdinalIgnoreCase);
+        if (marca >= 0) cuerpo = cuerpo[(marca + 7)..];
+        try { return Convert.FromBase64String(cuerpo); } catch { return null; }
     }
 }

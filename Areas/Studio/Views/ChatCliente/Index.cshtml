@@ -331,6 +331,10 @@ else
     var texto  = document.getElementById('ccTexto');
     var boton  = document.getElementById('ccEnviar');
     var caso   = '@Model.CaseCode';
+
+    // El enlace de la carta lo arma el renderizador, y necesita saber de quien
+    // es el caso: la identidad la pone la pantalla, nunca el texto del modelo.
+    if (window.StMarkdown) StMarkdown.caso = caso;
     var url    = '@Url.Action("Preguntar", "ChatCliente", new { area = "Studio" })';
     var ocupado = false;
 

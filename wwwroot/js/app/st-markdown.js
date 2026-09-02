@@ -24,6 +24,16 @@
             .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
+    /* El caso que se está atendiendo. Lo fija la pantalla -StMarkdown.caso-
+       porque la identidad no puede salir del texto que genera un modelo. */
+    var caso = '';
+
+    function carta(todo, texto, ruta) {
+        if (!caso) return texto;                 // sin caso no hay enlace que funcione
+        return '<a href="' + ruta + '&amp;caseCode=' + encodeURIComponent(caso) + '"'
+             + ' target="_blank" rel="noopener noreferrer">' + texto + '</a>';
+    }
+
     /* Formato de una línea: se aplica SOBRE TEXTO YA ESCAPADO. */
     function enLinea(t) {
         return t
@@ -36,7 +46,25 @@
             // Un enlace suelto también se vuelve clicable: si el contrato viene
             // como URL pelada, el afiliado tiene que poder abrirlo.
             .replace(/(^|[\s>])(https?:\/\/[^\s<]+)/g,
-                     '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
+                     '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>')
+            // -- La carta de una autorización -------------------------------
+            //
+            // La tool devuelve una ruta RELATIVA, y las reglas de arriba solo
+            // aceptan http(s), así que sin esto el enlace de la carta llegaba
+            // como texto plano y no había forma de bajar el PDF.
+            //
+            // Se acepta ESA ruta y ninguna más, con el id numérico y nada
+            // detrás. Abrir la puerta a rutas relativas en general sería dejar
+            // que el modelo escriba a dónde apunta un enlace que el afiliado va
+            // a pulsar, y eso no lo decide un modelo.
+            //
+            // El caseCode lo pone la PÁGINA, no el texto: lo añade aquí el
+            // navegador, que ya sabe de quién es el caso. Si no hay caso no se
+            // hace enlace: el endpoint lo exige y un enlace roto es peor que un
+            // texto.
+            .replace(/\[([^\]]+)\]\((\/Studio\/ChatCliente\/Carta\?id=\d{1,12})\)/g, carta)
+            .replace(/(^|[\s>])(\/Studio\/ChatCliente\/Carta\?id=\d{1,12})(?![\w=&])/g,
+                     function (t, antes, ruta) { return antes + carta(t, 'Descargar la carta (PDF)', ruta); });
     }
 
     function esSeparadorDeTabla(l) {
@@ -193,6 +221,9 @@
         render: renderRico,
         soloMarkdown: render,
         escapar: esc,
-        permitidas: PERMITIDAS
+        permitidas: PERMITIDAS,
+        /* La pantalla dice qué caso se atiende, para el enlace de la carta. */
+        set caso(v) { caso = (v || '').toString(); },
+        get caso() { return caso; }
     };
 })(window);
