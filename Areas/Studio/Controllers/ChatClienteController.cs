@@ -300,13 +300,19 @@ public sealed class ChatClienteController : Controller
         var previos = await TurnosAsync(caseCode, 6);
         if (previos.Count > 0)
         {
-            sb.AppendLine("## Lo que ya hablaron (lo mas reciente al final)");
+            // Tope DURO al historial. El extractor de arriba ya evita el
+            // crecimiento exponencial, pero un tope es lo unico que garantiza
+            // que un dato raro no vuelva a tumbar la pantalla: 12.000
+            // caracteres son de sobra para seis turnos y no llegan ni de lejos
+            // al limite del modelo.
+            var hist = new StringBuilder();
+            hist.AppendLine("## Lo que ya hablaron (lo mas reciente al final)");
             foreach (var t in previos)
             {
-                sb.AppendLine($"AFILIADO: {t.Pregunta}");
-                sb.AppendLine($"USTED: {Recortar(t.Respuesta, 700)}");
+                hist.AppendLine($"AFILIADO: {Recortar(t.Pregunta, 600)}");
+                hist.AppendLine($"USTED: {Recortar(t.Respuesta, 700)}");
             }
-            sb.AppendLine();
+            sb.AppendLine(Recortar(hist.ToString(), 12000)).AppendLine();
         }
 
         // La pregunta va delimitada y etiquetada como lo que es: texto de una
@@ -438,13 +444,42 @@ public sealed class ChatClienteController : Controller
             .OrderBy(x => x.ExecutionId)
             .Select(x => new TurnoChatVm
             {
-                Pregunta = x.RequestContent ?? string.Empty,
+                Pregunta  = SoloLaPregunta(x.RequestContent),
                 Respuesta = x.ResponseContent ?? string.Empty,
-                Cuando = x.StartDate
+                Cuando    = x.StartDate
             })
             .ToList();
     }
 
     private static string Recortar(string? t, int max) =>
         string.IsNullOrEmpty(t) || t.Length <= max ? (t ?? string.Empty) : t[..max] + "…";
+
+    /// <summary>
+    /// La pregunta, sacada del mensaje completo.
+    ///
+    /// Esto arregla un fallo que me costo la pantalla: al empezar a guardar el
+    /// mensaje ENTERO en RequestContent -para poder diagnosticar la memoria-, la
+    /// memoria empezo a leer ese mismo campo como si fuera la pregunta. Cada
+    /// turno metia dentro el mensaje anterior completo, que ya contenia el
+    /// anterior: crecimiento EXPONENCIAL.
+    ///
+    ///     prompt is too long: 1.083.539 tokens > 1.000.000 maximum
+    ///
+    /// Por eso la pregunta va delimitada en el mensaje desde el principio: aqui
+    /// se saca de entre sus marcas. Si no estan -turnos viejos- se recorta a 600
+    /// caracteres, que es el tope de una pregunta de verdad.
+    /// </summary>
+    private static string SoloLaPregunta(string? mensajeCompleto)
+    {
+        var t = mensajeCompleto ?? string.Empty;
+        const string ini = "<<<PREGUNTA";
+        const string fin = "PREGUNTA>>>";
+
+        var i = t.IndexOf(ini, StringComparison.Ordinal);
+        var j = t.IndexOf(fin, StringComparison.Ordinal);
+        if (i >= 0 && j > i)
+            return t[(i + ini.Length)..j].Trim();
+
+        return t.Length <= 600 ? t : t[..600];
+    }
 }

@@ -109,6 +109,16 @@
     .cc-bajar:hover { color:#002F87; text-decoration:underline; }
     .cc-cab-fila { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 
+    /* Reintentar. Un error sin salida obliga a volver a escribir la pregunta,
+       y quien ya la escribio una vez no deberia tener que teclearla otra. */
+    .cc-msg.es-mal .cc-reintentar {
+        display:inline-flex; align-items:center; gap:6px; margin-top:9px;
+        padding:5px 12px; border:1px solid #e0b4ac; border-radius:7px;
+        background:#fff; color:#b42318; font-size:12.5px; font-weight:600;
+        cursor:pointer;
+    }
+    .cc-msg.es-mal .cc-reintentar:hover { background:#fff0ec; }
+
     /* Consultar otro plan. El aviso es permanente a propósito. */
     .cc-otroplan { margin-top:9px; padding:7px 11px; border-radius:7px;
                    background:#fff6e0; border:1px solid #f0dfae; color:#8a6100;
@@ -338,11 +348,29 @@ else
     /* La respuesta se formatea; lo que escribio el afiliado, NO.
        Formatear su texto seria interpretar lo que escribio, y un asterisco suyo
        no es una negrita. */
-    function burbuja(clase, contenido) {
+    function burbuja(clase, contenido, reintentar) {
         var d = document.createElement('div');
         d.className = 'cc-msg ' + clase;
         if (clase === 'es-ella' && window.StMarkdown) d.innerHTML = StMarkdown.render(contenido);
         else d.textContent = contenido;
+
+        /* Un error sin salida obliga a volver a teclear la pregunta. El boton
+           la recuerda: se pulsa y se reintenta la MISMA, sin escribirla otra
+           vez. Al reintentar se borra el error, para que no queden dos globos
+           rojos de la misma pregunta. */
+        if (clase === 'es-mal' && reintentar) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'cc-reintentar';
+            b.innerHTML = '<i class="fa fa-refresh"></i> Volver a intentarlo';
+            b.addEventListener('click', function () {
+                d.remove();
+                preguntar(reintentar);
+            });
+            d.appendChild(document.createElement('br'));
+            d.appendChild(b);
+        }
+
         hilo.appendChild(d);
         hilo.scrollTop = hilo.scrollHeight;
         return d;
@@ -434,15 +462,15 @@ else
             esperando.remove();
 
             if (!resp.ok) {
-                burbuja('es-mal', 'No pude consultarlo ahora. Vuelva a intentarlo en un minuto.');
+                burbuja('es-mal', 'No pude consultarlo ahora.', q);
             } else {
                 var d = await resp.json();
-                burbuja(d.ok ? 'es-ella' : 'es-mal', d.texto || 'No obtuve respuesta.');
+                burbuja(d.ok ? 'es-ella' : 'es-mal', d.texto || 'No obtuve respuesta.', d.ok ? null : q);
                 if (d.ok) consultas(d.consulto);
             }
         } catch (e) {
             esperando.remove();
-            burbuja('es-mal', 'Se perdió la conexión. Vuelva a intentarlo.');
+            burbuja('es-mal', 'Se perdió la conexión.', q);
         } finally {
             ocupado = false;
             boton.disabled = false;
