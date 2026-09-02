@@ -507,8 +507,17 @@ public sealed class ChatClienteController : Controller
     // autorización es de la cédula o del contrato del caso. Un id numérico es
     // fácil de teclear a mano en la barra de direcciones, y una carta trae el
     // prestador, el diagnóstico y el motivo: se enseña solo la propia.
+    //
+    // -- Se VE, no se baja --------------------------------------------------
+    // Por defecto sale como inline: la carta se abre en el visor lateral, al
+    // lado de la conversación. Bajarla obliga al afiliado a salir del chat —a
+    // la carpeta de descargas, a otro programa— y a rehacer el camino para
+    // seguir preguntando. Con ?descargar=1 se la lleva, que es lo que quiere
+    // quien la necesita para adjuntarla.
     [HttpGet]
-    public async Task<IActionResult> Carta(Guid caseCode, int id, CancellationToken ct)
+    public async Task<IActionResult> Carta(Guid caseCode, int id,
+                                           bool descargar = false,
+                                           CancellationToken ct = default)
     {
         if (caseCode == Guid.Empty || id <= 0) return BadRequest("Falta el caso o la autorización.");
 
@@ -560,7 +569,15 @@ public sealed class ChatClienteController : Controller
             var pdf = await CartaDesdeArmonixAsync(id, estado, ciudad, ct);
             if (pdf == null || pdf.Length < 5 || pdf[0] != 0x25)      // 0x25 = '%' de %PDF
                 return StatusCode(502, "No pude traer la carta ahora. Inténtelo en un momento.");
-            return File(pdf, "application/pdf", $"Carta_Autorizacion_{numero}.pdf");
+            var nombre = $"Carta_Autorizacion_{numero}.pdf";
+            if (descargar) return File(pdf, "application/pdf", nombre);
+
+            // File(...) con nombre pone Content-Disposition: attachment, que
+            // fuerza la descarga aunque esté dentro de un iframe. Para verla en
+            // el visor hace falta inline, y el nombre se conserva para cuando
+            // el afiliado la guarde desde el propio visor del navegador.
+            Response.Headers.ContentDisposition = $"inline; filename=\"{nombre}\"";
+            return File(pdf, "application/pdf");
         }
         catch (Exception ex)
         {

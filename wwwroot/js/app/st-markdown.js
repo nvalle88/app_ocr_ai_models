@@ -64,7 +64,7 @@
             // texto.
             .replace(/\[([^\]]+)\]\((\/Studio\/ChatCliente\/Carta\?id=\d{1,12})\)/g, carta)
             .replace(/(^|[\s>])(\/Studio\/ChatCliente\/Carta\?id=\d{1,12})(?![\w=&])/g,
-                     function (t, antes, ruta) { return antes + carta(t, 'Descargar la carta (PDF)', ruta); });
+                     function (t, antes, ruta) { return antes + carta(t, 'Ver la carta', ruta); });
     }
 
     function esSeparadorDeTabla(l) {
