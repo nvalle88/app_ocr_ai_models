@@ -99,16 +99,20 @@ public sealed class ChatClienteController : Controller
                                   || x.NombreBeneficiario!.Contains(t));
             }
 
-            // -- Una fila por PERSONA, no por solicitud ----------------------
+            // -- Una fila por CONTRATO -----------------------------------------
             //
-            // Antes salia una fila por SolicitudCliente, y una persona que ha
-            // presentado ocho reembolsos aparecia ocho veces, identica. Elegir
-            // entre ocho filas iguales no es elegir: es adivinar.
+            // La unidad de esta pantalla es el CONTRATO, no la persona ni la
+            // solicitud. Se consulta sobre un contrato: su plan, su deducible,
+            // sus coberturas.
             //
-            // Se agrupa por la persona -la cedula del beneficiario si lo hay- y
-            // se queda la solicitud MAS RECIENTE, que trae el plan y el contrato
-            // al dia. Y se dice cuantas tiene: alguien con ocho solicitudes es un
-            // caso distinto de alguien con una.
+            // Por solicitud salia una fila por cada reembolso presentado -Ana
+            // Maria aparecia diez veces, identica-. Por persona se iba al otro
+            // extremo: Nestor tiene DOS contratos, 70200015 y 70200012, y
+            // agrupar por persona escondia uno de los dos. Y son dos contratos
+            // distintos, con su propio plan y su propio deducible.
+            //
+            // Asi que la llave es persona + contrato, y de cada uno se queda la
+            // solicitud mas reciente, que es la que trae el plan al dia.
             var filas = await q
                 .OrderByDescending(x => x.Id)
                 .Select(x => new
@@ -131,7 +135,8 @@ public sealed class ChatClienteController : Controller
                 .ToDictionaryAsync(x => x.Caso, x => x.Cuando);
 
             vm.Elegir = filas
-                .GroupBy(x => (x.CedulaBeneficiario ?? x.Cedula ?? string.Empty).Trim())
+                .GroupBy(x => ((x.CedulaBeneficiario ?? x.Cedula ?? string.Empty).Trim(),
+                               (x.NumeroContrato ?? string.Empty).Trim()))
                 .Select(g =>
                 {
                     var ultima = g.First();   // ya venian del mas nuevo al mas viejo
