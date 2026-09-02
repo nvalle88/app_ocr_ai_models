@@ -104,11 +104,14 @@ public sealed class ChatClienteController : Controller
                 .Select(x => new AfiliadoParaChatVm
                 {
                     CaseCode  = x.CaseCode,
-                    Nombre    = x.NombreBeneficiario ?? x.NombreTitular,
-                    Cedula    = x.Cedula,
-                    Plan      = x.NombrePlan,
-                    Contrato  = x.NumeroContrato,
-                    Desde     = x.CreatedDate
+                    Nombre     = x.NombreBeneficiario ?? x.NombreTitular,
+                    Cedula     = x.Cedula,
+                    Plan       = x.NombrePlan,
+                    CodigoPlan = x.CodigoPlan,
+                    Producto   = x.CodigoProducto,
+                    Region     = x.CodigoRegion,
+                    Contrato   = x.NumeroContrato,
+                    Desde      = x.CreatedDate
                 })
                 .Take(30)
                 .ToListAsync();
@@ -142,7 +145,10 @@ public sealed class ChatClienteController : Controller
         vm.NombreTitular = sol.NombreTitular;
         vm.NombrePaciente = string.IsNullOrWhiteSpace(sol.NombreBeneficiario)
                             ? sol.NombreTitular : sol.NombreBeneficiario;
-        vm.NombrePlan     = sol.NombrePlan;
+        // NombrePlan viene vacio en parte de las filas, y el codigo nunca: si se
+        // pinta solo el nombre, la cabecera se queda sin plan.
+        vm.NombrePlan     = string.IsNullOrWhiteSpace(sol.NombrePlan)
+                            ? sol.CodigoPlan : sol.NombrePlan;
         vm.CodigoPlan     = sol.CodigoPlan;
         vm.CodigoProducto = sol.CodigoProducto;
         vm.VersionPlan    = ContratoLeido.Version(sol.ContratoJson);

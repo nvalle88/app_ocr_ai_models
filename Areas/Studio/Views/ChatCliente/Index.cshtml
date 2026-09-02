@@ -172,10 +172,14 @@
         <div class="st-card">
             <div class="st-card-cuerpo" style="padding:0">
                 <table class="table" style="margin:0">
+                    @* Producto y región van SIEMPRE: una persona con dos
+                       contratos sale dos veces, y sin ellos las dos filas son
+                       idénticas y no se sabe cuál abrir. *@
                     <thead>
                         <tr>
-                            <th>Afiliado</th><th>Cédula</th><th>Plan</th>
-                            <th>Contrato</th><th></th>
+                            <th>Afiliado</th><th>Cédula</th>
+                            <th>Producto</th><th>Plan</th><th>Región</th>
+                            <th>Contrato</th><th>Consultado</th><th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -184,8 +188,11 @@
                         <tr>
                             <td><strong>@a.Nombre</strong></td>
                             <td>@a.Cedula</td>
-                            <td>@a.Plan</td>
+                            <td><strong>@a.Producto</strong></td>
+                            <td>@a.PlanVisible</td>
+                            <td>@a.Region</td>
                             <td>@a.Contrato</td>
+                            <td>@(a.Desde?.ToString("dd/MM/yyyy") ?? "—")</td>
                             <td class="text-right">
                                 <a class="st-btn is-bajo"
                                    asp-area="Studio" asp-controller="ChatCliente" asp-action="Index"

@@ -66,7 +66,27 @@ public sealed class AfiliadoParaChatVm
     public Guid CaseCode { get; set; }
     public string? Nombre { get; set; }
     public string? Cedula { get; set; }
+
+    /// <summary>Nombre comercial del plan. Viene vacío en parte de las filas.</summary>
     public string? Plan { get; set; }
+
+    /// <summary>Código del plan: TRANKI, N4-D-C… Es el que SÍ está siempre.</summary>
+    public string? CodigoPlan { get; set; }
+
+    /// <summary>IND, COR, TRK… Junto con la región es lo que distingue dos contratos.</summary>
+    public string? Producto { get; set; }
+    public string? Region { get; set; }
+
     public string? Contrato { get; set; }
     public DateTime? Desde { get; set; }
+
+    /// <summary>
+    /// El plan como se puede enseñar. NombrePlan viene vacío en algunas filas
+    /// —medido: 2 de 30— y era justo la columna que se pintaba, así que la
+    /// pantalla salía sin plan. El código nunca falta.
+    /// </summary>
+    public string PlanVisible =>
+        !string.IsNullOrWhiteSpace(Plan) ? Plan!
+        : !string.IsNullOrWhiteSpace(CodigoPlan) ? CodigoPlan!
+        : "—";
 }
