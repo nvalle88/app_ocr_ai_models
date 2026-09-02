@@ -165,6 +165,9 @@
         primero = false;
     }
     <li class="st-tab-sep"><span>herramientas</span></li>
+    @* El chat DEL AFILIADO, distinto del Chat del operador: habla con la persona,
+       con su contrato delante y sin herramientas que busquen por nombre. *@
+    <li><a href="#tab-chatcliente" data-toggle="tab"><i class="fa fa-comments"></i> Consulta del afiliado</a></li>
     <li><a href="#tab-chat" data-toggle="tab"><i class="fa fa-comments-o"></i> Chat</a></li>
     <li><a href="#tab-analisis" data-toggle="tab"><i class="fa fa-cogs"></i> An&aacute;lisis IA</a></li>
 </ul>
@@ -359,6 +362,9 @@
 </div>
 <div class="tab-pane" id="tab-analisis">
     <iframe class="st-tabframe" data-src="@Url.Action("Index", "Analizar", new { area = "Studio", caseCode = Model.Caso.CaseCode, embed = true })"></iframe>
+</div>
+<div class="tab-pane" id="tab-chatcliente">
+    <iframe class="st-tabframe" data-src="@Url.Action("Index", "ChatCliente", new { area = "Studio", caseCode = Model.Caso.CaseCode, embed = true })"></iframe>
 </div>
 <div class="tab-pane" id="tab-chat">
     <iframe class="st-tabframe" data-src="@Url.Action("Index", "Chat", new { area = "Studio", caseCode = Model.Caso.CaseCode, embed = true })"></iframe>
