@@ -69,7 +69,8 @@ public sealed class ChatClienteController : Controller
 
     // GET /Studio/ChatCliente?caseCode=&embed=true
     [HttpGet]
-    public async Task<IActionResult> Index(Guid caseCode, string? buscar = null, bool embed = false)
+    public async Task<IActionResult> Index(Guid caseCode, string? buscar = null,
+                                          string? plan = null, bool embed = false)
     {
         ViewData["Embed"] = embed;
 
@@ -141,9 +142,18 @@ public sealed class ChatClienteController : Controller
         vm.NombreTitular = sol.NombreTitular;
         vm.NombrePaciente = string.IsNullOrWhiteSpace(sol.NombreBeneficiario)
                             ? sol.NombreTitular : sol.NombreBeneficiario;
-        vm.NombrePlan = sol.NombrePlan;
+        vm.NombrePlan     = sol.NombrePlan;
+        vm.CodigoPlan     = sol.CodigoPlan;
+        vm.CodigoProducto = sol.CodigoProducto;
+        vm.VersionPlan    = ContratoLeido.Version(sol.ContratoJson);
         vm.NumeroContrato = sol.NumeroContrato;
         vm.Listo = true;
+
+        // Consultar sobre OTRO plan: sirve para simular «y si tuviera el plan X».
+        // El plan elegido se arrastra en la URL y se avisa en pantalla — una
+        // respuesta sobre otro plan que parezca la suya seria peor que no tenerla.
+        if (!string.IsNullOrWhiteSpace(plan) && plan != sol.CodigoPlan)
+            vm.PlanConsultado = plan.Trim();
 
         // El hilo de antes. No hay tabla nueva: cada turno ya quedaba en
         // StepExecution -la pregunta en RequestContent, la respuesta en
@@ -157,7 +167,7 @@ public sealed class ChatClienteController : Controller
     // POST /Studio/ChatCliente/Preguntar
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Preguntar(Guid caseCode, string pregunta)
+    public async Task<IActionResult> Preguntar(Guid caseCode, string pregunta, string? plan = null)
     {
         if (caseCode == Guid.Empty || string.IsNullOrWhiteSpace(pregunta))
             return Json(new { ok = false, texto = "No entendí la pregunta. ¿Puede repetirla?" });
@@ -203,6 +213,19 @@ public sealed class ChatClienteController : Controller
 
         var sb = new StringBuilder();
         if (!string.IsNullOrWhiteSpace(contrato)) sb.AppendLine(contrato);
+
+        // Si se pidió consultar sobre otro plan, se dice ALTO y CLARO: el bloque
+        // de arriba trae el contrato real, y responder con el de otro plan sin
+        // avisar seria darle por bueno algo que no le corresponde.
+        if (!string.IsNullOrWhiteSpace(plan) && plan.Trim() != sol.CodigoPlan)
+        {
+            sb.AppendLine($"## ATENCION: se esta consultando sobre el plan {plan.Trim()}")
+            .AppendLine($"El plan de esta persona es {sol.CodigoPlan}. Quien atiende pidio")
+            .AppendLine($"expresamente consultar el plan {plan.Trim()} para comparar.")
+            .AppendLine("Usa ESE plan en las herramientas, y empieza tu respuesta diciendo que")
+            .AppendLine($"lo que sigue es del plan {plan.Trim()} y NO del que tiene contratado.")
+            .AppendLine();
+        }
 
         // ── Memoria ──────────────────────────────────────────────────────────
         //

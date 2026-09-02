@@ -20,7 +20,20 @@ public sealed class ChatClienteVm
     public string? NombrePaciente { get; set; }
 
     public string? NombrePlan { get; set; }
+    public string? CodigoPlan { get; set; }
+    public int? VersionPlan { get; set; }
+
+    /// <summary>IND, COR, TRK… Lo que decide de que contrato se le habla.</summary>
+    public string? CodigoProducto { get; set; }
+
     public string? NumeroContrato { get; set; }
+
+    /// <summary>
+    /// El plan sobre el que se esta consultando cuando NO es el suyo: sirve para
+    /// simular «y si tuviera el plan X». Se dice en pantalla, siempre, porque una
+    /// respuesta sobre otro plan que parezca la suya seria peor que no tenerla.
+    /// </summary>
+    public string? PlanConsultado { get; set; }
 
     /// <summary>
     /// A quien se puede atender, cuando se entra por la pildora de rol y no

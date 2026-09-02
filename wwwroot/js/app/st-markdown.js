@@ -122,5 +122,77 @@
         return out.join('');
     }
 
-    global.StMarkdown = { render: render, escapar: esc };
+    /* ── HTML del modelo: lista blanca, no "permitir HTML" ───────────────────
+
+       Se le puede dejar embeber estructura -tablas anidadas, celdas con varias
+       lineas, columnas alineadas- sin abrir la puerta a inyeccion, y el truco es
+       el ORDEN, otra vez:
+
+         1. render() ya devolvio TODO escapado: <table> vino como &lt;table&gt; y
+            <script> como &lt;script&gt;;
+         2. aqui se DESESCAPAN solo las etiquetas de la lista blanca, y solo en su
+            forma exacta: sin atributos, o con un class de la lista.
+
+       Lo que no este en la lista se queda como letras. &lt;script&gt; sigue
+       siendo texto. <img src=x onerror=alert(1)> sigue siendo texto, porque
+       lleva atributos que no se admiten. No hay que confiar en la salida del
+       modelo: hay que hacer que su confianza no importe.
+
+       "Permitir HTML" a secas -lo que hacen casi todas las librerias de markdown
+       con un flag- seria lo contrario: cualquier cosa que el modelo repita de un
+       documento que le subieron pasaria a ejecutarse. */
+    var PERMITIDAS = ['table','thead','tbody','tfoot','tr','th','td','caption',
+                      'strong','b','em','i','u','small','br','hr','p','span','div',
+                      'ul','ol','li','dl','dt','dd','h3','h4','h5','blockquote','code','pre'];
+
+    /* Solo clases nuestras: nada de style ni de on*. */
+    var CLASES = /^(md-[a-z-]+|num|nota|ok|mal|aviso)( (md-[a-z-]+|num|nota|ok|mal|aviso))*$/;
+
+    /* Se cierran solo las etiquetas que se abrieron.
+       Medido en la prueba: con <div onclick="..."> la apertura se quedaba
+       escapada -bien- pero el </div> se liberaba, y un cierre suelto cierra el
+       <p> de la burbuja y descuadra la pantalla. No es inyeccion, pero rompe el
+       diseno, asi que se lleva una pila: un cierre solo pasa si arriba esta su
+       apertura. */
+    var SIN_CIERRE = ['br', 'hr'];
+
+    function soltarPermitidas(html) {
+        var pila = [];
+
+        return html.replace(/&lt;(\/?)([a-zA-Z][a-zA-Z0-9]*)((?:\s+class=&quot;[^&]*?&quot;)?)\s*(\/?)&gt;/g,
+            function (todo, cierre, tag, attrs, auto) {
+                tag = tag.toLowerCase();
+                if (PERMITIDAS.indexOf(tag) < 0) return todo;   // se queda como letras
+
+                if (cierre) {
+                    // Sin apertura no hay cierre: se queda como texto.
+                    if (pila.length === 0 || pila[pila.length - 1] !== tag) return todo;
+                    pila.pop();
+                    return '</' + tag + '>';
+                }
+
+                var clase = '';
+                if (attrs) {
+                    var m = /class=&quot;([^&]*?)&quot;/.exec(attrs);
+                    // Una clase que no reconocemos NO se copia: se ignora el
+                    // atributo, no la etiqueta.
+                    if (m && CLASES.test(m[1].trim())) clase = ' class="' + m[1].trim() + '"';
+                }
+
+                if (!auto && SIN_CIERRE.indexOf(tag) < 0) pila.push(tag);
+                return '<' + tag + clase + (auto ? ' /' : '') + '>';
+            });
+    }
+
+    /* La entrada de verdad: markdown Y estructura HTML de la lista blanca. */
+    function renderRico(texto) {
+        return soltarPermitidas(render(texto));
+    }
+
+    global.StMarkdown = {
+        render: renderRico,
+        soloMarkdown: render,
+        escapar: esc,
+        permitidas: PERMITIDAS
+    };
 })(window);

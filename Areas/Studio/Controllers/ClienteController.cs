@@ -1438,7 +1438,7 @@ public sealed class ClienteController : Controller
                     procs.Select(x => (x.Descripcion ?? string.Empty, 0m, x.CodigoBeneficio,
                                        (int?)x.NumeroProcedimiento, x.NombreLr05,
                                        x.HomologacionAmbigua == true)),
-                    sol.CodigoPlan, VersionDelPlan(sol.ContratoJson), sol.CodigoProducto,
+                    sol.CodigoPlan, ContratoLeido.Version(sol.ContratoJson), sol.CodigoProducto,
                     HttpContext.RequestAborted);
 
                 // Se emparejan por la descripcion normalizada: las dos vienen del
@@ -1634,23 +1634,6 @@ public sealed class ClienteController : Controller
         return vm;
     }
 
-    /// <summary>
-    /// La version del plan, que vive dentro del contrato guardado. Sin ella no se
-    /// puede consultar la cobertura: el mismo plan cambia de porcentajes entre
-    /// versiones.
-    /// </summary>
-    private static int? VersionDelPlan(string? contratoJson)
-    {
-        if (string.IsNullOrWhiteSpace(contratoJson)) return null;
-        try
-        {
-            var raiz = JsonDocument.Parse(contratoJson).RootElement;
-            if (raiz.TryGetProperty("Version", out var v) && v.ValueKind == JsonValueKind.Number)
-                return v.GetInt32();
-        }
-        catch { /* contrato ilegible: sin version, y la cobertura lo dira */ }
-        return null;
-    }
 
     /// <summary>
     /// Para emparejar descripciones que salieron del mismo OCR por caminos

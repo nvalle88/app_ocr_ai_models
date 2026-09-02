@@ -108,6 +108,22 @@
                 cursor:pointer; padding:0; }
     .cc-bajar:hover { color:#002F87; text-decoration:underline; }
     .cc-cab-fila { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+
+    /* Consultar otro plan. El aviso es permanente a propósito. */
+    .cc-otroplan { margin-top:9px; padding:7px 11px; border-radius:7px;
+                   background:#fff6e0; border:1px solid #f0dfae; color:#8a6100;
+                   font-size:12.5px; }
+    .cc-otroplan a { color:#8a6100; text-decoration:underline; margin-left:6px; }
+
+    .cc-cambiar { margin-top:8px; }
+    .cc-cambiar summary { font-size:11.5px; color:#8792a2; cursor:pointer; list-style:none; }
+    .cc-cambiar summary::-webkit-details-marker { display:none; }
+    .cc-cambiar summary:hover { color:#002F87; }
+    .cc-cambiar form { display:flex; gap:7px; align-items:center; flex-wrap:wrap; margin-top:8px; }
+    .cc-cambiar input { padding:6px 10px; font-size:12.5px; border:1px solid #d5dbe6; border-radius:7px; }
+    .cc-cambiar button { padding:6px 12px; font-size:12.5px; border:0; border-radius:7px;
+                         background:#002F87; color:#fff; cursor:pointer; }
+    .cc-cambiar span { font-size:11.5px; color:#8792a2; }
 </style>
 
 @* Sin caso: se entro por la pildora de rol. Lo primero es elegir a quien se
@@ -195,9 +211,48 @@ else
         <h2><i class="fa fa-comments"></i> Consulta sobre su cobertura</h2>
         <p>
             @Model.NombrePaciente
-            @if (!string.IsNullOrWhiteSpace(Model.NombrePlan)) { <text> · @Model.NombrePlan</text> }
+            @* El PRODUCTO es lo que decide de qué contrato se le habla: un IND y
+               un TRK no tienen ni las mismas coberturas ni el mismo anexo. Sin
+               verlo, quien atiende no sabe sobre qué está respondiendo. *@
+            @if (!string.IsNullOrWhiteSpace(Model.CodigoProducto))
+            {
+                <text> · <strong>@Model.CodigoProducto</strong></text>
+            }
+            @if (!string.IsNullOrWhiteSpace(Model.NombrePlan))
+            {
+                <text> · @Model.NombrePlan</text>
+                @if (!string.IsNullOrWhiteSpace(Model.CodigoPlan))
+                {
+                    <text> (@Model.CodigoPlan@(Model.VersionPlan.HasValue ? $" v{Model.VersionPlan}" : ""))</text>
+                }
+            }
             @if (!string.IsNullOrWhiteSpace(Model.NumeroContrato)) { <text> · contrato @Model.NumeroContrato</text> }
         </p>
+
+        @* Consultar sobre OTRO plan, para comparar. Va con aviso permanente: una
+           respuesta de otro plan que parezca la suya es peor que no tenerla. *@
+        @if (!string.IsNullOrWhiteSpace(Model.PlanConsultado))
+        {
+            <div class="cc-otroplan">
+                <i class="fa fa-exchange"></i>
+                Está consultando el plan <strong>@Model.PlanConsultado</strong>, que
+                <strong>no es el suyo</strong> (@Model.CodigoPlan).
+                <a asp-area="Studio" asp-controller="ChatCliente" asp-action="Index"
+                   asp-route-caseCode="@Model.CaseCode">volver a su plan</a>
+            </div>
+        }
+        else
+        {
+            <details class="cc-cambiar">
+                <summary>Consultar sobre otro plan</summary>
+                <form method="get" asp-area="Studio" asp-controller="ChatCliente" asp-action="Index">
+                    <input type="hidden" name="caseCode" value="@Model.CaseCode" />
+                    <input name="plan" type="text" placeholder="Código de plan, p. ej. N4-D-C" />
+                    <button type="submit">Consultar ese plan</button>
+                    <span>Para comparar. Se avisa en pantalla de que no es el suyo.</span>
+                </form>
+            </details>
+        }
         </div>
         <button type="button" class="cc-bajar" id="ccBajar" title="Guardar esta consulta">
             <i class="fa fa-download"></i> Descargar la consulta
@@ -349,6 +404,7 @@ else
             var fd = new FormData();
             fd.append('caseCode', caso);
             fd.append('pregunta', q);
+            fd.append('plan', '@Model.PlanConsultado');
             fd.append('__RequestVerificationToken', token());
 
             var resp = await fetch(url, {
