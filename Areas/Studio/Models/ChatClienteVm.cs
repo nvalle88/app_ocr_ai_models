@@ -85,7 +85,20 @@ public sealed class AfiliadoParaChatVm
     /// </summary>
     public string? Contrato { get; set; }
 
-    public DateTime? Desde { get; set; }
+    /// <summary>Cuantas solicitudes ha presentado. Una persona con ocho es otro caso que una con una.</summary>
+    public int Solicitudes { get; set; }
+
+    /// <summary>Cuando presento la ultima solicitud de reembolso.</summary>
+    public DateTime? UltimaSolicitud { get; set; }
+
+    /// <summary>
+    /// Cuando se le consulto por ESTE chat por ultima vez. Null si nunca.
+    ///
+    /// No es lo mismo que UltimaSolicitud, y la columna de la pantalla decia
+    /// «Consultado» mientras enseñaba la fecha de la solicitud: dos cosas
+    /// distintas con la misma etiqueta.
+    /// </summary>
+    public DateTime? UltimaConsulta { get; set; }
 
     /// <summary>
     /// El plan como se puede enseñar. NombrePlan viene vacío en algunas filas

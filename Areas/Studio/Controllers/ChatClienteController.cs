@@ -99,22 +99,64 @@ public sealed class ChatClienteController : Controller
                                   || x.NombreBeneficiario!.Contains(t));
             }
 
-            vm.Elegir = await q
+            // -- Una fila por PERSONA, no por solicitud ----------------------
+            //
+            // Antes salia una fila por SolicitudCliente, y una persona que ha
+            // presentado ocho reembolsos aparecia ocho veces, identica. Elegir
+            // entre ocho filas iguales no es elegir: es adivinar.
+            //
+            // Se agrupa por la persona -la cedula del beneficiario si lo hay- y
+            // se queda la solicitud MAS RECIENTE, que trae el plan y el contrato
+            // al dia. Y se dice cuantas tiene: alguien con ocho solicitudes es un
+            // caso distinto de alguien con una.
+            var filas = await q
                 .OrderByDescending(x => x.Id)
-                .Select(x => new AfiliadoParaChatVm
+                .Select(x => new
                 {
-                    CaseCode  = x.CaseCode,
-                    Nombre     = x.NombreBeneficiario ?? x.NombreTitular,
-                    Cedula     = x.Cedula,
-                    Plan       = x.NombrePlan,
-                    CodigoPlan = x.CodigoPlan,
-                    Producto   = x.CodigoProducto,
-                    Region     = x.CodigoRegion,
-                    Contrato   = x.NumeroContrato,
-                    Desde      = x.CreatedDate
+                    x.CaseCode, x.Cedula, x.CedulaBeneficiario,
+                    x.NombreTitular, x.NombreBeneficiario,
+                    x.NombrePlan, x.CodigoPlan, x.CodigoProducto, x.CodigoRegion,
+                    x.NumeroContrato, x.CreatedDate
                 })
-                .Take(30)
+                .Take(400)
                 .ToListAsync();
+
+            // La ultima vez que se le CONSULTO por el chat, que no es cuando
+            // presento su solicitud. La columna decia Consultado y enseñaba lo
+            // segundo: dos cosas distintas con la misma etiqueta.
+            var ultimaCharla = await _db.StepExecution.AsNoTracking()
+                .Where(e => e.ModelCode == AgenteChat)
+                .GroupBy(e => e.CaseCode)
+                .Select(g => new { Caso = g.Key, Cuando = g.Max(e => e.StartDate) })
+                .ToDictionaryAsync(x => x.Caso, x => x.Cuando);
+
+            vm.Elegir = filas
+                .GroupBy(x => (x.CedulaBeneficiario ?? x.Cedula ?? string.Empty).Trim())
+                .Select(g =>
+                {
+                    var ultima = g.First();   // ya venian del mas nuevo al mas viejo
+                    return new AfiliadoParaChatVm
+                    {
+                        CaseCode   = ultima.CaseCode,
+                        Nombre     = ultima.NombreBeneficiario ?? ultima.NombreTitular,
+                        Cedula     = ultima.CedulaBeneficiario ?? ultima.Cedula,
+                        Plan       = ultima.NombrePlan,
+                        CodigoPlan = ultima.CodigoPlan,
+                        Producto   = ultima.CodigoProducto,
+                        Region     = ultima.CodigoRegion,
+                        Contrato   = ultima.NumeroContrato,
+                        Solicitudes     = g.Count(),
+                        UltimaSolicitud = ultima.CreatedDate,
+                        UltimaConsulta  = g.Select(x => ultimaCharla.TryGetValue(x.CaseCode, out var c)
+                                                        ? c : (DateTime?)null)
+                                           .Where(c => c.HasValue)
+                                           .OrderByDescending(c => c)
+                                           .FirstOrDefault()
+                    };
+                })
+                .OrderByDescending(a => a.UltimaConsulta ?? a.UltimaSolicitud)
+                .Take(30)
+                .ToList();
 
             // Tres mensajes distintos, porque son tres situaciones distintas y
             // decirle "no hay nadie" cuando su busqueda no acerto es mentirle.

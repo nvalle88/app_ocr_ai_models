@@ -179,7 +179,8 @@
                         <tr>
                             <th>Afiliado</th><th>Cédula</th>
                             <th>Producto</th><th>Plan</th><th>Región</th>
-                            <th>N.&ordm; de contrato</th><th>Consultado</th><th></th>
+                            <th>N.&ordm; de contrato</th>
+                            <th>Solicitudes</th><th>Última consulta</th><th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -192,7 +193,14 @@
                             <td>@a.PlanVisible</td>
                             <td>@a.Region</td>
                             <td>@a.Contrato</td>
-                            <td>@(a.Desde?.ToString("dd/MM/yyyy") ?? "—")</td>
+                            @* Dos fechas distintas que antes iban con una sola
+                               etiqueta: cuantas solicitudes ha presentado, y
+                               cuando se le consulto por el chat. Si nunca se le
+                               consulto se dice, en vez de rellenar con la fecha
+                               de la solicitud y hacerla pasar por otra cosa. *@
+                            <td>@a.Solicitudes<span style="color:#8792a2;font-size:11.5px">
+                                @(a.UltimaSolicitud.HasValue ? $" · última {a.UltimaSolicitud:dd/MM/yy}" : "")</span></td>
+                            <td>@(a.UltimaConsulta?.ToString("dd/MM/yyyy HH:mm") ?? "nunca")</td>
                             <td class="text-right">
                                 <a class="st-btn is-bajo"
                                    asp-area="Studio" asp-controller="ChatCliente" asp-action="Index"
