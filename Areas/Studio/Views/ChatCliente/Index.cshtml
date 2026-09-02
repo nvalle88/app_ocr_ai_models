@@ -112,18 +112,47 @@
 
 @* Sin caso: se entro por la pildora de rol. Lo primero es elegir a quien se
    atiende — un error ahi seria absurdo, porque es justo lo que viene a hacer. *@
-@if (Model.Elegir.Count > 0)
+@if (!Model.Listo)
 {
     <div style="max-width:860px;margin:0 auto;">
         <div class="st-head">
             <div class="st-head-main">
                 <div class="st-crumbs">Studio / Consulta del afiliado</div>
                 <h1 class="st-title"><i class="fa fa-comments"></i>¿A quién atiende?</h1>
-                <p class="st-sub">Elija la persona y podrá consultarle lo de su contrato: coberturas,
-                   deducible, el estado de sus reembolsos o qué dice su póliza.</p>
+                <p class="st-sub">Busque por cédula, contrato o nombre. Después podrá consultarle
+                   lo de su contrato: coberturas, deducible, el estado de sus reembolsos o qué
+                   dice su póliza.</p>
             </div>
         </div>
 
+        @* El buscador va SIEMPRE que no haya chat abierto, tambien cuando la
+           busqueda no encontro nada: es justo cuando hace falta volver a
+           buscar, y esconderlo obligaria a recargar a mano. *@
+        <div class="st-card is-principal" style="margin-bottom:16px">
+            <div class="st-card-cuerpo">
+                <form method="get" asp-area="Studio" asp-controller="ChatCliente" asp-action="Index">
+                    <div class="st-buscador">
+                        <input name="buscar" type="text" value="@Model.Buscar"
+                               placeholder="Cédula, número de contrato o nombre del afiliado" autofocus />
+                        <button type="submit" class="st-btn"><i class="fa fa-search"></i> Buscar</button>
+                    </div>
+                    <div class="st-pistas">
+                        Por ejemplo:
+                        <code class="st-pista">0911002475</code>
+                        <code class="st-pista">549616</code>
+                        <code class="st-pista">Cume Ortiz</code>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(Model.Error))
+        {
+            <div class="alert alert-warning"><i class="fa fa-info-circle"></i> @Model.Error</div>
+        }
+
+        @if (Model.Elegir.Count > 0)
+        {
         <div class="st-card">
             <div class="st-card-cuerpo" style="padding:0">
                 <table class="table" style="margin:0">
@@ -154,13 +183,7 @@
                 </table>
             </div>
         </div>
-    </div>
-}
-else if (!Model.Listo)
-{
-    <div class="alert alert-warning" style="max-width:640px;margin:20px auto;">
-        <i class="fa fa-info-circle"></i>
-        @(Model.Error ?? "No se puede abrir la consulta para este caso.")
+        }
     </div>
 }
 else
@@ -282,8 +305,8 @@ else
         lineas.push('Esta consulta es informativa. El valor final de un reembolso');
         lineas.push('lo determina la liquidacion formal en Salud S.A.');
 
-        var blob = new Blob([lineas.join('
-')], { type: 'text/plain;charset=utf-8' });
+        var blob = new Blob([lineas.join(String.fromCharCode(10))],
+                            { type: 'text/plain;charset=utf-8' });
         var a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = 'consulta-cobertura-' + new Date().toISOString().slice(0, 10) + '.txt';

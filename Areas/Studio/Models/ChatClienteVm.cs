@@ -29,6 +29,9 @@ public sealed class ChatClienteVm
     /// </summary>
     public List<AfiliadoParaChatVm> Elegir { get; set; } = new();
 
+    /// <summary>Lo que se escribio en el buscador: cedula, contrato o nombre.</summary>
+    public string? Buscar { get; set; }
+
     /// <summary>
     /// La conversación anterior, para que al volver a la pantalla siga donde la
     /// dejó. Sale de StepExecution: no hay tabla de conversaciones.

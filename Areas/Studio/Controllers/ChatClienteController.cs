@@ -69,18 +69,36 @@ public sealed class ChatClienteController : Controller
 
     // GET /Studio/ChatCliente?caseCode=&embed=true
     [HttpGet]
-    public async Task<IActionResult> Index(Guid caseCode, bool embed = false)
+    public async Task<IActionResult> Index(Guid caseCode, string? buscar = null, bool embed = false)
     {
         ViewData["Embed"] = embed;
 
-        var vm = new ChatClienteVm { CaseCode = caseCode };
+        var vm = new ChatClienteVm { CaseCode = caseCode, Buscar = buscar };
 
         // Sin caso: se entra por la pildora de rol, sin contexto. En vez de un
-        // error, se ofrece elegir a quien se atiende — que es lo que va a hacer
-        // quien llega por ahi.
+        // error, se busca a quien se atiende — que es lo que va a hacer quien
+        // llega por ahi.
         if (caseCode == Guid.Empty)
         {
-            vm.Elegir = await _db.SolicitudCliente.AsNoTracking()
+            var q = _db.SolicitudCliente.AsNoTracking();
+
+            // Por cedula o por nombre, en el mismo campo: quien atiende tiene el
+            // uno o el otro, y obligarle a elegir de que tipo es lo que escribe
+            // es hacerle trabajo. Si es todo digitos se busca por cedula y por
+            // contrato; si no, por nombre del titular o del beneficiario.
+            var t = (buscar ?? string.Empty).Trim();
+            if (t.Length >= 3)
+            {
+                if (t.All(char.IsDigit))
+                    q = q.Where(x => x.Cedula!.Contains(t)
+                                  || x.CedulaBeneficiario!.Contains(t)
+                                  || x.NumeroContrato!.Contains(t));
+                else
+                    q = q.Where(x => x.NombreTitular!.Contains(t)
+                                  || x.NombreBeneficiario!.Contains(t));
+            }
+
+            vm.Elegir = await q
                 .OrderByDescending(x => x.Id)
                 .Select(x => new AfiliadoParaChatVm
                 {
@@ -91,12 +109,19 @@ public sealed class ChatClienteController : Controller
                     Contrato  = x.NumeroContrato,
                     Desde     = x.CreatedDate
                 })
-                .Take(25)
+                .Take(30)
                 .ToListAsync();
 
+            // Tres mensajes distintos, porque son tres situaciones distintas y
+            // decirle "no hay nadie" cuando su busqueda no acerto es mentirle.
             if (vm.Elegir.Count == 0)
-                vm.Error = "Todavia no hay ningun afiliado identificado. Entre por «Cliente», "
-                         + "identifique a la persona, y desde ahi podra consultar.";
+                vm.Error = t.Length >= 3
+                    ? $"No encontre a nadie con «{t}». Pruebe con la cedula completa o con "
+                      + "parte del apellido."
+                    : await _db.SolicitudCliente.AnyAsync()
+                        ? "Escriba la cedula o el nombre para encontrar al afiliado."
+                        : "Todavia no hay ningun afiliado identificado. Entre por «Cliente», "
+                          + "identifique a la persona, y desde ahi podra consultar.";
 
             return View(vm);
         }
