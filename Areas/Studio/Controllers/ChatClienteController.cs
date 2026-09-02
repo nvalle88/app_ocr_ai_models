@@ -135,8 +135,19 @@ public sealed class ChatClienteController : Controller
                 .ToDictionaryAsync(x => x.Caso, x => x.Cuando);
 
             vm.Elegir = filas
-                .GroupBy(x => ((x.CedulaBeneficiario ?? x.Cedula ?? string.Empty).Trim(),
-                               (x.NumeroContrato ?? string.Empty).Trim()))
+                // La identidad de un contrato es REGION + NUMERO + PLAN, no el
+                // numero solo: el mismo numero en Costa y en Sierra son dos
+                // contratos distintos, con su propio plan y su propio deducible.
+                // Es la misma llave compuesta con la que viven Lr02 y Lr04.
+                //
+                // Y dentro del contrato va el BENEFICIARIO, porque el deducible
+                // cubierto y las preexistencias son de cada persona: Genaro y Lia
+                // Chavez comparten el contrato 4160731 y son dos consultas
+                // distintas.
+                .GroupBy(x => ((x.CodigoRegion    ?? string.Empty).Trim(),
+                               (x.NumeroContrato  ?? string.Empty).Trim(),
+                               (x.CodigoPlan      ?? string.Empty).Trim(),
+                               (x.CedulaBeneficiario ?? x.Cedula ?? string.Empty).Trim()))
                 .Select(g =>
                 {
                     var ultima = g.First();   // ya venian del mas nuevo al mas viejo
