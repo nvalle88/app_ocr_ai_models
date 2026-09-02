@@ -282,6 +282,15 @@ public sealed class ChatClienteController : Controller
             ThinkingMode = agent.ThinkingMode
         };
 
+        // Se registra el mensaje COMPLETO, no solo la pregunta.
+        //
+        // Estaba guardando 9-26 caracteres -la pregunta pelada- y con eso no habia
+        // forma de comprobar si el contrato y el historial le estaban llegando al
+        // modelo. La memoria podia estar funcionando o no, y no se podia saber:
+        // un dato que no se registra es un dato que no se puede diagnosticar.
+        exec.RequestContent = peticion.UserMessage;
+        await _db.SaveChangesAsync();
+
         var tools = agent.OPAIModelTool
             .Where(mt => mt.IsEnabled && mt.ToolCodeNavigation?.IsActive == true)
             .Select(mt => mt.ToolCodeNavigation!)
