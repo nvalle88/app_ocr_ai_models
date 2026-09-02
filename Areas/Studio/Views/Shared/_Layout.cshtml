@@ -40,25 +40,48 @@
     Dentro de los iframes del caso no se pinta: saldria repetido en cada pestana.
 *@
 @{
-    var _rolEmbed  = (ViewData["Embed"] as bool?) == true;
-    var _rolCtrl   = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
-    var _rolEsCli  = string.Equals(_rolCtrl, "Cliente", StringComparison.OrdinalIgnoreCase);
+    var _rolEmbed = (ViewData["Embed"] as bool?) == true;
+    var _rolCtrl  = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
+
+    // Tres sitios, no dos. La consulta del afiliado es un rol propio: no es la
+    // bandeja del auditor ni el flujo de presentar un reembolso, es preguntar.
+    var _rolActivo = string.Equals(_rolCtrl, "Cliente", StringComparison.OrdinalIgnoreCase) ? "cli"
+                   : string.Equals(_rolCtrl, "ChatCliente", StringComparison.OrdinalIgnoreCase) ? "chat"
+                   : "aud";
 }
 @if (!_rolEmbed)
 {
     <div class="st-rol">
-        @if (_rolEsCli)
+        @if (_rolActivo == "aud")
+        {
+            <span class="st-rol-op is-activa"><i class="fa fa-user-md"></i> Auditor Saludsa</span>
+        }
+        else
         {
             <a class="st-rol-op" asp-area="Studio" asp-controller="Sobres" asp-action="Index">
                 <i class="fa fa-user-md"></i> Auditor Saludsa
             </a>
+        }
+
+        @if (_rolActivo == "cli")
+        {
             <span class="st-rol-op is-activa"><i class="fa fa-user"></i> Cliente</span>
         }
         else
         {
-            <span class="st-rol-op is-activa"><i class="fa fa-user-md"></i> Auditor Saludsa</span>
             <a class="st-rol-op" asp-area="Studio" asp-controller="Cliente" asp-action="Index">
                 <i class="fa fa-user"></i> Cliente
+            </a>
+        }
+
+        @if (_rolActivo == "chat")
+        {
+            <span class="st-rol-op is-activa"><i class="fa fa-comments"></i> Consulta del afiliado</span>
+        }
+        else
+        {
+            <a class="st-rol-op" asp-area="Studio" asp-controller="ChatCliente" asp-action="Index">
+                <i class="fa fa-comments"></i> Consulta del afiliado
             </a>
         }
     </div>

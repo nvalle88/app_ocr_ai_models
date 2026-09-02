@@ -77,7 +77,53 @@
     @@media (prefers-reduced-motion: reduce) { .cc-puntos span { animation:none; } }
 </style>
 
-@if (!Model.Listo)
+@* Sin caso: se entro por la pildora de rol. Lo primero es elegir a quien se
+   atiende — un error ahi seria absurdo, porque es justo lo que viene a hacer. *@
+@if (Model.Elegir.Count > 0)
+{
+    <div style="max-width:860px;margin:0 auto;">
+        <div class="st-head">
+            <div class="st-head-main">
+                <div class="st-crumbs">Studio / Consulta del afiliado</div>
+                <h1 class="st-title"><i class="fa fa-comments"></i>¿A quién atiende?</h1>
+                <p class="st-sub">Elija la persona y podrá consultarle lo de su contrato: coberturas,
+                   deducible, el estado de sus reembolsos o qué dice su póliza.</p>
+            </div>
+        </div>
+
+        <div class="st-card">
+            <div class="st-card-cuerpo" style="padding:0">
+                <table class="table" style="margin:0">
+                    <thead>
+                        <tr>
+                            <th>Afiliado</th><th>Cédula</th><th>Plan</th>
+                            <th>Contrato</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var a in Model.Elegir)
+                    {
+                        <tr>
+                            <td><strong>@a.Nombre</strong></td>
+                            <td>@a.Cedula</td>
+                            <td>@a.Plan</td>
+                            <td>@a.Contrato</td>
+                            <td class="text-right">
+                                <a class="st-btn is-bajo"
+                                   asp-area="Studio" asp-controller="ChatCliente" asp-action="Index"
+                                   asp-route-caseCode="@a.CaseCode">
+                                    <i class="fa fa-comments"></i> Consultar
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+}
+else if (!Model.Listo)
 {
     <div class="alert alert-warning" style="max-width:640px;margin:20px auto;">
         <i class="fa fa-info-circle"></i>

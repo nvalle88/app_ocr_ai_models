@@ -75,9 +75,29 @@ public sealed class ChatClienteController : Controller
 
         var vm = new ChatClienteVm { CaseCode = caseCode };
 
+        // Sin caso: se entra por la pildora de rol, sin contexto. En vez de un
+        // error, se ofrece elegir a quien se atiende — que es lo que va a hacer
+        // quien llega por ahi.
         if (caseCode == Guid.Empty)
         {
-            vm.Error = "Falta el caso.";
+            vm.Elegir = await _db.SolicitudCliente.AsNoTracking()
+                .OrderByDescending(x => x.Id)
+                .Select(x => new AfiliadoParaChatVm
+                {
+                    CaseCode  = x.CaseCode,
+                    Nombre    = x.NombreBeneficiario ?? x.NombreTitular,
+                    Cedula    = x.Cedula,
+                    Plan      = x.NombrePlan,
+                    Contrato  = x.NumeroContrato,
+                    Desde     = x.CreatedDate
+                })
+                .Take(25)
+                .ToListAsync();
+
+            if (vm.Elegir.Count == 0)
+                vm.Error = "Todavia no hay ningun afiliado identificado. Entre por «Cliente», "
+                         + "identifique a la persona, y desde ahi podra consultar.";
+
             return View(vm);
         }
 

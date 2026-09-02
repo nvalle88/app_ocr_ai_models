@@ -21,4 +21,22 @@ public sealed class ChatClienteVm
 
     public string? NombrePlan { get; set; }
     public string? NumeroContrato { get; set; }
+
+    /// <summary>
+    /// A quien se puede atender, cuando se entra por la pildora de rol y no
+    /// desde un caso. Sin esto la pantalla seria un error, y quien llega ahi lo
+    /// que quiere es justamente elegir a la persona.
+    /// </summary>
+    public List<AfiliadoParaChatVm> Elegir { get; set; } = new();
+}
+
+/// <summary>Un afiliado ya identificado, para poder abrirle la consulta.</summary>
+public sealed class AfiliadoParaChatVm
+{
+    public Guid CaseCode { get; set; }
+    public string? Nombre { get; set; }
+    public string? Cedula { get; set; }
+    public string? Plan { get; set; }
+    public string? Contrato { get; set; }
+    public DateTime? Desde { get; set; }
 }
