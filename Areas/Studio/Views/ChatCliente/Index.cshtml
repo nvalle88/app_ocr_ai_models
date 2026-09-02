@@ -75,6 +75,39 @@
     @@keyframes cc-lat { 0%,60%,100%{opacity:.25} 30%{opacity:1} }
 
     @@media (prefers-reduced-motion: reduce) { .cc-puntos span { animation:none; } }
+
+    /* ── El formato de la respuesta ──────────────────────────────────────────
+       El agente escribe tablas e importes. Sin esto llegaba el pipe en crudo,
+       que es peor que no haber hecho la tabla. */
+    .cc-msg .md-p     { margin:0 0 8px; }
+    .cc-msg .md-p:last-child { margin-bottom:0; }
+    .cc-msg .md-h     { margin:12px 0 6px; font-size:13.5px; font-weight:700; color:#002F87; }
+    .cc-msg .md-h:first-child { margin-top:0; }
+    .cc-msg .md-lista { margin:0 0 8px; padding-left:20px; }
+    .cc-msg .md-lista li { margin-bottom:3px; }
+    .cc-msg code      { background:#e7ebf2; padding:1px 5px; border-radius:4px; font-size:12.5px; }
+    .cc-msg strong    { color:#002F87; }
+    .cc-msg.es-yo strong, .cc-msg.es-yo code { color:#fff; background:rgba(255,255,255,.18); }
+
+    /* La cita es el texto literal del contrato: se distingue a propósito. */
+    .cc-msg .md-cita  { margin:8px 0; padding:8px 12px; border-left:3px solid #002F87;
+                        background:#fff; font-size:13px; color:#3d4757; font-style:italic; }
+
+    .cc-msg .md-tabla-wrap { overflow-x:auto; margin:10px 0; }
+    .cc-msg .md-tabla { width:100%; border-collapse:collapse; font-size:13px; background:#fff;
+                        border:1px solid #dde3ec; border-radius:8px; overflow:hidden; }
+    .cc-msg .md-tabla th { background:#eaf0fb; color:#002F87; font-weight:700; font-size:11.5px;
+                           text-transform:uppercase; letter-spacing:.3px;
+                           padding:8px 10px; text-align:left; white-space:nowrap; }
+    .cc-msg .md-tabla td { padding:8px 10px; border-top:1px solid #eef1f6; }
+    .cc-msg .md-tabla td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .cc-msg .md-tabla tbody tr:nth-child(even) td { background:#fafbfd; }
+
+    /* Descargar: la conversación entera, para llevársela o adjuntarla. */
+    .cc-bajar { background:none; border:0; color:#6b7684; font-size:11.5px;
+                cursor:pointer; padding:0; }
+    .cc-bajar:hover { color:#002F87; text-decoration:underline; }
+    .cc-cab-fila { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 </style>
 
 @* Sin caso: se entro por la pildora de rol. Lo primero es elegir a quien se
@@ -134,16 +167,36 @@ else
 {
 <div class="cc-caja">
     <div class="cc-cab">
+      <div class="cc-cab-fila">
+        <div>
         <h2><i class="fa fa-comments"></i> Consulta sobre su cobertura</h2>
         <p>
             @Model.NombrePaciente
             @if (!string.IsNullOrWhiteSpace(Model.NombrePlan)) { <text> · @Model.NombrePlan</text> }
             @if (!string.IsNullOrWhiteSpace(Model.NumeroContrato)) { <text> · contrato @Model.NumeroContrato</text> }
         </p>
+        </div>
+        <button type="button" class="cc-bajar" id="ccBajar" title="Guardar esta consulta">
+            <i class="fa fa-download"></i> Descargar la consulta
+        </button>
+      </div>
     </div>
 
     <div class="cc-hilo" id="ccHilo">
-        <div class="cc-msg es-ella">Buenos días. Puedo consultarle lo de su contrato: qué le cubre su plan, cuánto le falta del deducible, en qué va un reembolso o hasta cuándo puede presentar una factura. ¿Qué necesita saber?</div>
+        @if (Model.Hilo.Count == 0)
+        {
+            <div class="cc-msg es-ella">Buenos días. Puedo consultarle lo de su contrato: qué le cubre su plan, cuánto le falta del deducible, en qué va un reembolso o hasta cuándo puede presentar una factura. ¿Qué necesita saber?</div>
+        }
+        else
+        {
+            @* La conversación de antes. Sale de StepExecution, donde ya se
+               guardaba cada turno: al volver, sigue donde la dejó. *@
+            foreach (var t in Model.Hilo)
+            {
+                <div class="cc-msg es-yo">@t.Pregunta</div>
+                <div class="cc-msg es-ella" data-md="@t.Respuesta"></div>
+            }
+        }
     </div>
 
     <div class="cc-pie">
@@ -163,6 +216,7 @@ else
 
 @Html.AntiForgeryToken()
 
+<script src="~/js/app/st-markdown.js" asp-append-version="true"></script>
 <script>
 (function () {
     'use strict';
@@ -184,14 +238,58 @@ else
         return d.innerHTML;
     }
 
+    /* La respuesta se formatea; lo que escribio el afiliado, NO.
+       Formatear su texto seria interpretar lo que escribio, y un asterisco suyo
+       no es una negrita. */
     function burbuja(clase, contenido) {
         var d = document.createElement('div');
         d.className = 'cc-msg ' + clase;
-        d.textContent = contenido;
+        if (clase === 'es-ella' && window.StMarkdown) d.innerHTML = StMarkdown.render(contenido);
+        else d.textContent = contenido;
         hilo.appendChild(d);
         hilo.scrollTop = hilo.scrollHeight;
         return d;
     }
+
+    /* El hilo que vino del servidor: se guarda en data-md para no meter HTML
+       desde Razor, y se formatea aqui con las mismas reglas. */
+    Array.prototype.forEach.call(hilo.querySelectorAll('[data-md]'), function (el) {
+        el.innerHTML = window.StMarkdown
+            ? StMarkdown.render(el.getAttribute('data-md'))
+            : StMarkdown.escapar(el.getAttribute('data-md'));
+        el.removeAttribute('data-md');
+    });
+    hilo.scrollTop = hilo.scrollHeight;
+
+    /* Descargar la consulta.
+       El afiliado quiere poder guardarla o adjuntarla a un correo. Va en texto
+       plano y con fecha: es lo que se abre en cualquier sitio y lo que se puede
+       reenviar sin depender de esta pantalla. */
+    document.getElementById('ccBajar').addEventListener('click', function () {
+        var lineas = ['Consulta sobre su cobertura - Salud S.A.',
+                      '@Model.NombrePaciente' + '  ·  @Model.NombrePlan',
+                      'Contrato @Model.NumeroContrato',
+                      new Date().toLocaleString('es-EC'),
+                      '', '─'.repeat(60), ''];
+
+        Array.prototype.forEach.call(hilo.children, function (el) {
+            if (!el.classList || !el.classList.contains('cc-msg')) return;
+            var quien = el.classList.contains('es-yo') ? 'USTED PREGUNTO' : 'SALUD S.A.';
+            lineas.push(quien + ':', (el.innerText || el.textContent || '').trim(), '');
+        });
+
+        lineas.push('─'.repeat(60));
+        lineas.push('Esta consulta es informativa. El valor final de un reembolso');
+        lineas.push('lo determina la liquidacion formal en Salud S.A.');
+
+        var blob = new Blob([lineas.join('
+')], { type: 'text/plain;charset=utf-8' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'consulta-cobertura-' + new Date().toISOString().slice(0, 10) + '.txt';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    });
 
     /* Lo que consultó, plegado: respalda la respuesta sin robarle la atención. */
     function consultas(pasos) {

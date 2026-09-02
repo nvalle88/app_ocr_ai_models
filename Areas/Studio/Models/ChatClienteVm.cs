@@ -28,6 +28,20 @@ public sealed class ChatClienteVm
     /// que quiere es justamente elegir a la persona.
     /// </summary>
     public List<AfiliadoParaChatVm> Elegir { get; set; } = new();
+
+    /// <summary>
+    /// La conversación anterior, para que al volver a la pantalla siga donde la
+    /// dejó. Sale de StepExecution: no hay tabla de conversaciones.
+    /// </summary>
+    public List<TurnoChatVm> Hilo { get; set; } = new();
+}
+
+/// <summary>Una pregunta y su respuesta.</summary>
+public sealed class TurnoChatVm
+{
+    public string Pregunta { get; set; } = string.Empty;
+    public string Respuesta { get; set; } = string.Empty;
+    public DateTime? Cuando { get; set; }
 }
 
 /// <summary>Un afiliado ya identificado, para poder abrirle la consulta.</summary>
