@@ -98,6 +98,7 @@ public static class NarradorDeTools
         ["buscar_prestador_convenio"]          = "Buscando prestadores con convenio",
         ["tarifario_prestador"]                = "Consultando el precio negociado",
         ["consultar_autorizaciones"]           = "Buscando sus autorizaciones",
+        ["buscar_sucursales_cerca"]            = "Buscando sucursales por esa zona",
     };
 
     /// <summary>
@@ -191,6 +192,19 @@ public static class NarradorDeTools
             // Decir cuantos salieron, que es lo unico verdadero y ademas util:
             // "Sin resultados" a secas no distingue entre no haber encontrado
             // nada y no haber buscado bien.
+            case "buscar_sucursales_cerca":
+            {
+                var filas = Filas(raiz);
+                if (filas < 0) return (null, "ok");
+                if (filas == 0) return ("Ninguna por esa zona", "atencion");
+                // ComoSeBusco dice si de verdad ubico el sitio. Cuando no, la
+                // lista es de toda la ciudad y anunciar "5 cerca" seria mentir.
+                var como = Texto(raiz, "ComoSeBusco") ?? string.Empty;
+                return como.StartsWith("NO se pudo ubicar", StringComparison.OrdinalIgnoreCase)
+                    ? ($"{filas}, pero de toda la ciudad", "atencion")
+                    : ($"{filas} cerca", "ok");
+            }
+
             case "buscar_prestador_convenio":
             {
                 var filas = Filas(raiz);
@@ -292,6 +306,26 @@ public static class NarradorDeTools
         raiz.TryGetProperty("rowCount", out var n) && n.ValueKind == JsonValueKind.Number
             ? n.GetInt32()
             : -1;
+
+    /// <summary>
+    /// Un campo de texto de la PRIMERA fila de una herramienta SQL. Sirve para
+    /// las columnas que la propia consulta usa para explicarse —ComoSeBusco,
+    /// QueSignifica—, que dicen algo que el conteo de filas no dice.
+    /// </summary>
+    private static string? Texto(JsonElement raiz, string campo)
+    {
+        if (!raiz.TryGetProperty("rows", out var filas) ||
+            filas.ValueKind != JsonValueKind.Array ||
+            filas.GetArrayLength() == 0)
+            return null;
+
+        var primera = filas[0];
+        return primera.ValueKind == JsonValueKind.Object &&
+               primera.TryGetProperty(campo, out var v) &&
+               v.ValueKind == JsonValueKind.String
+            ? v.GetString()
+            : null;
+    }
 
     /// <summary>
     /// Para una herramienta que aún no tiene frase: NO se enseña su código. Se
