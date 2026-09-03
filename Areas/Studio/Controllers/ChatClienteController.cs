@@ -617,4 +617,46 @@ public sealed class ChatClienteController : Controller
         if (marca >= 0) cuerpo = cuerpo[(marca + 7)..];
         try { return Convert.FromBase64String(cuerpo); } catch { return null; }
     }
+
+    // GET /Studio/ChatCliente/Progreso?caseCode=
+    //
+    // Que esta consultando el agente AHORA. Los tres puntitos decian solo que
+    // algo pasaba; con varias tools por pregunta eso es medio minuto mirando una
+    // animacion sin saber si avanza o se colgo. Y el "que consulto" salia
+    // DESPUES, cuando ya no hacia falta.
+    //
+    // No hace falta streaming: el ejecutor ya escribe una fila en ToolInvocation
+    // por cada llamada, en cuanto empieza. Se sondea esa tabla y se narra lo que
+    // haya. NarradorDeTools ya distingue la que sigue corriendo -tiene inicio y
+    // no tiene fin-, asi que sale sola.
+    //
+    // Se mira la ejecucion MAS RECIENTE del caso: mientras se espera una
+    // respuesta, esa es la que esta corriendo.
+    [HttpGet]
+    public async Task<IActionResult> Progreso(Guid caseCode, CancellationToken ct)
+    {
+        if (caseCode == Guid.Empty) return Json(new { ok = false });
+
+        var exec = await _db.StepExecution.AsNoTracking()
+            .Where(e => e.CaseCode == caseCode && e.ModelCode == AgenteChat)
+            .OrderByDescending(e => e.ExecutionId)
+            .Select(e => new { e.ExecutionId, e.Status })
+            .FirstOrDefaultAsync(ct);
+
+        if (exec == null) return Json(new { ok = true, pasos = Array.Empty<PasoDelAgenteVm>() });
+
+        var filas = await _db.ToolInvocation.AsNoTracking()
+            .Where(ti => ti.ExecutionId == exec.ExecutionId)
+            .OrderBy(ti => ti.InvocationId)
+            .Select(ti => new { ti.InvocationId, ti.ToolCode, ti.ResponseJson,
+                                ti.IsError, ti.StartDate, ti.EndDate })
+            .ToListAsync(ct);
+
+        var pasos = filas
+            .Select(x => NarradorDeTools.Narrar(x.InvocationId, x.ToolCode, x.ResponseJson,
+                                                x.IsError, x.StartDate, x.EndDate))
+            .ToList();
+
+        return Json(new { ok = true, pasos, terminado = exec.Status != "Running" });
+    }
 }

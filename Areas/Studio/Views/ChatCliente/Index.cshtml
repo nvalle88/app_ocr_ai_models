@@ -68,6 +68,25 @@
                padding:5px 12px; font-size:12.5px; color:#3d4757; cursor:pointer; }
     .cc-idea:hover { border-color:#002F87; color:#002F87; }
 
+    /* ── Lo que esta consultando, mientras lo consulta ──────────────────
+       Antes solo latian tres puntos. Con varias tools por pregunta eso es
+       medio minuto mirando una animacion sin saber si avanza o se colgo. */
+    .cc-espera { align-self:flex-start; max-width:78%; background:#f1f4f9;
+                 border-radius:12px; border-bottom-left-radius:3px;
+                 padding:10px 13px; font-size:13px; color:#3d4757; }
+    .cc-espera .cc-pasos { list-style:none; margin:8px 0 0; padding:0; }
+    .cc-espera .cc-pasos li { display:flex; align-items:baseline; gap:8px;
+                              padding:2px 0; font-size:12.5px;
+                              animation:cc-entra .2s ease; }
+    .cc-espera .cc-pasos li .ic { width:13px; text-align:center; flex:0 0 13px; }
+    .cc-espera .cc-pasos li.corriendo    { color:#4a5568; }
+    .cc-espera .cc-pasos li.ok       .ic { color:#1a7f4b; }
+    .cc-espera .cc-pasos li.atencion .ic { color:#8a6100; }
+    .cc-espera .cc-pasos li.fallo    .ic { color:#b42318; }
+    .cc-espera .cc-pasos li .seg { margin-left:auto; color:#98a2b3; font-size:11px; }
+    @@keyframes cc-entra { from { opacity:0; transform:translateY(-2px); } to { opacity:1; } }
+    @@media (prefers-reduced-motion: reduce) { .cc-espera .cc-pasos li { animation:none; } }
+
     .cc-puntos span { display:inline-block; width:6px; height:6px; margin-right:3px;
                       border-radius:50%; background:#8792a2; animation:cc-lat 1.1s infinite; }
     .cc-puntos span:nth-child(2) { animation-delay:.15s; }
@@ -528,6 +547,7 @@ else
         if (ev.key === 'Escape' && visor.classList.contains('abierto')) cerrarCarta();
     });
     var url    = '@Url.Action("Preguntar", "ChatCliente", new { area = "Studio" })';
+    var urlProgreso = '@Url.Action("Progreso", "ChatCliente", new { area = "Studio" })';
     var ocupado = false;
 
     function token() {
@@ -544,6 +564,58 @@ else
     /* La respuesta se formatea; lo que escribio el afiliado, NO.
        Formatear su texto seria interpretar lo que escribio, y un asterisco suyo
        no es una negrita. */
+    /* ── El globo de espera ───────────────────────────────────────────────
+       Se sondea Progreso mientras el modelo trabaja. No hace falta streaming:
+       el ejecutor escribe una fila en ToolInvocation por cada llamada en cuanto
+       empieza, asi que la lista ya existe en la base; aqui solo se mira.
+
+       Cada segundo, que es el ritmo al que aparecen las tools. Mas rapido seria
+       machacar la base para ver lo mismo. */
+    var ICONOS = { ok: 'fa-check', atencion: 'fa-exclamation', fallo: 'fa-times',
+                   neutro: 'fa-circle-o-notch fa-spin' };
+
+    function globoEspera() {
+        var d = document.createElement('div');
+        d.className = 'cc-espera';
+        d.innerHTML = '<span class="cc-puntos"><span></span><span></span><span></span></span> '
+                    + 'Consultando sus datos…<ul class="cc-pasos"></ul>';
+        hilo.appendChild(d);
+        hilo.scrollTop = hilo.scrollHeight;
+
+        var lista = d.querySelector('.cc-pasos');
+        var vistos = {};
+        var timer = setInterval(function () {
+            fetch(urlProgreso + '?caseCode=' + encodeURIComponent(caso), { cache: 'no-store' })
+                .then(function (r) { return r.json(); })
+                .then(function (p) {
+                    if (!p || !p.ok || !p.pasos) return;
+                    p.pasos.forEach(function (x) {
+                        /* Una fila se repinta cuando termina -entra sin fin y
+                           vuelve con veredicto-, asi que se indexa por id. */
+                        var li = vistos[x.id];
+                        if (!li) {
+                            li = document.createElement('li');
+                            vistos[x.id] = li;
+                            lista.appendChild(li);
+                        }
+                        var tono = x.tono || 'neutro';
+                        li.className = (tono === 'neutro') ? 'corriendo' : tono;
+                        li.innerHTML =
+                            '<i class="ic fa ' + (ICONOS[tono] || ICONOS.neutro) + '"></i>'
+                          + '<span></span>'
+                          + (x.segundos != null ? '<span class="seg">' + x.segundos + 's</span>' : '');
+                        li.querySelector('span').textContent =
+                            x.resultado ? (x.que + ' · ' + x.resultado) : x.que;
+                    });
+                    hilo.scrollTop = hilo.scrollHeight;
+                })
+                .catch(function () { /* un sondeo fallido no rompe la espera */ });
+        }, 1000);
+
+        d.parar = function () { clearInterval(timer); d.remove(); };
+        return d;
+    }
+
     function burbuja(clase, contenido, reintentar) {
         var d = document.createElement('div');
         d.className = 'cc-msg ' + clase;
@@ -637,11 +709,8 @@ else
         texto.value = '';
         texto.style.height = 'auto';
 
-        var esperando = document.createElement('div');
-        esperando.className = 'cc-msg es-ella cc-puntos';
-        esperando.innerHTML = '<span></span><span></span><span></span>';
-        hilo.appendChild(esperando);
-        hilo.scrollTop = hilo.scrollHeight;
+        // El globo que va contando lo que consulta, en vez de tres puntos mudos.
+        var esperando = globoEspera();
 
         try {
             var fd = new FormData();
@@ -655,7 +724,7 @@ else
                 headers: { 'RequestVerificationToken': token() }, body: fd
             });
 
-            esperando.remove();
+            esperando.parar();
 
             if (!resp.ok) {
                 burbuja('es-mal', 'No pude consultarlo ahora.', q);
@@ -665,7 +734,7 @@ else
                 if (d.ok) consultas(d.consulto);
             }
         } catch (e) {
-            esperando.remove();
+            esperando.parar();
             burbuja('es-mal', 'Se perdió la conexión.', q);
         } finally {
             ocupado = false;
