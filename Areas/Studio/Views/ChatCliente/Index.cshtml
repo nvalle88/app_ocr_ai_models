@@ -103,6 +103,67 @@
     .cc-msg .md-tabla td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
     .cc-msg .md-tabla tbody tr:nth-child(even) td { background:#fafbfd; }
 
+    /* ── Que se lea una tabla de precios ──────────────────────────────────
+       Los importes en columna solo se comparan de un vistazo si van alineados
+       a la derecha y con cifras de ancho fijo. Y la primera columna -el nombre
+       del prestador, el numero de la autorizacion- es la que se busca con el
+       ojo, asi que va destacada. */
+    .cc-msg .md-tabla td:first-child { font-weight:600; color:#1f2733; }
+    .cc-msg .md-tabla td.num, .cc-msg .md-tabla th.num {
+        text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .cc-msg .md-tabla .md-plata { font-weight:700; color:#00224f; }
+    /* Un dato que NO consta se dice, no se deja en blanco: una celda vacia en
+       una columna de precios se lee como gratis. */
+    .cc-msg .md-tabla .md-nada { color:#98a2b3; font-style:italic; font-weight:400; }
+
+    /* ── Distintivos ──────────────────────────────────────────────────────
+       Para lo que se responde de un vistazo: si el prestador esta en su red,
+       si la autorizacion salio o no. El color no va solo: lleva texto, porque
+       un tercio de los hombres distingue mal el rojo del verde y porque en un
+       correo reenviado o impreso el color se pierde. */
+    .cc-msg .md-marca {
+        display:inline-block; padding:2px 9px; border-radius:999px;
+        font-size:11.5px; font-weight:700; letter-spacing:.2px;
+        border:1px solid transparent; white-space:nowrap; }
+    .cc-msg .md-marca.ok    { background:#e7f6ee; color:#1a7f4b; border-color:#bfe5d0; }
+    .cc-msg .md-marca.aviso { background:#fff6e0; color:#8a6100; border-color:#f0dfae; }
+    .cc-msg .md-marca.mal   { background:#fdeceb; color:#b42318; border-color:#f3d3cd; }
+
+    /* ── Ficha ────────────────────────────────────────────────────────────
+       Cuando es UN prestador y no una lista, una tabla de una fila se lee
+       peor que una ficha. */
+    .cc-msg .md-ficha { border:1px solid #dde3ec; border-radius:9px; padding:11px 13px;
+                        margin:10px 0; background:#fff; }
+    .cc-msg .md-ficha .md-h { margin-top:0; }
+
+    /* Pares dato/valor: 'Usted paga … 20,00'. En dos columnas se leen; en una
+       lista con guiones, no. */
+    .cc-msg .md-datos { display:grid; grid-template-columns:auto 1fr; gap:3px 14px;
+                        margin:8px 0; font-size:13px; }
+    .cc-msg .md-datos dt { color:#6b7684; }
+    .cc-msg .md-datos dd { margin:0; font-weight:600; color:#1f2733; }
+
+    /* Lo que hay que entender aunque se lea en diagonal. */
+    .cc-msg .md-clave { margin:10px 0; padding:9px 12px; border-radius:8px;
+                        background:#f4f7fd; border-left:3px solid #002F87;
+                        font-size:13px; color:#1f2733; }
+    .cc-msg .md-clave.aviso { background:#fff6e0; border-left-color:#c99a00; color:#6b4d00; }
+
+    .cc-msg .md-tabla caption { caption-side:top; text-align:left; padding:0 0 6px;
+                                font-size:11.5px; color:#6b7684; }
+
+    /* .cc-msg lleva white-space:pre-wrap para el texto suelto, donde los saltos
+       del modelo SI son parte del mensaje. Pero dentro de HTML estructurado eso
+       convierte la sangria del codigo en espacios de verdad: un parrafo
+       indentado sale con la segunda linea metida hacia dentro y la tabla con
+       celdas descuadradas. Dentro de cada bloque, el salto vuelve a ser lo que
+       es en HTML: nada. */
+    .cc-msg .md-p, .cc-msg .md-h, .cc-msg .md-clave, .cc-msg .md-cita,
+    .cc-msg .md-lista li, .cc-msg .md-ficha,
+    .cc-msg .md-datos dt, .cc-msg .md-datos dd,
+    .cc-msg .md-tabla th, .cc-msg .md-tabla td,
+    .cc-msg .md-tabla caption { white-space:normal; }
+
     /* Descargar: la conversación entera, para llevársela o adjuntarla. */
     .cc-bajar { background:none; border:0; color:#6b7684; font-size:11.5px;
                 cursor:pointer; padding:0; }
