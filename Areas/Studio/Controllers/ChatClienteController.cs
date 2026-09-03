@@ -77,7 +77,8 @@ public sealed class ChatClienteController : Controller
     // GET /Studio/ChatCliente?caseCode=&embed=true
     [HttpGet]
     public async Task<IActionResult> Index(Guid caseCode, string? buscar = null,
-                                          string? plan = null, bool embed = false)
+                                          string? plan = null, bool embed = false,
+                                          string? conv = null)
     {
         ViewData["Embed"] = embed;
 
@@ -230,7 +231,47 @@ public sealed class ChatClienteController : Controller
         // StepExecution -la pregunta en RequestContent, la respuesta en
         // ResponseContent-, solo que no se estaba leyendo. Asi la conversacion
         // sobrevive a recargar la pagina y a volver mañana.
-        vm.Hilo = await TurnosAsync(caseCode);
+        // -- Conversaciones -------------------------------------------------
+        //
+        // Antes el chat era UN hilo infinito por caso: quien atiende a la misma
+        // persona por segunda vez encontraba la charla del mes pasado debajo, y
+        // la memoria le metia al modelo un contexto que ya no venia a cuento.
+        //
+        // La conversacion se numera en StepExecution.StepOrder, que este agente
+        // dejaba siempre a 0. Es una columna int que ya existe: conversaciones
+        // sin migrar nada.
+        var previas = await _db.StepExecution.AsNoTracking()
+            .Where(x => x.CaseCode == caseCode && x.ModelCode == AgenteChat
+                     && x.Status == "Completed" && x.ResponseContent != null)
+            .GroupBy(x => x.StepOrder)
+            .Select(g => new
+            {
+                Numero  = g.Key,
+                Cuando  = g.Max(x => x.StartDate),
+                Turnos  = g.Count(),
+                Primera = g.OrderBy(x => x.ExecutionId).Select(x => x.RequestContent).First()
+            })
+            .ToListAsync();
+
+        vm.Conversaciones = previas
+            .OrderByDescending(x => x.Numero)
+            .Select(x => new ConversacionVm
+            {
+                Numero = x.Numero <= 0 ? 1 : x.Numero,
+                Cuando = x.Cuando,
+                Turnos = x.Turnos,
+                Sobre  = SoloLaPregunta(x.Primera)
+            })
+            .ToList();
+
+        // 'nueva' abre una vacia: el numero se asigna al preguntar, no antes, para
+        // no dejar conversaciones fantasma de quien entra y no escribe.
+        var maxima = vm.Conversaciones.Count == 0 ? 0 : vm.Conversaciones.Max(c => c.Numero);
+        vm.Conversacion = string.Equals(conv, "nueva", StringComparison.OrdinalIgnoreCase)
+            ? maxima + 1
+            : (int.TryParse(conv, out var n) && n > 0 ? n : Math.Max(1, maxima));
+
+        vm.Hilo = await TurnosAsync(caseCode, conversacion: vm.Conversacion);
 
         return View(vm);
     }
@@ -238,7 +279,8 @@ public sealed class ChatClienteController : Controller
     // POST /Studio/ChatCliente/Preguntar
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Preguntar(Guid caseCode, string pregunta, string? plan = null)
+    public async Task<IActionResult> Preguntar(Guid caseCode, string pregunta,
+                                              string? plan = null, int conv = 0)
     {
         if (caseCode == Guid.Empty || string.IsNullOrWhiteSpace(pregunta))
             return Json(new { ok = false, texto = "No entendí la pregunta. ¿Puede repetirla?" });
@@ -264,7 +306,9 @@ public sealed class ChatClienteController : Controller
         var exec = new StepExecution
         {
             CaseCode       = caseCode,
-            StepOrder      = 0,
+            // El numero de conversacion. Si no llega uno, va a la 1: mejor
+            // meterlo en la primera que crear una suelta por cada pregunta.
+            StepOrder      = conv > 0 ? conv : 1,
             ModelCode      = agent.Code,
             RequestContent = pregunta,
             Status         = "Running",
@@ -304,7 +348,9 @@ public sealed class ChatClienteController : Controller
         // pregunta llegaba sola. Se le pasan los ultimos turnos como
         // transcripcion -AiCompletionRequest solo admite un mensaje- y con tope,
         // porque un hilo largo acaba pesando mas que los datos.
-        var previos = await TurnosAsync(caseCode, 6);
+        // La memoria es de ESTA conversacion. Sin acotar, una conversacion nueva
+        // empezaria con el historial de la anterior dentro y no seria nueva.
+        var previos = await TurnosAsync(caseCode, 6, conv > 0 ? conv : 1);
         if (previos.Count > 0)
         {
             // Tope DURO al historial. El extractor de arriba ya evita el
@@ -432,13 +478,18 @@ public sealed class ChatClienteController : Controller
     /// Solo los que terminaron bien: un turno que fallo no es memoria, es ruido,
     /// y repetirle al modelo su propio mensaje de error no ayuda a nadie.
     /// </summary>
-    private async Task<List<TurnoChatVm>> TurnosAsync(Guid caseCode, int? ultimos = null)
+    private async Task<List<TurnoChatVm>> TurnosAsync(Guid caseCode, int? ultimos = null,
+                                                     int conversacion = 0)
     {
+        // El hilo es de UNA conversacion, no de todo el caso. Importa tambien
+        // para la memoria: si no se filtra, una conversacion nueva arrastraria
+        // el historial de la anterior y no seria nueva de nada.
         var q = _db.StepExecution.AsNoTracking()
             .Where(x => x.CaseCode == caseCode
                      && x.ModelCode == AgenteChat
                      && x.Status == "Completed"
-                     && x.ResponseContent != null)
+                     && x.ResponseContent != null
+                     && (conversacion <= 0 || x.StepOrder == conversacion))
             .OrderByDescending(x => x.ExecutionId);
 
         var filas = ultimos.HasValue

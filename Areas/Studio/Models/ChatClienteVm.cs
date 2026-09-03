@@ -50,6 +50,27 @@ public sealed class ChatClienteVm
     /// dejó. Sale de StepExecution: no hay tabla de conversaciones.
     /// </summary>
     public List<TurnoChatVm> Hilo { get; set; } = new();
+
+    /// <summary>
+    /// En que conversacion se esta. Se guarda en StepExecution.StepOrder, que
+    /// para este agente estaba SIEMPRE a 0: es una columna que ya existe y que
+    /// nadie usaba, asi que no hace falta migrar nada para tener conversaciones.
+    /// </summary>
+    public int Conversacion { get; set; } = 1;
+
+    /// <summary>Las anteriores, para poder volver a abrirlas.</summary>
+    public List<ConversacionVm> Conversaciones { get; set; } = new();
+}
+
+/// <summary>Una conversacion cerrada, en el listado de anteriores.</summary>
+public sealed class ConversacionVm
+{
+    public int Numero { get; set; }
+    public DateTime? Cuando { get; set; }
+    public int Turnos { get; set; }
+
+    /// <summary>La primera pregunta: identifica la conversacion mejor que su numero.</summary>
+    public string? Sobre { get; set; }
 }
 
 /// <summary>Una pregunta y su respuesta.</summary>

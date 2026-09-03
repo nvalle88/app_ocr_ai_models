@@ -195,6 +195,24 @@
     .cc-msg .md-tabla caption { caption-side:top; text-align:left; padding:0 0 6px;
                                 font-size:11.5px; color:#6b7684; }
 
+    /* ── Dos tablas relacionadas, lado a lado ─────────────────────────────
+       Detalle y resumen juntos se comparan; uno debajo del otro obligan a
+       recordar el primero mientras se lee el segundo.
+
+       Va por CLASES y no por style= en linea: el filtro de etiquetas quita
+       cualquier atributo que no sea una clase conocida, y es a proposito —dejar
+       que el modelo escriba CSS libre en lo que ve el afiliado es abrirle la
+       maqueta entera—. Con esto consigue el mismo reparto sin poder inventarse
+       nada. */
+    .cc-msg .md-columnas { display:flex; flex-wrap:wrap; gap:14px; margin:10px 0; }
+    .cc-msg .md-columna  { flex:1 1 46%; min-width:250px; }
+    .cc-msg .md-columna .md-h { margin-top:0; }
+    .cc-msg .md-columna .md-tabla { font-size:12.5px; }
+    .cc-msg .md-columna .md-tabla th,
+    .cc-msg .md-columna .md-tabla td { padding:7px 9px; }
+    /* En movil no hay dos columnas que valgan: apiladas se leen, encogidas no. */
+    @@media (max-width: 620px) { .cc-msg .md-columna { flex:1 1 100%; } }
+
     /* .cc-msg lleva white-space:pre-wrap para el texto suelto, donde los saltos
        del modelo SI son parte del mensaje. Pero dentro de HTML estructurado eso
        convierte la sangria del codigo en espacios de verdad: un parrafo
@@ -212,6 +230,40 @@
                 cursor:pointer; padding:0; }
     .cc-bajar:hover { color:#002F87; text-decoration:underline; }
     .cc-cab-fila { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+
+    /* Barra de la conversacion: empezar una nueva y volver a las de antes. */
+    .cc-conv { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:9px; }
+    .cc-conv a, .cc-conv button {
+        display:inline-flex; align-items:center; gap:6px;
+        border:1px solid #d5dbe6; background:#fff; border-radius:7px;
+        padding:5px 11px; font-size:12.5px; color:#3d4757; cursor:pointer;
+        text-decoration:none; }
+    .cc-conv a:hover, .cc-conv button:hover { border-color:#002F87; color:#002F87; }
+    .cc-conv .nueva { background:#002F87; border-color:#002F87; color:#fff; font-weight:600; }
+    .cc-conv .nueva:hover { background:#00224f; color:#fff; }
+    .cc-conv .cual { margin-left:auto; font-size:11.5px; color:#8792a2; }
+
+    .cc-antes { margin-top:8px; }
+    .cc-antes summary { font-size:11.5px; color:#8792a2; cursor:pointer; list-style:none; }
+    .cc-antes summary::-webkit-details-marker { display:none; }
+    .cc-antes summary:hover { color:#002F87; }
+    .cc-antes ol { list-style:none; margin:8px 0 0; padding:0;
+                   border-left:2px solid #e8ecf3; }
+    .cc-antes li { padding:4px 0 4px 11px; font-size:12.5px; }
+    .cc-antes li a { color:#3d4757; text-decoration:none; }
+    .cc-antes li a:hover { color:#002F87; text-decoration:underline; }
+    .cc-antes li.actual { color:#002F87; font-weight:600; }
+    .cc-antes .meta { color:#98a2b3; font-size:11px; margin-left:6px; }
+
+    /* Al imprimir -que es como se saca el PDF- sobra todo lo que no es la
+       conversacion: cabeceras, el campo de escribir y los botones. */
+    @@media print {
+        body * { visibility:hidden; }
+        .cc-hilo, .cc-hilo * { visibility:visible; }
+        .cc-hilo { position:absolute; left:0; top:0; width:100%; overflow:visible; }
+        .cc-msg { max-width:100% !important; break-inside:avoid; }
+        .cc-espera, .cc-consulto { display:none !important; }
+    }
 
     /* ── El visor de la carta ─────────────────────────────────────────────
        La carta se VE aqui, al lado de la conversacion. Bajarla sacaba al
@@ -431,11 +483,50 @@ else
             </details>
         }
         </div>
-        <button type="button" class="cc-bajar" id="ccBajar" title="Guardar esta consulta">
-            <i class="fa fa-download"></i> Descargar la consulta
+        <button type="button" class="cc-bajar" id="ccBajar" title="Guardar en texto">
+            <i class="fa fa-download"></i> Texto
+        </button>
+        <button type="button" class="cc-bajar" id="ccPdf" title="Guardar en PDF">
+            <i class="fa fa-file-pdf-o"></i> PDF
         </button>
       </div>
     </div>
+
+    @* Empezar de cero, o volver a una de antes. Antes era UN hilo infinito por
+       afiliado: al atenderle otra vez aparecia debajo la charla del mes pasado. *@
+    <div class="cc-conv">
+        <a class="nueva" asp-action="Index" asp-route-caseCode="@Model.CaseCode"
+           asp-route-conv="nueva" asp-route-plan="@Model.PlanConsultado">
+            <i class="fa fa-plus"></i> Nueva consulta
+        </a>
+        <span class="cual">Consulta n.º @Model.Conversacion</span>
+    </div>
+
+    @if (Model.Conversaciones.Count > 0)
+    {
+        <details class="cc-antes">
+            <summary><i class="fa fa-history"></i> Consultas anteriores (@Model.Conversaciones.Count)</summary>
+            <ol>
+                @foreach (var c in Model.Conversaciones)
+                {
+                    <li class="@(c.Numero == Model.Conversacion ? "actual" : "")">
+                        @if (c.Numero == Model.Conversacion)
+                        {
+                            <text>N.º @c.Numero — está viéndola</text>
+                        }
+                        else
+                        {
+                            <a asp-action="Index" asp-route-caseCode="@Model.CaseCode"
+                               asp-route-conv="@c.Numero" asp-route-plan="@Model.PlanConsultado">
+                                N.º @c.Numero@(string.IsNullOrWhiteSpace(c.Sobre) ? "" : " — " + (c.Sobre!.Length > 58 ? c.Sobre[..58] + "…" : c.Sobre))
+                            </a>
+                        }
+                        <span class="meta">@c.Turnos @(c.Turnos == 1 ? "pregunta" : "preguntas") · @c.Cuando?.ToString("dd/MM/yyyy")</span>
+                    </li>
+                }
+            </ol>
+        </details>
+    }
 
     <div class="cc-hilo" id="ccHilo">
         @if (Model.Hilo.Count == 0)
@@ -682,6 +773,11 @@ else
        El afiliado quiere poder guardarla o adjuntarla a un correo. Va en texto
        plano y con fecha: es lo que se abre en cualquier sitio y lo que se puede
        reenviar sin depender de esta pantalla. */
+    /* PDF: sin libreria en el servidor, se usa la impresion del navegador, que
+       ya sabe hacer "Guardar como PDF". El @@media print de arriba deja solo la
+       conversacion. Es una dependencia menos que mantener y sale igual. */
+    document.getElementById('ccPdf').addEventListener('click', function () { window.print(); });
+
     document.getElementById('ccBajar').addEventListener('click', function () {
         var lineas = ['Consulta sobre su cobertura - Salud S.A.',
                       '@Model.NombrePaciente' + '  ·  @Model.NombrePlan',
@@ -741,6 +837,9 @@ else
             fd.append('caseCode', caso);
             fd.append('pregunta', q);
             fd.append('plan', '@Model.PlanConsultado');
+            // La conversacion en la que se pregunta: sin esto todo caeria en la
+            // misma y "nueva consulta" no serviria de nada.
+            fd.append('conv', '@Model.Conversacion');
             fd.append('__RequestVerificationToken', token());
 
             var resp = await fetch(url, {
