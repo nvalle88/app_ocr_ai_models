@@ -28,6 +28,19 @@
        porque la identidad no puede salir del texto que genera un modelo. */
     var caso = '';
 
+    /* ── Ver en el mapa ───────────────────────────────────────────────────
+       La direccion de un prestador no dice si queda cerca. El mapa si.
+
+       Es el renderizador quien lo pone, NO el modelo: asi no puede escribir a
+       donde apunta el enlace ni colar otra cosa. Solo se activa dentro de una
+       celda de tabla, para no llenar de mapas un parrafo. */
+    function enlaceMapa(direccion) {
+        var d = (direccion || '').trim();
+        if (d.length < 8) return '';                 // "Quito" no es una direccion
+        return ' <a class="md-mapa" href="#" data-mapa="' + esc(d) + '"'
+             + ' title="Ver en el mapa"><i class="fa fa-map-marker"></i> mapa</a>';
+    }
+
     function carta(todo, texto, ruta) {
         if (!caso) return texto;                 // sin caso no hay enlace que funcione
         return '<a href="' + ruta + '&amp;caseCode=' + encodeURIComponent(caso) + '"'
@@ -130,9 +143,16 @@
                             // puede comparar de un vistazo.
                             var num = /^[$\s]*-?[\d.,]+\s*%?$/.test(c);
                             var m = marca(c);
+                            /* Una celda que es una direccion se lleva su mapa.
+                               Se reconoce por como escriben las direcciones de
+                               aqui: "Av. 9 de Octubre 123 y Malecon". Numeros y
+                               estados quedan fuera por el orden de las guardas. */
+                            var esDir = !num && !m && c.length > 12
+                                        && /(\bAv\.?\b|\bCalle\b|\bTorre\b|\bEdif|\bHospital\b|\bCentro\b|\bN\d|\bOf\.|,)/i.test(c);
                             if (m) return '<td>' + m + '</td>';
                             return '<td' + (num ? ' class="num"' : '')
-                                 + '>' + enLinea(c) + '</td>';
+                                 + '>' + enLinea(c)
+                                 + (esDir ? enlaceMapa(c) : '') + '</td>';
                         }).join('') + '</tr>';
                       }).join('')
                     + '</tbody></table></div>');

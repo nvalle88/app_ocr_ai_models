@@ -45,36 +45,68 @@
     .st-afiliados .num { text-align:right; font-variant-numeric:tabular-nums;
                          white-space:nowrap; }
     .st-afiliados .flojo { color:#5B6672; font-size:12px; }
+
+    /* Nada de partir en varias lineas: "Ana Maria Cordero Zapata" salia en
+       CUATRO y el codigo de plan en CINCO, y una fila de cuatro lineas no se
+       recorre con la vista. Si no cabe, la tabla se desliza —que es lo que hace
+       una tabla— en vez de descuartizar cada celda. */
+    .st-afiliados td, .st-afiliados th { white-space:nowrap; }
+    .st-afiliados .nombre { max-width:320px; overflow:hidden; text-overflow:ellipsis; }
     .st-afiliados td:last-child { text-align:right; white-space:nowrap; }
 
-    .cc-caja { display:flex; flex-direction:column; height:@(embed ? "calc(100vh - 40px)" : "72vh");
-               max-width:860px; margin:0 auto; background:#fff;
-               border:1px solid #dde3ec; border-radius:12px; overflow:hidden; }
+    .cc-caja { display:flex; flex-direction:column; height:@(embed ? "calc(100vh - 40px)" : "76vh");
+               max-width:960px; margin:0 auto; background:#fff;
+               border:1px solid #E1E7F0; border-radius:14px; overflow:hidden;
+               box-shadow:0 1px 3px rgba(16,24,40,.06), 0 8px 24px rgba(0,47,135,.05); }
 
-    .cc-cab { padding:14px 18px; border-bottom:1px solid #eef1f6; background:#fafbfd; }
-    .cc-cab h2 { margin:0 0 3px; font-size:15.5px; font-weight:700; color:#002F87; }
-    .cc-cab p  { margin:0; font-size:12.5px; color:#6b7684; }
+    /* ── El carnet ────────────────────────────────────────────────────────
+       Lo que el afiliado lleva en la cartera. Es la pieza donde se gasta toda
+       la audacia de la pantalla: campo azul solido, etiquetas diminutas en
+       versalita y el dato en grande. Lo demas se queda callado a proposito. */
+    .cc-cab { padding:16px 20px 14px; background:#002F87; color:#fff;
+              background-image:linear-gradient(180deg,#00379E 0%,#002F87 100%); }
+    .cc-cab h2 { margin:0; font-size:15px; font-weight:700; color:#fff;
+                 letter-spacing:-.1px; }
+    .cc-cab p  { margin:2px 0 0; font-size:12.5px; color:#BBCBEA; }
 
-    .cc-hilo { flex:1 1 auto; overflow-y:auto; padding:18px; display:flex;
-               flex-direction:column; gap:14px; }
+    /* Los datos del contrato, como en una tarjeta: etiqueta arriba, dato
+       debajo. En una linea corrida -"IND · Elite 5 · contrato 4102902"- hay que
+       leerla entera para encontrar el numero. */
+    .cc-datos { display:flex; flex-wrap:wrap; gap:0 26px; margin-top:12px; }
+    .cc-dato  { min-width:0; }
+    .cc-dato .et { display:block; font-size:9.5px; font-weight:700;
+                   letter-spacing:.9px; text-transform:uppercase; color:#8FAAD9; }
+    .cc-dato .va { display:block; font-size:14px; font-weight:700; color:#fff;
+                   font-variant-numeric:tabular-nums; margin-top:1px; }
+    .cc-dato.ancho .va { font-weight:400; }
 
-    .cc-msg { max-width:78%; padding:11px 14px; border-radius:12px; font-size:14px;
-              line-height:1.55; white-space:pre-wrap; word-wrap:break-word; }
-    .cc-msg.es-yo   { align-self:flex-end; background:#002F87; color:#fff; border-bottom-right-radius:3px; }
+    .cc-hilo { flex:1 1 auto; overflow-y:auto; padding:20px 22px; display:flex;
+               flex-direction:column; gap:20px; background:#FBFCFE; }
+
+    .cc-msg { font-size:14px; line-height:1.6; white-space:pre-wrap; word-wrap:break-word; }
+
+    /* La PREGUNTA es del afiliado: corta, a la derecha, en el azul de la casa. */
+    .cc-msg.es-yo { align-self:flex-end; max-width:72%; padding:10px 15px;
+                    border-radius:14px 14px 4px 14px; background:#002F87; color:#fff; }
     /* El globo de la respuesta va BLANCO, no gris.
        Con una tabla dentro, un globo gris sobre fondo gris deja todo del mismo
        color: la tabla no se despega del globo ni el globo de la pagina, y se lee
        como una mancha. En blanco, cada cosa tiene su plano. */
-    .cc-msg.es-ella { align-self:flex-start; background:#fff; color:#1f2733;
-                      border:1px solid #e4e9f2; border-bottom-left-radius:3px;
-                      box-shadow:0 1px 2px rgba(16,24,40,.04); }
+    /* La RESPUESTA no es una burbuja: es una consulta resuelta. Ocupa el ancho
+       y se ancla con una regla azul, como una anotacion sobre el expediente. De
+       paso deja de estrangular las tablas, que era el problema de verdad. */
+    .cc-msg.es-ella { align-self:stretch; max-width:100%; color:#1F2A33;
+                      background:#fff; border:0; border-left:3px solid #002F87;
+                      border-radius:0 10px 10px 0; padding:4px 0 6px 16px; }
 
     /* Una respuesta con TABLA necesita ancho. El 78% esta pensado para texto
        -una linea larga cansa de leer-, pero a una tabla de cinco columnas la
        estrangula: cada celda parte en dos y se pierde justo la comparacion que
        la tabla venia a dar. Solo se ensancha cuando hay tabla. */
-    .cc-msg.es-ella:has(.md-tabla) { max-width:97%; }
-    .cc-msg.es-mal  { align-self:flex-start; background:#fff4f2; color:#b42318; border:1px solid #f3d3cd; }
+    /* (El ensanchado condicional se cayo: la respuesta ya ocupa el ancho.) */
+    .cc-msg.es-mal  { align-self:flex-start; max-width:78%; padding:11px 14px;
+                      border-radius:12px; background:#FDECEA; color:#D42118;
+                      border:1px solid #F3D3CD; }
 
     /* Lo que consultó para contestar. Que se vea el trabajo hace la respuesta
        creíble, pero va discreto: es respaldo, no el mensaje. */
@@ -194,6 +226,13 @@
        una columna de precios se lee como gratis. */
     .cc-msg .md-tabla .md-nada { color:#98a2b3; font-style:italic; font-weight:400;
                                  white-space:nowrap; }
+
+    /* El mapa junto a la direccion: discreto, que la direccion sigue siendo el
+       dato y el mapa es la ayuda. */
+    .cc-msg .md-mapa { display:inline-block; margin-left:6px; white-space:nowrap;
+                       font-size:11.5px; font-weight:600; color:#2E6DB4;
+                       text-decoration:none; }
+    .cc-msg .md-mapa:hover { color:#002F87; text-decoration:underline; }
 
     /* ── Distintivos ──────────────────────────────────────────────────────
        Para lo que se responde de un vistazo: si el prestador esta en su red,
@@ -420,6 +459,9 @@
         {
         <div class="st-card">
             <div class="st-card-cuerpo" style="padding:0">
+                @* La tabla se desliza si no cabe: sin esto, en una pantalla
+                   estrecha el boton Consultar se queda cortado fuera. *@
+                <div style="overflow-x:auto">
                 <table class="st-afiliados">
                     @* Producto y región van SIEMPRE: una persona con dos
                        contratos sale dos veces, y sin ellos las dos filas son
@@ -460,6 +502,7 @@
                     }
                     </tbody>
                 </table>
+                </div>
             </div>
         </div>
         }
@@ -471,33 +514,38 @@ else
     <div class="cc-cab">
       <div class="cc-cab-fila">
         <div>
-        <h2><i class="fa fa-comments"></i> Consulta sobre su cobertura</h2>
-        <p>
-            @Model.NombrePaciente
-            @* El PRODUCTO es lo que decide de qué contrato se le habla: un IND y
-               un TRK no tienen ni las mismas coberturas ni el mismo anexo. Sin
-               verlo, quien atiende no sabe sobre qué está respondiendo. *@
+        <h2>@Model.NombrePaciente</h2>
+        <p>Consulta sobre su cobertura</p>
+
+        @* Los datos del contrato como en el carnet: etiqueta y dato. En una
+           linea corrida hay que leerla entera para encontrar el numero, y el
+           numero es lo que se busca. *@
+        <div class="cc-datos">
+            @if (!string.IsNullOrWhiteSpace(Model.NumeroContrato))
+            {
+                <div class="cc-dato">
+                    <span class="et">Contrato</span>
+                    <span class="va">@Model.NumeroContrato</span>
+                </div>
+            }
+            @* El PRODUCTO decide de que contrato se le habla: un IND y un TRK no
+               tienen ni las mismas coberturas ni el mismo anexo. *@
             @if (!string.IsNullOrWhiteSpace(Model.CodigoProducto))
             {
-                <text> · <strong>@Model.CodigoProducto</strong></text>
+                <div class="cc-dato">
+                    <span class="et">Producto</span>
+                    <span class="va">@Model.CodigoProducto</span>
+                </div>
             }
-            @if (!string.IsNullOrWhiteSpace(Model.NombrePlan))
+            @if (!string.IsNullOrWhiteSpace(Model.NombrePlan) || !string.IsNullOrWhiteSpace(Model.CodigoPlan))
             {
-                <text> · @Model.NombrePlan</text>
-                @if (!string.IsNullOrWhiteSpace(Model.CodigoPlan))
-                {
-                    <text> (@Model.CodigoPlan@(Model.VersionPlan.HasValue ? $" v{Model.VersionPlan}" : ""))</text>
-                }
+                <div class="cc-dato ancho">
+                    <span class="et">Plan</span>
+                    <span class="va">@(string.IsNullOrWhiteSpace(Model.NombrePlan) ? Model.CodigoPlan : Model.NombrePlan)@(Model.VersionPlan.HasValue ? $" · v{Model.VersionPlan}" : "")</span>
+                </div>
             }
-            @* Es el NUMERO de contrato, no el codigo. Verificado contra
-               ContratoJson: las 30 filas coinciden con $.Numero y ninguna con
-               $.Codigo -que para este afiliado es 1642570, otro numero-. La
-               etiqueta lo dice para que no haya que volver a comprobarlo. *@
-            @if (!string.IsNullOrWhiteSpace(Model.NumeroContrato)) { <text> · contrato n.º @Model.NumeroContrato</text> }
-        </p>
+        </div>
 
-        @* Consultar sobre OTRO plan, para comparar. Va con aviso permanente: una
-           respuesta de otro plan que parezca la suya es peor que no tenerla. *@
         @if (!string.IsNullOrWhiteSpace(Model.PlanConsultado))
         {
             <div class="cc-otroplan">
@@ -659,6 +707,7 @@ else
         visorTit.textContent = numero ? ('Carta de la autorización ' + numero)
                                       : 'Carta de autorización';
         visorBajar.href = href + '&descargar=1';
+        visorBajar.innerHTML = '<i class="fa fa-download"></i> Descargar';
         esperando.classList.remove('oculto');
         // El visor del navegador abre con el panel de miniaturas y al 40%: en
         // 620 px la carta se queda ilegible, que es justo lo que se venia a
@@ -683,7 +732,28 @@ else
         if (marco.src && marco.src !== 'about:blank') esperando.classList.add('oculto');
     });
 
+    /* Abrir el mapa en el MISMO visor de la carta: es el mismo gesto -mirar algo
+       al lado sin perder la conversacion- y no hay razon para dos paneles. */
+    function abrirMapa(direccion) {
+        visorTit.textContent = 'Cómo llegar';
+        visorBajar.href = 'https://www.google.com/maps/search/?api=1&query='
+                        + encodeURIComponent(direccion + ', Ecuador');
+        visorBajar.innerHTML = '<i class="fa fa-external-link"></i> Abrir en Maps';
+        esperando.classList.remove('oculto');
+        marco.src = 'https://maps.google.com/maps?output=embed&z=16&q='
+                  + encodeURIComponent(direccion + ', Ecuador');
+        visor.classList.add('abierto');
+        visor.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('cc-con-visor');
+    }
+
     hilo.addEventListener('click', function (ev) {
+        var mapa = ev.target.closest ? ev.target.closest('a.md-mapa') : null;
+        if (mapa) {
+            ev.preventDefault();
+            abrirMapa(mapa.getAttribute('data-mapa') || '');
+            return;
+        }
         var a = ev.target.closest ? ev.target.closest('a') : null;
         if (!a || !a.getAttribute('href')) return;
         var href = a.getAttribute('href');
