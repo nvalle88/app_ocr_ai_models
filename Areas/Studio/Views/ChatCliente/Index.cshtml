@@ -32,7 +32,19 @@
     .cc-msg { max-width:78%; padding:11px 14px; border-radius:12px; font-size:14px;
               line-height:1.55; white-space:pre-wrap; word-wrap:break-word; }
     .cc-msg.es-yo   { align-self:flex-end; background:#002F87; color:#fff; border-bottom-right-radius:3px; }
-    .cc-msg.es-ella { align-self:flex-start; background:#f1f4f9; color:#1f2733; border-bottom-left-radius:3px; }
+    /* El globo de la respuesta va BLANCO, no gris.
+       Con una tabla dentro, un globo gris sobre fondo gris deja todo del mismo
+       color: la tabla no se despega del globo ni el globo de la pagina, y se lee
+       como una mancha. En blanco, cada cosa tiene su plano. */
+    .cc-msg.es-ella { align-self:flex-start; background:#fff; color:#1f2733;
+                      border:1px solid #e4e9f2; border-bottom-left-radius:3px;
+                      box-shadow:0 1px 2px rgba(16,24,40,.04); }
+
+    /* Una respuesta con TABLA necesita ancho. El 78% esta pensado para texto
+       -una linea larga cansa de leer-, pero a una tabla de cinco columnas la
+       estrangula: cada celda parte en dos y se pierde justo la comparacion que
+       la tabla venia a dar. Solo se ensancha cuando hay tabla. */
+    .cc-msg.es-ella:has(.md-tabla) { max-width:97%; }
     .cc-msg.es-mal  { align-self:flex-start; background:#fff4f2; color:#b42318; border:1px solid #f3d3cd; }
 
     /* Lo que consultó para contestar. Que se vea el trabajo hace la respuesta
@@ -109,18 +121,29 @@
     .cc-msg.es-yo strong, .cc-msg.es-yo code { color:#fff; background:rgba(255,255,255,.18); }
 
     /* La cita es el texto literal del contrato: se distingue a propósito. */
-    .cc-msg .md-cita  { margin:8px 0; padding:8px 12px; border-left:3px solid #002F87;
-                        background:#fff; font-size:13px; color:#3d4757; font-style:italic; }
+    .cc-msg .md-cita  { margin:10px 0; padding:10px 14px; border-left:3px solid #002F87;
+                        background:#f4f7fd; border-radius:0 8px 8px 0;
+                        font-size:13px; color:#33415c; font-style:normal; }
 
     .cc-msg .md-tabla-wrap { overflow-x:auto; margin:10px 0; }
-    .cc-msg .md-tabla { width:100%; border-collapse:collapse; font-size:13px; background:#fff;
-                        border:1px solid #dde3ec; border-radius:8px; overflow:hidden; }
-    .cc-msg .md-tabla th { background:#eaf0fb; color:#002F87; font-weight:700; font-size:11.5px;
-                           text-transform:uppercase; letter-spacing:.3px;
-                           padding:8px 10px; text-align:left; white-space:nowrap; }
-    .cc-msg .md-tabla td { padding:8px 10px; border-top:1px solid #eef1f6; }
+    .cc-msg .md-tabla { width:100%; border-collapse:separate; border-spacing:0;
+                        font-size:13px; background:#fff;
+                        border:1px solid #dde3ec; border-radius:9px; overflow:hidden; }
+    /* Cabecera con peso: es lo que ancla la lectura de una tabla. Antes era un
+       azul palido que se confundia con las filas y la tabla parecia un bloque
+       unico de un solo color. */
+    .cc-msg .md-tabla th { background:#002F87; color:#fff; font-weight:700; font-size:11px;
+                           text-transform:uppercase; letter-spacing:.4px;
+                           padding:9px 11px; text-align:left; white-space:nowrap; }
+    .cc-msg .md-tabla td { padding:9px 11px; border-top:1px solid #edf0f6;
+                           vertical-align:top; line-height:1.45; }
+    .cc-msg .md-tabla tbody tr:first-child td { border-top:0; }
+    /* La fila bajo el cursor: en una tabla de varias columnas, saber en cual
+       esta uno evita leer el precio de la fila de al lado. */
+    .cc-msg .md-tabla tbody tr:hover td { background:#f4f8ff; }
     .cc-msg .md-tabla td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
-    .cc-msg .md-tabla tbody tr:nth-child(even) td { background:#fafbfd; }
+    /* Sin zebra: con cabecera solida, separadores y hover, las bandas solo
+       añaden un tercer gris. */
 
     /* ── Que se lea una tabla de precios ──────────────────────────────────
        Los importes en columna solo se comparan de un vistazo si van alineados
@@ -133,7 +156,8 @@
     .cc-msg .md-tabla .md-plata { font-weight:700; color:#00224f; }
     /* Un dato que NO consta se dice, no se deja en blanco: una celda vacia en
        una columna de precios se lee como gratis. */
-    .cc-msg .md-tabla .md-nada { color:#98a2b3; font-style:italic; font-weight:400; }
+    .cc-msg .md-tabla .md-nada { color:#98a2b3; font-style:italic; font-weight:400;
+                                 white-space:nowrap; }
 
     /* ── Distintivos ──────────────────────────────────────────────────────
        Para lo que se responde de un vistazo: si el prestador esta en su red,

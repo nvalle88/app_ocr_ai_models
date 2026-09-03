@@ -67,6 +67,34 @@
                      function (t, antes, ruta) { return antes + carta(t, 'Ver la carta', ruta); });
     }
 
+    /* ── Distintivos en las celdas de estado ──────────────────────────────
+       Una tabla donde "En su red" y "Fuera de su red" son texto plano se lee
+       toda igual: hay que leer celda por celda para encontrar la que importa.
+
+       No es adivinar: estas frases EXACTAS son las que el prompt le manda
+       escribir al agente, asi que aqui solo se les pone el color que les
+       corresponde. Lo que no esta en la lista se queda como texto —una tabla
+       llena de colores inventados es peor que una sin ninguno—. */
+    var ESTADOS = {
+        'en su red':       'ok',    'en red':          'ok',
+        'fuera de su red': 'aviso', 'fuera de red':    'aviso',
+        'autorizada':      'ok',    'no autorizada':   'mal',
+        'cubierto':        'ok',    'no cubierto':     'mal',
+        'vigente':         'ok',    'no vigente':      'aviso',
+        'en tramite':      'aviso', 'en trámite':      'aviso',
+        'no consta':       'nada'
+    };
+
+    function marca(txt) {
+        var k = txt.trim().toLowerCase().replace(/\s+/g, ' ');
+        var tono = ESTADOS[k];
+        if (!tono) return null;
+        // "no consta" no es un estado bueno ni malo: es la ausencia del dato, y
+        // se dice en gris para que no compita con lo que si consta.
+        if (tono === 'nada') return '<span class="md-nada">' + esc(txt.trim()) + '</span>';
+        return '<span class="md-marca ' + tono + '">' + esc(txt.trim()) + '</span>';
+    }
+
     function esSeparadorDeTabla(l) {
         return /^\s*\|?[\s:-]*-[\s|:-]*\|?\s*$/.test(l) && l.indexOf('-') >= 0;
     }
@@ -101,7 +129,10 @@
                             // derecha: una columna de importes desalineada no se
                             // puede comparar de un vistazo.
                             var num = /^[$\s]*-?[\d.,]+\s*%?$/.test(c);
-                            return '<td' + (num ? ' class="num"' : '') + '>' + enLinea(c) + '</td>';
+                            var m = marca(c);
+                            if (m) return '<td>' + m + '</td>';
+                            return '<td' + (num ? ' class="num"' : '')
+                                 + '>' + enLinea(c) + '</td>';
                         }).join('') + '</tr>';
                       }).join('')
                     + '</tbody></table></div>');
@@ -112,11 +143,16 @@
             var h = /^(#{1,4})\s+(.*)$/.exec(l);
             if (h) { out.push('<h4 class="md-h">' + enLinea(h[2]) + '</h4>'); i++; continue; }
 
-            /* Cita: el texto literal del contrato */
-            if (/^>\s?/.test(l)) {
+            /* Cita: el texto literal del contrato.
+               OJO con el orden: render() empieza por esc(texto), que convierte
+               el > en &gt;. Buscar /^>/ despues de escapar NO acierta nunca, y
+               la cita salia impresa tal cual -"> El periodo para presentar..."-
+               con el signo delante. Se busca la forma ESCAPADA, que es la que
+               existe a estas alturas. */
+            if (/^&gt;\s?/.test(l)) {
                 var cita = [];
-                while (i < lineas.length && /^>\s?/.test(lineas[i])) {
-                    cita.push(enLinea(lineas[i].replace(/^>\s?/, ''))); i++;
+                while (i < lineas.length && /^&gt;\s?/.test(lineas[i])) {
+                    cita.push(enLinea(lineas[i].replace(/^&gt;\s?/, ''))); i++;
                 }
                 out.push('<blockquote class="md-cita">' + cita.join('<br>') + '</blockquote>');
                 continue;
