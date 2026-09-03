@@ -724,7 +724,15 @@ public sealed class ChatClienteController : Controller
             .Select(e => new { e.ExecutionId, e.Status })
             .FirstOrDefaultAsync(ct);
 
-        if (exec == null) return Json(new { ok = true, pasos = Array.Empty<PasoDelAgenteVm>() });
+        // Solo se informa de una ejecucion EN CURSO.
+        //
+        // Antes se devolvia la mas reciente sin mirar su estado, y entre que el
+        // afiliado manda la pregunta y el servidor crea su fila, la mas reciente
+        // seguia siendo la ANTERIOR: el panel arrancaba enseñando los pasos de
+        // la consulta pasada como si fueran de esta. Parecia inventado y no lo
+        // era, pero daba igual: enseñaba algo que no estaba pasando.
+        if (exec == null || exec.Status != "Running")
+            return Json(new { ok = true, pasos = Array.Empty<PasoDelAgenteVm>() });
 
         var filas = await _db.ToolInvocation.AsNoTracking()
             .Where(ti => ti.ExecutionId == exec.ExecutionId)
