@@ -89,6 +89,15 @@ public static class NarradorDeTools
         ["buscar_medicina_prestador_vademecum"] = "Buscando el medicamento en el vademécum",
         ["validar_medicina_vademecum"]         = "Comprobando el medicamento",
         ["obtener_documentos_sobre_armonix"]   = "Recogiendo los documentos de su solicitud",
+
+        // Las que mas usa el chat del afiliado, y que estaban SIN frase: las
+        // tres lineas que veia Nestor decian "Consultando sus datos" porque
+        // caian aqui al generico. Una lista de tres lineas identicas no informa
+        // de nada, y encima tapa que cada una hizo algo distinto.
+        ["condiciones_del_plan"]               = "Leyendo las condiciones de su contrato",
+        ["buscar_prestador_convenio"]          = "Buscando prestadores con convenio",
+        ["tarifario_prestador"]                = "Consultando el precio negociado",
+        ["consultar_autorizaciones"]           = "Buscando sus autorizaciones",
     };
 
     /// <summary>
@@ -178,6 +187,47 @@ public static class NarradorDeTools
             case "codigo_liquidacion_y_cobertura":
             case "cobertura_beneficio_plan":
                 return Cobertura(raiz);
+
+            // Decir cuantos salieron, que es lo unico verdadero y ademas util:
+            // "Sin resultados" a secas no distingue entre no haber encontrado
+            // nada y no haber buscado bien.
+            case "buscar_prestador_convenio":
+            {
+                var filas = Filas(raiz);
+                if (filas < 0) return (null, "ok");
+                return filas == 0
+                    ? ("Ninguno con esos datos", "atencion")
+                    : ($"{filas} con convenio", "ok");
+            }
+
+            case "tarifario_prestador":
+            {
+                var filas = Filas(raiz);
+                if (filas < 0) return (null, "ok");
+                // Solo 213 convenios tienen tarifario: que no haya precio es lo
+                // normal, no una averia. Se dice sin alarmar.
+                return filas == 0
+                    ? ("No consta el precio", "atencion")
+                    : ($"{filas} precios", "ok");
+            }
+
+            case "consultar_autorizaciones":
+            {
+                var filas = Filas(raiz);
+                if (filas < 0) return (null, "ok");
+                return filas == 0
+                    ? ("No consta ninguna", "atencion")
+                    : ($"{filas} encontradas", "ok");
+            }
+
+            case "condiciones_del_plan":
+            {
+                var filas = Filas(raiz);
+                if (filas < 0) return (null, "ok");
+                return filas == 0
+                    ? ("No consta esa condicion", "atencion")
+                    : ("Encontrada en su contrato", "ok");
+            }
 
             default:
                 // Sin regla propia: se dice si trajo algo, que es verdad y no
