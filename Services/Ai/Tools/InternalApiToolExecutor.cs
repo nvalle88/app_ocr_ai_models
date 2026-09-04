@@ -136,7 +136,106 @@ public sealed class InternalApiToolExecutor : IToolExecutor
     }
 
     /// <inheritdoc />
+    /// <summary>
+    /// Ejecuta la tool y, si falla y tiene alternativa declarada, la intenta por
+    /// el otro camino.
+    ///
+    /// El caso que lo motivó: desde Azure no se alcanza el gateway de Saludsa
+    /// —puerto 443 sin abrir, 8 segundos— pero sí las bases SQL. Antes eso
+    /// dejaba muda a la tool y el afiliado se quedaba sin respuesta. Ahora, si
+    /// la tool declara <c>fallbackTool</c> en su BindingConfig, se prueba esa.
+    ///
+    /// Sólo se encadena UNA vez: la alternativa de la alternativa no se sigue.
+    /// Un ciclo entre dos tools que se apunten mutuamente colgaría la conversación.
+    /// </summary>
     public async Task<string> ExecuteAsync(
+        string toolCode,
+        string agentCode,
+        IReadOnlyDictionary<string, object?> toolInput,
+        long executionId,
+        string? caseIdentity = null,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            return await EjecutarUnaAsync(toolCode, agentCode, toolInput, executionId,
+                                          caseIdentity, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not UnauthorizedAccessException
+                                   && !ct.IsCancellationRequested)
+        {
+            // El acceso denegado NO se reintenta por otro camino: si el guardián
+            // anti-IDOR dijo que no, la respuesta es no, venga por donde venga.
+            var alterna = await AlternativaDeAsync(toolCode, ct).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(alterna))
+                throw;
+
+            _logger.LogWarning(ex,
+                "[T5] La tool '{Tool}' fallo. Se intenta por su alternativa '{Alterna}'.",
+                toolCode, alterna);
+
+            var json = await EjecutarUnaAsync(alterna!, agentCode, toolInput, executionId,
+                                              caseIdentity, ct).ConfigureAwait(false);
+
+            // Se dice POR DONDE vino. Presentar el resultado del camino B como si
+            // fuera el A seria dar por equivalente lo que no lo es: el API aplica
+            // reglas de negocio que una consulta no reproduce entera.
+            return AnadirDeDondeVino(json, toolCode, alterna!);
+        }
+    }
+
+    /// <summary>El <c>fallbackTool</c> declarado por una tool, si lo tiene.</summary>
+    private async Task<string?> AlternativaDeAsync(string toolCode, CancellationToken ct)
+    {
+        try
+        {
+            var cfg = await _db.OPAITool.AsNoTracking()
+                .Where(t => t.Code == toolCode)
+                .Select(t => t.BindingConfig)
+                .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(cfg)) return null;
+
+            using var doc = JsonDocument.Parse(cfg);
+            return doc.RootElement.TryGetProperty("fallbackTool", out var f)
+                   && f.ValueKind == JsonValueKind.String
+                ? f.GetString()
+                : null;
+        }
+        catch
+        {
+            // Buscar la alternativa NO puede tumbar el error original: si esto
+            // falla, que se propague el fallo de verdad, que es el informativo.
+            return null;
+        }
+    }
+
+    /// <summary>Marca la respuesta con el camino por el que llego.</summary>
+    private static string AnadirDeDondeVino(string json, string pedida, string usada)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return json;
+
+            using var ms = new MemoryStream();
+            using (var w = new Utf8JsonWriter(ms))
+            {
+                w.WriteStartObject();
+                foreach (var prop in doc.RootElement.EnumerateObject()) prop.WriteTo(w);
+                w.WriteString("_porDondeVino",
+                    $"'{pedida}' no respondio, asi que esto sale de '{usada}', que consulta la "
+                    + "base directamente. Puede no traer todo lo que calcula el servicio.");
+                w.WriteEndObject();
+            }
+            return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+        }
+        catch
+        {
+            return json;
+        }
+    }
+
+    private async Task<string> EjecutarUnaAsync(
         string toolCode,
         string agentCode,
         IReadOnlyDictionary<string, object?> toolInput,

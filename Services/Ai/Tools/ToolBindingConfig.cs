@@ -77,4 +77,26 @@ public sealed class ToolBindingConfig
     /// <summary>Máximo de filas devueltas por una tool SQL (default 50).</summary>
     [JsonPropertyName("maxRows")]
     public int MaxRows { get; init; } = 50;
+
+    /// <summary>
+    /// El código de OTRA tool que hace lo mismo por otro camino, para usarla
+    /// cuando ésta no responde.
+    ///
+    /// Nace de un problema real: dos tools del chat van por el gateway de
+    /// Saludsa, y desde el App Service de Azure ese gateway no se alcanza
+    /// —medido: el puerto 443 no abre, 8 segundos sin respuesta— mientras las
+    /// bases SQL sí. Desde la red interna pasa al revés en otros casos.
+    ///
+    /// La tentación era sustituir la tool de API por una de SQL. Néstor lo
+    /// paró: <i>"no debemos borrar los anteriores, una forma de enganchar los
+    /// apis o los de sql"</i>. Y tiene razón — sustituir obliga a elegir un
+    /// ambiente y a mantener dos catálogos. Encadenar no: el mismo despliegue
+    /// sirve dentro y fuera, y el día que abran el cortafuegos vuelve a usarse
+    /// el API sin tocar nada.
+    ///
+    /// El API manda: es la fuente de verdad y aplica las reglas de negocio del
+    /// servicio. El SQL es la red de seguridad, y cuando responde él se dice,
+    /// para no dar por equivalente lo que no lo es.
+    /// </summary>
+    public string? FallbackTool { get; init; }
 }
