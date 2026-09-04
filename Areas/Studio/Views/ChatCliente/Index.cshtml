@@ -227,6 +227,51 @@
     .cc-msg .md-tabla .md-nada { color:#98a2b3; font-style:italic; font-weight:400;
                                  white-space:nowrap; }
 
+    /* ── La historia de un tramite ────────────────────────────────────────
+       Una tabla de cuatro filas diciendo "Ingresado" no contesta "por que se
+       demora": eso es una LINEA DE TIEMPO, y en una linea de tiempo lo que se
+       busca con el ojo es DONDE SE PARO. Por eso el punto vivo va marcado y en
+       azul, y lo ya pasado en gris: el contraste hace el trabajo. */
+    .cc-msg .md-linea { list-style:none; margin:12px 0; padding:0 0 0 22px;
+                        position:relative; }
+    .cc-msg .md-linea:before { content:''; position:absolute; left:5px; top:6px;
+                               bottom:6px; width:2px; background:#dde3ec; }
+    .cc-msg .md-linea li { position:relative; margin:0 0 10px; padding:0 0 0 4px;
+                           font-size:13px; line-height:1.5; color:#5b6672; }
+    .cc-msg .md-linea li:before { content:''; position:absolute; left:-21px; top:5px;
+                                  width:9px; height:9px; border-radius:50%;
+                                  background:#fff; border:2px solid #c3ccdb; }
+    .cc-msg .md-linea li:last-child { margin-bottom:0; }
+    /* El paso actual: el unico que la persona necesita encontrar. */
+    .cc-msg .md-linea li.md-aqui { color:#1f2a33; font-weight:600; }
+    .cc-msg .md-linea li.md-aqui:before { background:#002F87; border-color:#002F87;
+                                          box-shadow:0 0 0 3px rgba(0,47,135,.15); }
+    .cc-msg .md-linea .md-cuando { color:#8a94a3; font-weight:400; margin-right:6px;
+                                   font-variant-numeric:tabular-nums; }
+
+    /* ── Las cifras que contestan solas ───────────────────────────────────
+       Presento 382, le reconocen 300: lo que la persona quiere saber son esos
+       82. Enterrados en una tabla no se ven; en tres tarjetas, si. La de la
+       diferencia se pinta segun lo que significa, no siempre igual. */
+    .cc-msg .md-cifras { display:flex; flex-wrap:wrap; gap:10px; margin:12px 0; }
+    .cc-msg .md-cifras > div { flex:1 1 130px; background:#f7f9fc;
+                               border:1px solid #e3e9f2; border-radius:9px;
+                               padding:10px 13px; }
+    .cc-msg .md-cifras .md-rotulo { display:block; font-size:10.5px; color:#5b6672;
+                                    text-transform:uppercase; letter-spacing:.5px;
+                                    font-weight:700; margin-bottom:3px; }
+    .cc-msg .md-cifras .md-valor { display:block; font-size:19px; font-weight:700;
+                                   color:#002F87; font-variant-numeric:tabular-nums;
+                                   line-height:1.2; }
+    .cc-msg .md-cifras .md-detalle { display:block; font-size:11.5px; color:#5b6672;
+                                     margin-top:3px; line-height:1.4; }
+    .cc-msg .md-cifras .ok   { background:#eaf5eb; border-color:#c9e4cd; }
+    .cc-msg .md-cifras .ok   .md-valor { color:#1A7F37; }
+    .cc-msg .md-cifras .mal  { background:#fdecea; border-color:#f5cdc9; }
+    .cc-msg .md-cifras .mal  .md-valor { color:#E2231A; }
+    .cc-msg .md-cifras .aviso{ background:#fff6e5; border-color:#f2dfb4; }
+    .cc-msg .md-cifras .aviso .md-valor { color:#936B00; }
+
     /* El mapa junto a la direccion: discreto, que la direccion sigue siendo el
        dato y el mapa es la ayuda. */
     .cc-msg .md-mapa { display:inline-block; margin-left:6px; white-space:nowrap;
@@ -806,6 +851,28 @@ else
     var ICONOS = { ok: 'fa-check', atencion: 'fa-exclamation', fallo: 'fa-times',
                    neutro: 'fa-circle-o-notch fa-spin' };
 
+    /* Adonde se lleva la vista cuando llega una respuesta.
+
+       Antes se bajaba del todo -scrollTop = scrollHeight-, y con una respuesta
+       larga el afiliado aterrizaba en la ULTIMA linea: tenia que subir a mano
+       para empezar a leer. Nestor: "al llegar al chat baja completamente abajo,
+       cuando debe ponerse justo despues de la consulta que se hace para que
+       empiece a leer".
+
+       Asi que se lleva arriba SU PREGUNTA, y la respuesta queda justo debajo,
+       empezando por el principio. Si la respuesta es corta y cabe entera, se
+       baja del todo como antes: dejar hueco en blanco abajo se ve roto. */
+    function irALaRespuesta() {
+        var mias = hilo.querySelectorAll('.es-yo');
+        var ultima = mias.length ? mias[mias.length - 1] : null;
+        if (!ultima) { hilo.scrollTop = hilo.scrollHeight; return; }
+
+        var destino = ultima.offsetTop - hilo.offsetTop - 8;
+        // Nunca mas alla del final: si se pasa, el navegador lo recorta solo y
+        // el resultado seria el mismo salto de antes.
+        hilo.scrollTop = Math.min(destino, hilo.scrollHeight - hilo.clientHeight);
+    }
+
     function globoEspera() {
         var d = document.createElement('div');
         d.className = 'cc-espera';
@@ -872,7 +939,7 @@ else
         }
 
         hilo.appendChild(d);
-        hilo.scrollTop = hilo.scrollHeight;
+        irALaRespuesta();
         return d;
     }
 
@@ -884,7 +951,7 @@ else
             : StMarkdown.escapar(el.getAttribute('data-md'));
         el.removeAttribute('data-md');
     });
-    hilo.scrollTop = hilo.scrollHeight;
+    irALaRespuesta();
 
     /* Descargar la consulta.
        El afiliado quiere poder guardarla o adjuntarla a un correo. Va en texto
