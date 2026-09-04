@@ -147,6 +147,10 @@ namespace app_ocr_ai_models
             // Neo4jGraphService falla en runtime si Neo4j:Uri/User/Password no están configurados;
             // no falla en startup. IAsyncDisposable se gestiona por el contenedor DI.
             builder.Services.AddSingleton<IGraphService, Neo4jGraphService>();
+
+            // REQ-038: las credenciales de Zendesk se leen de la tabla de
+            // parametros, no de appsettings: ahi se pueden rotar sin desplegar.
+            builder.Services.AddSingleton<app_tramites.Services.Zendesk.ParametrosZendesk>();
             builder.Services.AddScoped<IGraphExtractionService, GraphExtractionService>();
             builder.Services.AddScoped<GraphToolExecutor>();
 

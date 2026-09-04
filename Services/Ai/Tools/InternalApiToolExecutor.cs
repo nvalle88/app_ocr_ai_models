@@ -38,6 +38,7 @@ public sealed class InternalApiToolExecutor : IToolExecutor
 {
     private readonly OCRDbContext _db;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly app_tramites.Services.Zendesk.ParametrosZendesk? _parametrosZendesk;
     private readonly ISaludsaTokenProvider _tokenProvider;
     private readonly IToolAuthorizationGuard _authGuard;
     private readonly IConfiguration _config;
@@ -125,8 +126,13 @@ public sealed class InternalApiToolExecutor : IToolExecutor
         ISaludsaTokenProvider tokenProvider,
         IToolAuthorizationGuard authGuard,
         IConfiguration config,
-        ILogger<InternalApiToolExecutor> logger)
+        ILogger<InternalApiToolExecutor> logger,
+        app_tramites.Services.Zendesk.ParametrosZendesk? parametrosZendesk = null)
     {
+        // Opcional a proposito: si alguien monta el ejecutor sin el lector de
+        // parametros, las demas tools siguen funcionando y solo la de Zendesk
+        // avisa. Un servicio que falta no debe tumbar el resto del catalogo.
+        _parametrosZendesk = parametrosZendesk;
         _db              = db              ?? throw new ArgumentNullException(nameof(db));
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _tokenProvider   = tokenProvider   ?? throw new ArgumentNullException(nameof(tokenProvider));
@@ -314,11 +320,12 @@ public sealed class InternalApiToolExecutor : IToolExecutor
         var esSql = string.Equals(tool.BindingType, "Sql", StringComparison.OrdinalIgnoreCase);
         if (!esSql
             && !string.Equals(tool.BindingType, "InternalApi", StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(tool.BindingType, "Armonix", StringComparison.OrdinalIgnoreCase))
+            && !string.Equals(tool.BindingType, "Armonix", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(tool.BindingType, "Zendesk", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
                 $"[T5] BindingType '{tool.BindingType}' no soportado por InternalApiToolExecutor. " +
-                "Tipos soportados: InternalApi, Armonix, Sql.");
+                "Tipos soportados: InternalApi, Armonix, Sql, Zendesk.");
         }
 
         // ── 5. D4: Guardián anti-IDOR ────────────────────────────────────
@@ -389,6 +396,40 @@ public sealed class InternalApiToolExecutor : IToolExecutor
                     $"[T5 Sql] La tool '{toolCode}' respondió con error. Detalle: {respJsonSql}");
 
             return respJsonSql;
+        }
+
+        // ── 6-Zendesk. La atencion del ticket, contada al afiliado ───────
+        //
+        // No devuelve el ticket entero: eso trae notas internas, correos del
+        // personal y campos de gestion que no son del afiliado y que ademas
+        // ahogan al modelo. Se devuelve el estado, las fechas y SOLO los
+        // comentarios PUBLICOS, que es lo que la persona ya podria leer en su
+        // propia consulta.
+        if (string.Equals(tool.BindingType, "Zendesk", StringComparison.OrdinalIgnoreCase))
+        {
+            var inicioZd = DateTime.UtcNow;
+            var reqZd = JsonSerializer.Serialize(toolInput);
+            string respZd;
+            bool errZd;
+            try
+            {
+                respZd = await ConsultarZendeskAsync(binding, toolInput, ct).ConfigureAwait(false);
+                errZd = false;
+            }
+            catch (Exception ex)
+            {
+                respZd = JsonSerializer.Serialize(new { error = ex.GetType().Name, message = ex.Message });
+                errZd = true;
+                _logger.LogWarning(ex, "[T5 Zendesk] Error en la tool '{ToolCode}'.", toolCode);
+            }
+
+            await PersistInvocationAsync(executionId, toolCode, reqZd, respZd, errZd, inicioZd, ct)
+                .ConfigureAwait(false);
+
+            if (errZd)
+                throw new InvalidOperationException(
+                    $"[T5 Zendesk] La tool '{toolCode}' respondio con error. Detalle: {respZd}");
+            return respZd;
         }
 
         // ── 6. Resolver baseUrl desde configuración ──────────────────────
@@ -542,6 +583,115 @@ public sealed class InternalApiToolExecutor : IToolExecutor
         {
             return false;
         }
+    }
+
+
+    /// <summary>
+    /// Lee un ticket de Zendesk y lo resume PARA EL AFILIADO.
+    ///
+    /// Devuelve el estado, las fechas y solo los comentarios PUBLICOS. El ticket
+    /// entero trae notas internas, correos del personal y campos de gestion:
+    /// nada de eso es del afiliado, y ademas ahoga al modelo.
+    ///
+    /// El token y la raiz salen de la tabla de parametros, emparejados por
+    /// sufijo. Y ojo con la instancia: los tickets de reembolso viven en
+    /// servicioexperience1562940791; preguntar en la otra devuelve 404, que
+    /// parece "no existe" y no lo es.
+    /// </summary>
+    private async Task<string> ConsultarZendeskAsync(
+        ToolBindingConfig binding,
+        IReadOnlyDictionary<string, object?> toolInput,
+        CancellationToken ct)
+    {
+        var parametros = _parametrosZendesk
+            ?? throw new InvalidOperationException(
+                "[T5 Zendesk] ParametrosZendesk no esta registrado en el contenedor.");
+
+        var sufijo = string.IsNullOrWhiteSpace(binding.Connection)
+            ? app_tramites.Services.Zendesk.ParametrosZendesk.Reembolso
+            : binding.Connection!;
+        var (token, raiz) = await parametros.ObtenerAsync(sufijo, ct).ConfigureAwait(false);
+
+        if (!toolInput.TryGetValue("ticket", out var crudo) || crudo == null)
+            throw new InvalidOperationException(
+                "[T5 Zendesk] Falta 'ticket'. Sale de consultar_ticket_sobre.");
+        if (!int.TryParse(crudo.ToString(), out var ticket) || ticket <= 0)
+            throw new InvalidOperationException($"[T5 Zendesk] 'ticket' no es un numero: {crudo}");
+
+        using var cli = _httpClientFactory.CreateClient();
+        cli.Timeout = TimeSpan.FromSeconds(45);
+        cli.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", "Bearer " + token);
+        cli.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
+
+        var rt = await cli.GetAsync($"{raiz}/api/v2/tickets/{ticket}.json", ct).ConfigureAwait(false);
+        if (!rt.IsSuccessStatusCode)
+            throw new InvalidOperationException(
+                $"[T5 Zendesk] El ticket {ticket} respondio {(int)rt.StatusCode}. "
+                + (rt.StatusCode == System.Net.HttpStatusCode.NotFound
+                   ? "404 puede significar que el ticket esta en la OTRA instancia de Zendesk, no que no exista."
+                   : string.Empty));
+
+        using var doc = JsonDocument.Parse(await rt.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var t = doc.RootElement.GetProperty("ticket");
+        string? Campo(string n) => t.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.String
+                                   ? v.GetString() : null;
+
+        // Los comentarios, solo los publicos y solo los ultimos: un ticket
+        // largo tiene decenas y al afiliado le importa el final.
+        var publicos = new List<object>();
+        try
+        {
+            var rc = await cli.GetAsync($"{raiz}/api/v2/tickets/{ticket}/comments.json", ct)
+                              .ConfigureAwait(false);
+            if (rc.IsSuccessStatusCode)
+            {
+                using var dc = JsonDocument.Parse(
+                    await rc.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+                if (dc.RootElement.TryGetProperty("comments", out var cs)
+                    && cs.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var com in cs.EnumerateArray())
+                    {
+                        if (!com.TryGetProperty("public", out var pub) || !pub.GetBoolean()) continue;
+                        var txt = com.TryGetProperty("plain_body", out var b) ? b.GetString() : null;
+                        publicos.Add(new
+                        {
+                            cuando = com.TryGetProperty("created_at", out var f) ? f.GetString() : null,
+                            texto = txt != null && txt.Length > 600 ? txt[..600] : txt
+                        });
+                    }
+                    if (publicos.Count > 4) publicos = publicos.Skip(publicos.Count - 4).ToList();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Que fallen los comentarios NO puede tumbar la respuesta: el estado
+            // del ticket ya contesta la mitad de la pregunta.
+            _logger.LogWarning(ex, "[T5 Zendesk] No se pudieron leer los comentarios del {Ticket}.", ticket);
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            ticket,
+            asunto = Campo("subject"),
+            estado = Campo("status"),
+            QueSignificaElEstado = Campo("status") switch
+            {
+                "new"     => "Recibido, todavia sin asignar a nadie.",
+                "open"    => "Abierto: alguien lo esta atendiendo.",
+                "pending" => "Pendiente: se espera algo del afiliado. Mira los comentarios: suele decir que falta.",
+                "hold"    => "En espera de un tercero, no del afiliado.",
+                "solved"  => "Resuelto. Si el afiliado no esta de acuerdo, aun se puede reabrir.",
+                "closed"  => "Cerrado y ya no se puede reabrir: haria falta un caso nuevo.",
+                _         => null
+            },
+            creado = Campo("created_at"),
+            ultimoMovimiento = Campo("updated_at"),
+            comentariosPublicos = publicos,
+            NotaParaElAgente = "Los comentarios internos NO se devuelven a proposito. "
+                             + "Explica el estado con tus palabras, no pegues el texto crudo."
+        });
     }
 
     // ── HTTP ─────────────────────────────────────────────────────────────
