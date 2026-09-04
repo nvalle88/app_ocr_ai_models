@@ -192,6 +192,11 @@ public class DiagnosticoController : Controller
             red.Add(await TcpAsync(uri.Host, uri.Port, ct));
         }
 
+        // El gateway por su IP, ademas de por su nombre. Si el nombre falla y la
+        // IP abre, esto se arregla con configuracion nuestra, no pidiendo una
+        // regla de cortafuegos a otra area.
+        red.Add(await TcpAsync("10.66.66.117", 443, ct));
+
         return Json(new
         {
             ambiente = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "(sin fijar)",
@@ -444,6 +449,37 @@ public class DiagnosticoController : Controller
     private static async Task<object> TcpAsync(string host, int puerto, CancellationToken ct)
     {
         var reloj = Stopwatch.StartNew();
+
+        // El NOMBRE y la CONEXION se miden por separado. Sin esto no se
+        // distingue "no resuelvo el nombre" de "no llego a la maquina", y son
+        // dos averias distintas con dos duenos distintos.
+        //
+        // Y no es teorico: las cadenas SQL de esta app van por IP -porque desde
+        // Azure el DNS corporativo no resolvia- mientras el gateway va por
+        // nombre. Si el nombre es el que falla, la culpa no es del cortafuegos.
+        string? ip = null;
+        long msDns = -1;
+        if (!System.Net.IPAddress.TryParse(host, out _))
+        {
+            try
+            {
+                var dns = System.Net.Dns.GetHostAddressesAsync(host, ct);
+                if (await Task.WhenAny(dns, Task.Delay(6000, ct)) == dns)
+                    ip = (await dns).FirstOrDefault()?.ToString();
+                msDns = reloj.ElapsedMilliseconds;
+                if (ip == null)
+                    return new { host, puerto, abre = false, ms = reloj.ElapsedMilliseconds,
+                                 dns = "NO RESUELVE", msDns,
+                                 detalle = "el nombre no se resuelve desde aqui: es DNS, no cortafuegos" };
+            }
+            catch (Exception dnsEx)
+            {
+                return new { host, puerto, abre = false, ms = reloj.ElapsedMilliseconds,
+                             dns = "NO RESUELVE", msDns = reloj.ElapsedMilliseconds,
+                             detalle = "DNS: " + (dnsEx.Message.Length > 90 ? dnsEx.Message[..90] : dnsEx.Message) };
+            }
+        }
+
         try
         {
             using var cliente = new TcpClient();
@@ -454,11 +490,12 @@ public class DiagnosticoController : Controller
                              detalle = "sin respuesta en 8 s (la red no llega o el firewall lo corta)" };
             await tarea;
             return new { host, puerto, abre = true, ms = reloj.ElapsedMilliseconds,
-                         detalle = "puerto abierto" };
+                         dns = ip ?? "(es una IP)", msDns, detalle = "puerto abierto" };
         }
         catch (Exception ex)
         {
             return new { host, puerto, abre = false, ms = reloj.ElapsedMilliseconds,
+                         dns = ip ?? "(es una IP)", msDns,
                          detalle = ex.Message.Length > 160 ? ex.Message[..160] : ex.Message };
         }
     }
