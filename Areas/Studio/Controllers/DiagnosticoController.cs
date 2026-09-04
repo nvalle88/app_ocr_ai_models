@@ -119,6 +119,17 @@ public class DiagnosticoController : Controller
         var red = new List<object>();
         foreach (var h in hosts) red.Add(await TcpAsync(h, 1433, ct));
 
+        // El GATEWAY tambien: las dos tools que van por HTTP mueren a los 15 s
+        // sin llegar a pedir el token, y sin probar el puerto no se distingue
+        // "no llego al host" de "el servicio tarda".
+        foreach (var clave3 in new[] { "Saludsa:BaseUrls:ApiContrato", "Saludsa:Auth:TokenUrl" })
+        {
+            var u = _config[clave3];
+            if (string.IsNullOrWhiteSpace(u) || !Uri.TryCreate(u, UriKind.Absolute, out var uri))
+                continue;
+            red.Add(await TcpAsync(uri.Host, uri.Port, ct));
+        }
+
         return Json(new
         {
             ambiente = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "(sin fijar)",
