@@ -1,0 +1,223 @@
+@{
+    ViewData["Title"] = "Diagnóstico de las tools";
+    Layout = null;
+    var clave = ViewData["Clave"] as string ?? "";
+}
+@*
+    La página de diagnóstico. Antes era el JSON crudo: se veía un renglón de
+    llaves y <, y Néstor tenía razón en que eso no se entiende. El dato es
+    el mismo; lo que faltaba era decirlo en castellano.
+
+    Color y tipografía salen de estilo-saludsa: azul #002F87, tinta #1F2A33,
+    verde para lo que va, rojo para lo que no, ámbar para lo que hay que mirar.
+*@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnóstico de las tools · Nexus</title>
+<style>
+    :root {
+        --azul: #002F87;  --azul-medio: #2E6DB4;  --azul-palido: #D0DEF4;
+        --verde: #1A7F37; --ambar: #E0A200;       --rojo: #E2231A;
+        --gris: #5B6672;  --gris-suave: #E8EAEE;  --tinta: #1F2A33;
+        --positivo: #EAF5EB; --negativo: #FDECEA; --aviso: #FFF6E5; --neutro: #F7F7F7;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; padding: 28px 32px 60px;
+        font: 14px/1.5 Arial, Helvetica, sans-serif;
+        color: var(--tinta); background: #fff;
+    }
+    h1 { font-size: 21px; color: var(--azul); margin: 0 0 4px; }
+    .sub { color: var(--gris); margin: 0 0 26px; font-size: 13px; }
+    h2 {
+        font-size: 14px; color: var(--azul); margin: 30px 0 10px;
+        text-transform: uppercase; letter-spacing: .06em;
+        border-bottom: 2px solid var(--azul-palido); padding-bottom: 6px;
+    }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 6px; }
+    th {
+        text-align: left; font-size: 11px; text-transform: uppercase;
+        letter-spacing: .05em; color: var(--gris); font-weight: bold;
+        padding: 6px 10px; border-bottom: 1px solid var(--gris-suave);
+    }
+    td { padding: 7px 10px; border-bottom: 1px solid var(--gris-suave); vertical-align: top; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    tr:hover td { background: var(--neutro); }
+    .marca {
+        display: inline-block; padding: 1px 8px; border-radius: 10px;
+        font-size: 11px; font-weight: bold; white-space: nowrap;
+    }
+    .ok   { background: var(--positivo); color: var(--verde); }
+    .mal  { background: var(--negativo); color: var(--rojo); }
+    .duda { background: var(--aviso);    color: #936B00; }
+    .esp  { background: var(--gris-suave); color: var(--gris); }
+    code { font: 12px/1.4 Consolas, monospace; color: var(--azul-medio); }
+    button {
+        font: bold 12px Arial, sans-serif; color: #fff; background: var(--azul);
+        border: 0; border-radius: 4px; padding: 5px 12px; cursor: pointer;
+    }
+    button:hover { background: var(--azul-medio); }
+    button:disabled { background: var(--gris-claro, #AAAEB4); cursor: default; }
+    .barra { margin: 0 0 18px; display: flex; gap: 10px; align-items: center; }
+    .aviso {
+        background: var(--aviso); border-left: 3px solid var(--ambar);
+        padding: 10px 14px; margin: 0 0 20px; font-size: 13px;
+    }
+    .pie { color: var(--gris); font-size: 12px; margin-top: 28px; }
+    input[type=text] {
+        font: 12px Consolas, monospace; padding: 5px 8px;
+        border: 1px solid var(--gris-suave); border-radius: 4px; width: 320px;
+    }
+</style>
+</head>
+<body>
+
+<h1>Diagnóstico de las tools</h1>
+<p class="sub">
+    Todo lo de esta página se ejecuta <strong>desde donde corre la aplicación</strong>,
+    no desde su equipo. Por eso sirve para saber qué alcanza el App&nbsp;Service,
+    que es distinto de lo que alcanza usted por la VPN.
+</p>
+
+<div class="barra">
+    <button id="btnRed" type="button">Probar la red y las conexiones</button>
+    <button id="btnTools" type="button">Probar las tools de SQL</button>
+    <span id="estado" class="sub" style="margin:0"></span>
+</div>
+
+<div class="aviso" id="avisoClave" style="display:none">
+    Está entrando sin sesión. Pegue la clave de diagnóstico para poder ejecutar:
+    <input type="text" id="clave" placeholder="clave de Diagnostico:Clave">
+</div>
+
+<h2>Red — ¿a qué llega la aplicación?</h2>
+<table id="tRed">
+    <thead><tr><th>Destino</th><th>Puerto</th><th>¿Abre?</th><th class="num">Tarda</th><th>Qué significa</th></tr></thead>
+    <tbody><tr><td colspan="5" class="sub">Sin probar todavía.</td></tr></tbody>
+</table>
+
+<h2>Conexiones a base de datos</h2>
+<table id="tConn">
+    <thead><tr><th>Cadena</th><th>Servidor y base</th><th>Estado</th><th class="num">Abrir</th><th class="num">Total</th></tr></thead>
+    <tbody><tr><td colspan="5" class="sub">Sin probar todavía.</td></tr></tbody>
+</table>
+
+<h2>Tools del chat</h2>
+<table id="tTools">
+    <thead><tr><th>Tool</th><th>Vía</th><th>Estado</th><th class="num">Filas</th><th class="num">Tarda</th></tr></thead>
+    <tbody><tr><td colspan="5" class="sub">Sin probar todavía.</td></tr></tbody>
+</table>
+
+<p class="pie">
+    Ninguna prueba devuelve los datos de un afiliado: solo cuántas filas y cuánto
+    tardó. Es a propósito — son datos de salud.
+</p>
+
+<script>
+(function () {
+    var CLAVE_SERVIDOR = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(clave));
+
+    function clave() {
+        var c = document.getElementById('clave');
+        return CLAVE_SERVIDOR || (c ? c.value.trim() : '');
+    }
+    function url(ruta, extra) {
+        var q = clave() ? '?clave=' + encodeURIComponent(clave()) : '?';
+        return '/Studio/Diagnostico/' + ruta + q + (extra ? '&' + extra : '');
+    }
+    function marca(clase, texto) {
+        return '<span class="marca ' + clase + '">' + texto + '</span>';
+    }
+    function ms(v) {
+        if (v === null || v === undefined || v < 0) return '—';
+        return v >= 1000 ? (v / 1000).toFixed(1) + ' s' : v + ' ms';
+    }
+    function cuerpo(id, html) {
+        document.querySelector('#' + id + ' tbody').innerHTML = html;
+    }
+    function estado(t) { document.getElementById('estado').textContent = t || ''; }
+
+    // Sin sesion hace falta la clave: se pide en vez de devolver un 404 mudo.
+    if (!CLAVE_SERVIDOR) document.getElementById('avisoClave').style.display = '';
+
+    document.getElementById('btnRed').addEventListener('click', async function () {
+        this.disabled = true;
+        estado('probando la red… puede tardar, un destino caído gasta sus 8 segundos');
+        try {
+            var r = await fetch(url('Conexiones'), { credentials: 'same-origin' });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            var d = await r.json();
+
+            cuerpo('tRed', (d.red || []).map(function (x) {
+                return '<tr><td><code>' + x.host + '</code></td>'
+                     + '<td class="num">' + x.puerto + '</td>'
+                     + '<td>' + (x.abre ? marca('ok', 'abre') : marca('mal', 'NO abre')) + '</td>'
+                     + '<td class="num">' + ms(x.ms) + '</td>'
+                     + '<td class="sub">' + (x.abre
+                         ? 'La aplicación llega a esta máquina.'
+                         : 'La aplicación NO llega. Es ruta o cortafuegos, no código.') + '</td></tr>';
+            }).join('') || '<tr><td colspan="5" class="sub">Sin destinos.</td></tr>');
+
+            cuerpo('tConn', (d.conexiones || []).map(function (x) {
+                var ok = x.estado === 'OK';
+                return '<tr><td><strong>' + x.conexion + '</strong></td>'
+                     + '<td><code>' + (x.destino || '') + '</code>'
+                     + (x.servidor ? '<br><span class="sub">' + x.servidor + '</span>' : '')
+                     + '</td>'
+                     + '<td>' + (ok ? marca('ok', 'conecta') : marca('mal', x.estado))
+                     + (x.mensaje ? '<br><span class="sub">' + x.mensaje + '</span>' : '') + '</td>'
+                     + '<td class="num">' + ms(x.msAbrir) + '</td>'
+                     + '<td class="num">' + ms(x.msTotal) + '</td></tr>';
+            }).join('') || '<tr><td colspan="5" class="sub">Sin conexiones.</td></tr>');
+
+            estado('ambiente ' + d.ambiente + ' · ' + d.momento);
+        } catch (e) {
+            estado('no se pudo: ' + e.message + (clave() ? '' : ' — ¿falta la clave?'));
+        }
+        this.disabled = false;
+    });
+
+    document.getElementById('btnTools').addEventListener('click', async function () {
+        this.disabled = true;
+        var tools = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(ViewData["Tools"]));
+        cuerpo('tTools', tools.map(function (t) {
+            return '<tr id="t_' + t.code + '"><td><strong>' + t.code + '</strong></td>'
+                 + '<td class="sub">' + (t.conexion || t.baseUrl || '') + '</td>'
+                 + '<td>' + marca('esp', 'esperando') + '</td>'
+                 + '<td class="num">—</td><td class="num">—</td></tr>';
+        }).join(''));
+
+        // De una en una: en paralelo se pisan en el pool y los tiempos mienten.
+        for (var i = 0; i < tools.length; i++) {
+            var t = tools[i];
+            estado('probando ' + t.code + ' (' + (i + 1) + ' de ' + tools.length + ')');
+            var fila = document.getElementById('t_' + t.code);
+            var celdas = fila.getElementsByTagName('td');
+            try {
+                var ruta = t.tipo === 'Sql' ? 'Tool' : 'Api';
+                var r = await fetch(url(ruta, 'code=' + encodeURIComponent(t.code)
+                                    + (t.prueba ? '&' + t.prueba : '')),
+                                    { credentials: 'same-origin' });
+                var d = await r.json();
+                var bien = (d.estado === 'OK') || (d.http >= 200 && d.http < 300);
+                var filas = (d.filas === undefined || d.filas === null) ? null : d.filas;
+                celdas[2].innerHTML = bien
+                    ? (filas === 0 ? marca('duda', 'responde, 0 filas') : marca('ok', 'responde'))
+                    : marca('mal', d.error || d.estado || 'falla')
+                      + (d.mensaje ? '<br><span class="sub">' + d.mensaje + '</span>' : '');
+                celdas[3].textContent = filas === null ? '—' : filas;
+                celdas[4].textContent = ms(d.msTotal);
+            } catch (e) {
+                celdas[2].innerHTML = marca('mal', 'no respondió');
+            }
+        }
+        estado('listo');
+        this.disabled = false;
+    });
+})();
+</script>
+</body>
+</html>

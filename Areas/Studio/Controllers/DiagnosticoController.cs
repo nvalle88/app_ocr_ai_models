@@ -52,25 +52,87 @@ public class DiagnosticoController : Controller
         _http = http;
     }
 
-    /// <summary>Sin esto, /Studio/Diagnostico a secas daba un 404 sin explicacion.</summary>
+    /// <summary>
+    /// La portada. Antes devolvia el JSON crudo y Nestor tenia razon: un renglon
+    /// de llaves y comillas escapadas no se entiende. El dato era el mismo; lo
+    /// que faltaba era decirlo en castellano y con los colores de la marca.
+    ///
+    /// La pagina no calcula nada por si sola: los botones llaman a Conexiones,
+    /// Tool y Api, que son las mismas rutas de antes. Se sigue pudiendo pedir el
+    /// JSON a mano si alguien lo prefiere.
+    /// </summary>
     [AllowAnonymous]
-    public IActionResult Index() => Json(new
+    public async Task<IActionResult> Index(CancellationToken ct)
     {
-        que = "Diagnostico de las tools, ejecutado desde donde corre la app",
-        rutas = new[]
+        // Las tools del chat, con la conexion por la que van y unos parametros
+        // de ejemplo para que el boton "probar" haga algo util en vez de pedir
+        // una consulta sin filtros que devolveria 0 filas siempre.
+        var tools = await _db.OPAIModelTool.AsNoTracking()
+            .Where(mt => mt.ModelCode == AgenteDelChat && mt.IsEnabled)
+            .Join(_db.OPAITool.AsNoTracking().Where(t => t.IsActive),
+                  mt => mt.ToolCode, t => t.Code, (mt, t) => t)
+            .OrderBy(t => t.BindingType).ThenBy(t => t.Code)
+            .Select(t => new { t.Code, t.BindingType, t.BindingConfig })
+            .ToListAsync(ct);
+
+        ViewData["Tools"] = tools.Select(t =>
         {
-            "/Studio/Diagnostico/Conexiones?clave=...        el puerto y las 5 conexiones SQL",
-            "/Studio/Diagnostico/Tool?code=<tool>&clave=...  corre una tool de SQL (parametros como p_<nombre>=valor)",
-            "/Studio/Diagnostico/Api?code=<tool>&clave=...   corre una tool de gateway (idem)"
-        },
-        nota = "Con sesion iniciada no hace falta clave. Sin clave ni sesion: 404."
-    });
+            string? conexion = null, baseUrl = null;
+            try
+            {
+                using var doc = JsonDocument.Parse(t.BindingConfig ?? "{}");
+                if (doc.RootElement.TryGetProperty("connection", out var cn))
+                    conexion = cn.GetString();
+                if (doc.RootElement.TryGetProperty("baseUrl", out var bu))
+                    baseUrl = bu.GetString();
+            }
+            catch { /* una config rota no debe tumbar la pagina de diagnostico */ }
+
+            return new
+            {
+                code = t.Code,
+                tipo = t.BindingType,
+                conexion,
+                baseUrl,
+                prueba = PruebaDeEjemplo(t.Code)
+            };
+        }).ToList();
+
+        return View();
+    }
 
     /// <summary>Las cadenas que usan las tools, en el orden en que se prueban.</summary>
     private static readonly string[] Cadenas =
     {
         "SaludConsultas", "SaludReclamos", "SaludPrestadores",
         "SaludsaCreditoFarmacia", "DefaultConnection"
+    };
+
+    private const string AgenteDelChat = "AGENTE_CHAT_CLIENTE";
+
+    /// <summary>
+    /// Parametros de ejemplo por tool, con identificadores REALES de pruebas.
+    /// Sin ellos el boton probaria consultas sin filtro: todas dirian 0 filas y
+    /// eso no distingue una tool rota de una consulta sin resultados.
+    /// </summary>
+    private static string PruebaDeEjemplo(string code) => code switch
+    {
+        "consultar_autorizaciones"        => "p_contrato=4102902",
+        "consultar_sobre_bd"              => "p_numeroSobre=NA-2612807",
+        "consultar_detalle_sobre_bd"      => "p_numeroSobre=NA-2612807",
+        "historial_reembolsos_cliente_bd" => "p_contrato=4102902",
+        "buscar_medicina"                 => "p_nombre=losartan",
+        "tarifario_prestador"             => "p_numeroConvenio=51493",
+        "buscar_prestador_convenio"       => "p_numeroConvenio=51493",
+        "buscar_sucursales_cerca"         => "p_ciudad=Quito&p_cerca=la carolina&p_tipo=farmacia",
+        "copago_del_prestador"            => "p_numeroConvenio=11715",
+        "factura_ya_pagada_bd"            => "p_numeroFactura=001-002-000002600",
+        "condiciones_del_plan"            => "p_codigoProducto=IND&p_codigoPlan=N5-C&p_version=32",
+        "coberturas_y_topes_del_plan"     => "p_codigoProducto=IND&p_codigoPlan=N5-C&p_version=32&p_region=Costa",
+        "codigo_liquidacion_y_cobertura"  => "p_numeroConvenio=51493",
+        "consultar_deducible_contrato"    => "p_region=Costa&p_codigoProducto=IND&p_numeroContrato=4102902&p_numeroPersonaBeneficiario=5446025",
+        "consultar_coberturas_plan"       => "p_region=Costa&p_codigoProducto=IND&p_codigoPlan=N5-C&p_versionPlan=32&p_contratoNumero=4102902&p_personaNumero=5446025",
+        _ => ""
     };
 
     // GET /Studio/Diagnostico/Conexiones[?clave=...]
