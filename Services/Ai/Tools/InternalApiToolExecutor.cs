@@ -271,7 +271,7 @@ public sealed class InternalApiToolExecutor : IToolExecutor
 
             try
             {
-                respJsonSql = await ExecuteSqlToolAsync(binding, toolInput, ct).ConfigureAwait(false);
+                respJsonSql = await ExecuteSqlToolAsync(binding, toolInput, identidad, ct).ConfigureAwait(false);
                 sqlError = false;
             }
             catch (Exception ex)
@@ -522,6 +522,7 @@ public sealed class InternalApiToolExecutor : IToolExecutor
     private async Task<string> ExecuteSqlToolAsync(
         ToolBindingConfig binding,
         IReadOnlyDictionary<string, object?> toolInput,
+        IdentidadCaso? identidad,
         CancellationToken ct)
     {
         var query = binding.Query;
@@ -584,7 +585,18 @@ public sealed class InternalApiToolExecutor : IToolExecutor
             throw;
         }
 
-        await using var cmd = new SqlCommand(query, conn) { CommandTimeout = 30 };
+        // Sesenta, no treinta. Medido desde web-nexus-test llamando a la consulta
+        // real de consultar_autorizaciones:
+        //
+        //     1a llamada (en frio)  24.891 ms hasta la primera fila
+        //     2a llamada             3.736 ms
+        //     3a llamada             2.916 ms
+        //
+        // En caliente sobra con tres segundos, pero el chat la llama SIEMPRE en
+        // frio -es una tool que se usa de vez en cuando- y ahi 30 no dan. Al
+        // afiliado le salia "no se pudo consultar ahora" por 5 segundos de
+        // margen. Sesenta deja aire sin dejar la peticion colgada para siempre.
+        await using var cmd = new SqlCommand(query, conn) { CommandTimeout = 60 };
 
         // ── Parametrización: por cada @param del SQL, el valor del input ─────────
         //
@@ -620,6 +632,28 @@ public sealed class InternalApiToolExecutor : IToolExecutor
             var texto = inputCi.TryGetValue(pName, out var raw) && raw != null
                 ? raw.ToString()
                 : null;
+
+            // @personas lo pone el SISTEMA, no el modelo. Estrecha la busqueda
+            // en dbo.Autorizacion (4.555.053 filas) usando
+            // IdxPersonContratoRegionProducto, que empieza por PersonaNumero;
+            // ContratoNumero no encabeza ningun indice.
+            //
+            // Ayuda, pero MODESTAMENTE: medido con las dos consultas calientes,
+            // 187 ms filtrando solo por contrato contra 128 ms con la persona
+            // delante. Es 1,5x, no el orden de magnitud que supuse al escribirlo.
+            // Lo que de verdad mataba la tool era el arranque en frio -25 s- y
+            // eso lo cubre el CommandTimeout, no este filtro.
+            //
+            // Se rellena desde la identidad del caso -no desde el input- por
+            // dos razones: el modelo se olvidaria la mitad de las veces, y esos
+            // numeros ya estan validados por el guardian anti-IDOR, asi que no
+            // ensanchan lo que el afiliado puede ver. Van TODAS las personas del
+            // contrato: en uno familiar el titular ve a los suyos, como hasta
+            // ahora.
+            if (texto == null &&
+                string.Equals(pName, "personas", StringComparison.OrdinalIgnoreCase) &&
+                identidad is { Personas.Count: > 0 })
+                texto = string.Join(",", identidad.Personas);
 
             var tipo = EsAsciiPuro(texto)
                 ? System.Data.SqlDbType.VarChar
