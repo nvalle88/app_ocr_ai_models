@@ -8,6 +8,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using app_ocr_ai_models.Data;
+using app_tramites.Services.Ai.Tools;
 
 namespace app_ocr_ai_models.Areas.Studio.Controllers;
 
@@ -38,12 +39,32 @@ public class DiagnosticoController : Controller
 {
     private readonly IConfiguration _config;
     private readonly OCRDbContext _db;
+    private readonly ISaludsaTokenProvider? _token;
+    private readonly IHttpClientFactory? _http;
 
-    public DiagnosticoController(IConfiguration config, OCRDbContext db)
+    public DiagnosticoController(IConfiguration config, OCRDbContext db,
+                                 ISaludsaTokenProvider? token = null,
+                                 IHttpClientFactory? http = null)
     {
         _config = config;
         _db = db;
+        _token = token;
+        _http = http;
     }
+
+    /// <summary>Sin esto, /Studio/Diagnostico a secas daba un 404 sin explicacion.</summary>
+    [AllowAnonymous]
+    public IActionResult Index() => Json(new
+    {
+        que = "Diagnostico de las tools, ejecutado desde donde corre la app",
+        rutas = new[]
+        {
+            "/Studio/Diagnostico/Conexiones?clave=...        el puerto y las 5 conexiones SQL",
+            "/Studio/Diagnostico/Tool?code=<tool>&clave=...  corre una tool de SQL (parametros como p_<nombre>=valor)",
+            "/Studio/Diagnostico/Api?code=<tool>&clave=...   corre una tool de gateway (idem)"
+        },
+        nota = "Con sesion iniciada no hace falta clave. Sin clave ni sesion: 404."
+    });
 
     /// <summary>Las cadenas que usan las tools, en el orden en que se prueban.</summary>
     private static readonly string[] Cadenas =
@@ -175,8 +196,7 @@ public class DiagnosticoController : Controller
     // falsa una vez -di por hecho que la red no llegaba, y llega-.
     [AllowAnonymous]
     public async Task<IActionResult> Tool(string code, CancellationToken ct,
-                                          string? clave = null, string? contrato = null,
-                                          string? cedula = null, string? numeroAutorizacion = null)
+                                          string? clave = null)
     {
         if (User?.Identity?.IsAuthenticated != true)
         {
@@ -199,11 +219,15 @@ public class DiagnosticoController : Controller
         if (string.IsNullOrWhiteSpace(cs) || query.Length == 0)
             return Json(new { error = "sin cadena o sin consulta", conexion = conn });
 
-        var valores = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["contrato"] = contrato, ["cedula"] = cedula,
-            ["numeroAutorizacion"] = numeroAutorizacion
-        };
+        // Los parametros de la tool llegan como p_<nombre> en la query. Con
+        // nombres fijos solo se podia probar consultar_autorizaciones; el resto
+        // de las tools piden convenio, ciudad, plan o medicina, y sin poder
+        // pasarselos la prueba habria dicho "0 filas" de todas y eso no
+        // distingue una tool rota de una consulta sin resultados.
+        var valores = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (k2, v2) in Request.Query)
+            if (k2.StartsWith("p_", StringComparison.OrdinalIgnoreCase))
+                valores[k2[2..]] = v2.ToString();
 
         var relojTotal = Stopwatch.StartNew();
         long msAbrir = -1, msPrimeraFila = -1;
@@ -237,6 +261,97 @@ public class DiagnosticoController : Controller
         {
             return Json(new { code, conexion = conn, estado = "FALLA", msAbrir, msPrimeraFila,
                               msTotal = relojTotal.ElapsedMilliseconds,
+                              error = ex.GetType().Name,
+                              mensaje = ex.Message.Length > 250 ? ex.Message[..250] : ex.Message });
+        }
+    }
+
+    // GET /Studio/Diagnostico/Api?code=<tool>&clave=...&p_<param>=<valor>
+    //
+    // Lo mismo que Tool pero para las tools que van por el GATEWAY. Cronometra
+    // el TOKEN aparte de la llamada: son dos fallos distintos -credencial
+    // contra alcance- y juntos no se distinguen. Devuelve el codigo HTTP y el
+    // tama~o de la respuesta, NUNCA su contenido: son datos de un afiliado.
+    [AllowAnonymous]
+    public async Task<IActionResult> Api(string code, CancellationToken ct, string? clave = null)
+    {
+        if (User?.Identity?.IsAuthenticated != true)
+        {
+            var esperada = _config["Diagnostico:Clave"];
+            if (string.IsNullOrWhiteSpace(esperada) ||
+                !string.Equals(clave, esperada, StringComparison.Ordinal))
+                return NotFound();
+        }
+        if (_token == null || _http == null)
+            return Json(new { error = "sin proveedor de token o de http" });
+
+        var tool = await _db.OPAITool.AsNoTracking().FirstOrDefaultAsync(t => t.Code == code, ct);
+        if (tool == null || tool.BindingType == "Sql")
+            return Json(new { error = "no existe o no es una tool de gateway", code });
+
+        using var doc = JsonDocument.Parse(tool.BindingConfig ?? "{}");
+        var raiz = doc.RootElement;
+        var plantilla = raiz.TryGetProperty("baseUrl", out var b0) ? b0.GetString() ?? "" : "";
+        var ruta = raiz.TryGetProperty("path", out var p0) ? p0.GetString() ?? "" : "";
+        var metodo = raiz.TryGetProperty("method", out var m0) ? m0.GetString() ?? "GET" : "GET";
+
+        var clave2 = plantilla switch
+        {
+            "{api-contrato}"  => "Saludsa:BaseUrls:ApiContrato",
+            "{api-armonix}"   => "Saludsa:BaseUrls:ApiArmonix",
+            "{api-prestador}" => "Saludsa:BaseUrls:ApiPrestador",
+            _ => null
+        };
+        var baseUrl = clave2 == null ? plantilla : _config[clave2];
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            return Json(new { code, error = $"sin URL para {plantilla}", clave2 });
+
+        var reloj = Stopwatch.StartNew();
+        long msToken = -1;
+        try
+        {
+            var cab = await _token.GetAuthHeadersAsync(ct);
+            msToken = reloj.ElapsedMilliseconds;
+
+            var qs = string.Join("&", Request.Query
+                .Where(x => x.Key.StartsWith("p_", StringComparison.OrdinalIgnoreCase))
+                .Select(x => Uri.EscapeDataString(x.Key[2..]) + "=" +
+                             Uri.EscapeDataString(x.Value.ToString())));
+            var url = baseUrl.TrimEnd('/') + ruta +
+                      (metodo == "GET" && qs.Length > 0 ? "?" + qs : "");
+
+            using var req = new HttpRequestMessage(new HttpMethod(metodo), url);
+            foreach (var (n, v) in cab) req.Headers.TryAddWithoutValidation(n, v);
+            if (metodo != "GET")
+            {
+                var cuerpo = Request.Query
+                    .Where(x => x.Key.StartsWith("p_", StringComparison.OrdinalIgnoreCase))
+                    .ToDictionary(x => x.Key[2..], x => (object?)x.Value.ToString());
+                req.Content = new StringContent(JsonSerializer.Serialize(cuerpo),
+                                                System.Text.Encoding.UTF8, "application/json");
+            }
+
+            using var cli = _http.CreateClient();
+            cli.Timeout = TimeSpan.FromSeconds(60);
+            using var resp = await cli.SendAsync(req, ct);
+            var texto = await resp.Content.ReadAsStringAsync(ct);
+
+            return Json(new
+            {
+                code, url = url.Length > 160 ? url[..160] : url, metodo,
+                msToken, msTotal = reloj.ElapsedMilliseconds,
+                http = (int)resp.StatusCode,
+                bytes = texto.Length,
+                // Solo el sobre, no los datos: dice si el servicio contesto bien
+                // sin sacar del sistema la informacion de nadie.
+                estadoEnCuerpo = texto.Contains("\"Estado\":\"OK\"") ? "OK"
+                               : texto.Contains("\"Estado\":\"Error\"") ? "Error en el cuerpo"
+                               : "(sin campo Estado)"
+            });
+        }
+        catch (Exception ex)
+        {
+            return Json(new { code, msToken, msTotal = reloj.ElapsedMilliseconds,
                               error = ex.GetType().Name,
                               mensaje = ex.Message.Length > 250 ? ex.Message[..250] : ex.Message });
         }
