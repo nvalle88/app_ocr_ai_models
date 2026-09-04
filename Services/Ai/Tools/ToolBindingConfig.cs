@@ -99,4 +99,25 @@ public sealed class ToolBindingConfig
     /// para no dar por equivalente lo que no lo es.
     /// </summary>
     public string? FallbackTool { get; init; }
+
+    /// <summary>
+    /// Campos de <c>Datos</c> que se DEVUELVEN. Si está vacío, se devuelven todos.
+    ///
+    /// Existe para poder partir un endpoint gordo en varias tools pequeñas.
+    /// <c>ObtenerDetalleSobre</c> trae en una sola respuesta la cabecera, los
+    /// estados, la liquidación y los ficheros en base64 —1,69 MB en un sobre
+    /// real—. Servirlo entero al modelo cuando solo se le preguntó "¿en qué va
+    /// mi reembolso?" revienta su contexto y encarece cada turno.
+    ///
+    /// Idea de Néstor: una tool por pregunta. Todas llaman al mismo endpoint,
+    /// pero cada una devuelve lo suyo, así que al modelo solo le llega la
+    /// porción que necesita.
+    /// </summary>
+    public List<string> Pick { get; init; } = new();
+
+    /// <summary>
+    /// Campos de <c>Datos</c> que se QUITAN. Se aplica después de <see cref="Pick"/>.
+    /// Útil cuando es más corto decir qué sobra que qué hace falta.
+    /// </summary>
+    public List<string> Omit { get; init; } = new();
 }

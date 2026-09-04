@@ -430,6 +430,30 @@ public sealed class InternalApiToolExecutor : IToolExecutor
             _logger.LogWarning(ex, "[T5] Error invocando tool '{ToolCode}'.", toolCode);
         }
 
+        // ── 8-bis. Recortar la respuesta a lo que esta tool sirve ────────
+        //
+        // ObtenerDetalleSobre trae cabecera, estados, liquidacion y ficheros en
+        // base64 -1,69 MB en un sobre real- en UNA sola respuesta. Cuatro tools
+        // pequenas sobre el mismo endpoint, cada una devolviendo lo suyo, le
+        // ahorran al modelo lo que no pidio.
+        //
+        // Se recorta DESPUES de registrar nada y ANTES de devolver, para que en
+        // ToolInvocation quede lo que se envio al modelo y no otra cosa: si el
+        // registro y la respuesta difieren, diagnosticar se vuelve adivinar.
+        if (!isError && (binding.Pick.Count > 0 || binding.Omit.Count > 0))
+            responseJson = RecortarDatos(responseJson, binding.Pick, binding.Omit);
+
+        // Y una trampa de este gateway: contesta HTTP 200 con Estado "Error"
+        // dentro del cuerpo -la ventana de mantenimiento de reembolsos, por
+        // ejemplo-. Sin esto la tool "no falla", asi que su alternativa nunca se
+        // intenta y al afiliado le llega un cuerpo de error crudo.
+        if (!isError && EsErrorEnElCuerpo(responseJson))
+        {
+            isError = true;
+            _logger.LogWarning("[T5] '{ToolCode}': HTTP correcto pero Estado=Error en el cuerpo.",
+                               toolCode);
+        }
+
         // ── 9. Persistir ToolInvocation ──────────────────────────────────
         await PersistInvocationAsync(
             executionId, toolCode,
@@ -451,6 +475,73 @@ public sealed class InternalApiToolExecutor : IToolExecutor
         }
 
         return responseJson;
+    }
+
+
+    /// <summary>
+    /// Deja en <c>Datos</c> solo los campos pedidos y quita los sobrantes. Lo
+    /// demas del sobre -Estado, Mensajes- se conserva: el modelo los necesita
+    /// para saber si la respuesta vale.
+    /// </summary>
+    private static string RecortarDatos(string json, List<string> pick, List<string> omit)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return json;
+
+            using var ms = new MemoryStream();
+            using (var w = new Utf8JsonWriter(ms))
+            {
+                w.WriteStartObject();
+                foreach (var prop in doc.RootElement.EnumerateObject())
+                {
+                    if (!prop.NameEquals("Datos") || prop.Value.ValueKind != JsonValueKind.Object)
+                    {
+                        prop.WriteTo(w);
+                        continue;
+                    }
+                    w.WritePropertyName("Datos");
+                    w.WriteStartObject();
+                    foreach (var campo in prop.Value.EnumerateObject())
+                    {
+                        if (pick.Count > 0 &&
+                            !pick.Contains(campo.Name, StringComparer.OrdinalIgnoreCase)) continue;
+                        if (omit.Contains(campo.Name, StringComparer.OrdinalIgnoreCase)) continue;
+                        campo.WriteTo(w);
+                    }
+                    w.WriteEndObject();
+                }
+                w.WriteEndObject();
+            }
+            return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+        }
+        catch
+        {
+            // Un recorte que falla NO puede tumbar la respuesta: se devuelve
+            // entera, que es peor pero no es mentira.
+            return json;
+        }
+    }
+
+    /// <summary>
+    /// El gateway responde HTTP 200 con <c>Estado: "Error"</c> en el cuerpo.
+    /// Sin mirar dentro, una tool caida parece sana.
+    /// </summary>
+    private static bool EsErrorEnElCuerpo(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("Estado", out var e)
+                && e.ValueKind == JsonValueKind.String
+                && string.Equals(e.GetString(), "Error", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     // ── HTTP ─────────────────────────────────────────────────────────────
@@ -814,7 +905,13 @@ public sealed class InternalApiToolExecutor : IToolExecutor
             // REQ-021: el repositorio de comprobantes electrónicos. Es la fuente
             // de verdad de la factura —la trae del SRI y la guarda—, frente al
             // OCR, que es una lectura de una foto.
-            ["{api-repositorio}"] = "Saludsa:BaseUrls:ApiRepositorio"
+            ["{api-repositorio}"] = "Saludsa:BaseUrls:ApiRepositorio",
+            // REQ-038: el servicio de liquidaciones. Es quien sabe de SOBRES:
+            // ObtenerSobre da los del afiliado y ObtenerDetalleSobre trae en
+            // una sola respuesta cabecera, estados, liquidacion y ficheros.
+            // Se parte en varias tools con Pick/Omit para no volcarle al
+            // modelo 1,69 MB de base64 cuando solo preguntaron "en que va".
+            ["{api-liquidacion}"] = "Saludsa:BaseUrls:ApiLiquidacion"
         };
 
         foreach (var (placeholder, configKey) in placeholders)

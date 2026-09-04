@@ -192,10 +192,22 @@ public class DiagnosticoController : Controller
             red.Add(await TcpAsync(uri.Host, uri.Port, ct));
         }
 
-        // El gateway por su IP, ademas de por su nombre. Si el nombre falla y la
-        // IP abre, esto se arregla con configuracion nuestra, no pidiendo una
-        // regla de cortafuegos a otra area.
+        // El gateway por su IP PRIVADA y por la PUBLICA. Nestor lo vio: ese
+        // servicio esta publicado en internet -el DNS publico devuelve
+        // 107.154.79.171, un Imperva- y solo el DNS corporativo lo resuelve a
+        // 10.66.66.117. Si la publica abre y la privada no, el problema no es
+        // un cortafuegos ajeno: es que la app esta preguntandole al DNS
+        // equivocado y saliendo por el tunel en vez de por internet.
         red.Add(await TcpAsync("10.66.66.117", 443, ct));
+        red.Add(await TcpAsync("107.154.79.171", 443, ct));
+
+        // Y cualquier otro que se quiera probar sin volver a desplegar.
+        var extra = Request.Query["host"].ToString();
+        if (!string.IsNullOrWhiteSpace(extra))
+        {
+            var pt = int.TryParse(Request.Query["puerto"], out var pp) ? pp : 443;
+            red.Add(await TcpAsync(extra, pt, ct));
+        }
 
         return Json(new
         {
@@ -373,11 +385,18 @@ public class DiagnosticoController : Controller
         var ruta = raiz.TryGetProperty("path", out var p0) ? p0.GetString() ?? "" : "";
         var metodo = raiz.TryGetProperty("method", out var m0) ? m0.GetString() ?? "GET" : "GET";
 
+        // La MISMA lista que InternalApiToolExecutor. Cuando faltaban tres,
+        // consultar_mis_reembolsos aparecia rota -"invalid request URI"- y la
+        // tool estaba bien: el que no sabia resolver era el diagnostico. Un
+        // diagnostico que no imita al ejecutor no diagnostica: confunde.
         var clave2 = plantilla switch
         {
-            "{api-contrato}"  => "Saludsa:BaseUrls:ApiContrato",
-            "{api-armonix}"   => "Saludsa:BaseUrls:ApiArmonix",
-            "{api-prestador}" => "Saludsa:BaseUrls:ApiPrestador",
+            "{api-contrato}"     => "Saludsa:BaseUrls:ApiContrato",
+            "{api-armonix}"      => "Saludsa:BaseUrls:ApiArmonix",
+            "{api-prestador}"    => "Saludsa:BaseUrls:ApiPrestador",
+            "{api-repositorio}"  => "Saludsa:BaseUrls:ApiRepositorio",
+            "{api-liquidacion}"  => "Saludsa:BaseUrls:ApiLiquidacion",
+            "{api-reembolso-automatico}" => "Saludsa:BaseUrls:ApiReembolsoAutomatico",
             _ => null
         };
         var baseUrl = clave2 == null ? plantilla : _config[clave2];
@@ -391,12 +410,21 @@ public class DiagnosticoController : Controller
             var cab = await _token.GetAuthHeadersAsync(ct);
             msToken = reloj.ElapsedMilliseconds;
 
+            // El ejecutor manda paramMap por QUERY -tambien en POST- y bodyMap
+            // en el cuerpo. Meterlo todo en el cuerpo daba 404 en
+            // consultar_coberturas_plan_prestador, que exige sus tres
+            // obligatorios en la query: otra tool sana marcada como rota.
+            var enCuerpo = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (raiz.TryGetProperty("bodyMap", out var bm) && bm.ValueKind == JsonValueKind.Array)
+                foreach (var x in bm.EnumerateArray())
+                    if (x.ValueKind == JsonValueKind.String) enCuerpo.Add(x.GetString()!);
+
             var qs = string.Join("&", Request.Query
                 .Where(x => x.Key.StartsWith("p_", StringComparison.OrdinalIgnoreCase))
+                .Where(x => !enCuerpo.Contains(x.Key[2..]))
                 .Select(x => Uri.EscapeDataString(x.Key[2..]) + "=" +
                              Uri.EscapeDataString(x.Value.ToString())));
-            var url = baseUrl.TrimEnd('/') + ruta +
-                      (metodo == "GET" && qs.Length > 0 ? "?" + qs : "");
+            var url = baseUrl.TrimEnd('/') + ruta + (qs.Length > 0 ? "?" + qs : "");
 
             using var req = new HttpRequestMessage(new HttpMethod(metodo), url);
             foreach (var (n, v) in cab) req.Headers.TryAddWithoutValidation(n, v);
@@ -404,6 +432,7 @@ public class DiagnosticoController : Controller
             {
                 var cuerpo = Request.Query
                     .Where(x => x.Key.StartsWith("p_", StringComparison.OrdinalIgnoreCase))
+                    .Where(x => enCuerpo.Count == 0 || enCuerpo.Contains(x.Key[2..]))
                     .ToDictionary(x => x.Key[2..], x => (object?)x.Value.ToString());
                 req.Content = new StringContent(JsonSerializer.Serialize(cuerpo),
                                                 System.Text.Encoding.UTF8, "application/json");
