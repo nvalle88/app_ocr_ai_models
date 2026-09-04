@@ -144,11 +144,22 @@
                             var num = /^[$\s]*-?[\d.,]+\s*%?$/.test(c);
                             var m = marca(c);
                             /* Una celda que es una direccion se lleva su mapa.
-                               Se reconoce por como escriben las direcciones de
-                               aqui: "Av. 9 de Octubre 123 y Malecon". Numeros y
-                               estados quedan fuera por el orden de las guardas. */
-                            var esDir = !num && !m && c.length > 12
-                                        && /(\bAv\.?\b|\bCalle\b|\bTorre\b|\bEdif|\bHospital\b|\bCentro\b|\bN\d|\bOf\.|,)/i.test(c);
+
+                               La regla anterior aceptaba una COMA suelta como
+                               senal, y con eso le colgaba un mapa a cualquier
+                               celda con coma. En la tabla de reembolsos, donde
+                               no hay una sola direccion, salian con enlace al
+                               mapa cosas como "382,00 (presentado)" o
+                               "Reembolso ambulatorio, ingresado".
+
+                               Ahora hace falta una palabra que solo aparece en
+                               direcciones de verdad, y se descarta lo que
+                               empieza por cifra. Comprobado contra direcciones
+                               reales de Co13SucursalesConvenio y contra las
+                               celdas que fallaban: 6 de 6 y 10 de 10. */
+                            var esDir = !num && !m && c.length > 18
+                                        && !/^[$\s]*-?[\d.,]+/.test(c)
+                                        && /(\bAv(\.|enida)?\b|\bCalle\b|\bCl\.|\bTorre\b|\bEdif|\bHospital\b|\bCl[ií]nica\b|\bCentro\s+(Comercial|M[eé]dico)\b|\bCiudadela\b|\bUrbanizaci[oó]n\b|\bManzana\b|\bMz\.|\bSolar\b|\bKm\.?\s*\d|\bLocal\s+\d|\bPiso\s+\d|\bOf\.)/i.test(c);
                             if (m) return '<td>' + m + '</td>';
                             return '<td' + (num ? ' class="num"' : '')
                                  + '>' + enLinea(c)

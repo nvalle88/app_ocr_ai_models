@@ -99,6 +99,16 @@ public static class NarradorDeTools
         ["tarifario_prestador"]                = "Consultando el precio negociado",
         ["consultar_autorizaciones"]           = "Buscando sus autorizaciones",
         ["buscar_sucursales_cerca"]            = "Buscando sucursales por esa zona",
+        // REQ-040: sin estas, las siete tools nuevas decian "Consultando sus
+        // datos" y el afiliado no veia QUE se estaba mirando, que es justo
+        // lo que hace util el globo de espera.
+        ["consultar_mis_reembolsos"]           = "Buscando sus reembolsos",
+        ["consultar_detalle_sobre"]            = "Viendo en que va ese sobre",
+        ["consultar_liquidacion_sobre"]        = "Revisando su liquidacion",
+        ["consultar_documentos_sobre"]         = "Buscando los documentos que subio",
+        ["consultar_ticket_sobre"]             = "Buscando el ticket de su tramite",
+        ["consultar_atencion_ticket"]          = "Leyendo la atencion de su ticket",
+        ["consultar_coberturas_plan_prestador"] = "Viendo que le cubren en ese prestador",
     };
 
     /// <summary>
@@ -192,6 +202,28 @@ public static class NarradorDeTools
             // Decir cuantos salieron, que es lo unico verdadero y ademas util:
             // "Sin resultados" a secas no distingue entre no haber encontrado
             // nada y no haber buscado bien.
+            case "consultar_mis_reembolsos":
+            case "consultar_ticket_sobre":
+            {
+                var filas = Filas(raiz);
+                if (filas < 0) return (null, "ok");
+                return filas == 0
+                    ? ("No encontre ninguno", "atencion")
+                    : ($"{filas} encontrado(s)", "ok");
+            }
+
+            case "consultar_liquidacion_sobre":
+                // Vacio NO es un fallo: significa que aun no se liquida, y asi
+                // hay que decirlo. Marcarlo como error haria que el modelo se
+                // disculpara por algo que es simplemente el estado del tramite.
+                return (EstadoOk(raiz) ? "Consultado" : "Todavia sin liquidar", "ok");
+
+            case "consultar_detalle_sobre":
+            case "consultar_documentos_sobre":
+            case "consultar_atencion_ticket":
+            case "consultar_coberturas_plan_prestador":
+                return (EstadoOk(raiz) ? "Consultado" : null, "ok");
+
             case "buscar_sucursales_cerca":
             {
                 var filas = Filas(raiz);
