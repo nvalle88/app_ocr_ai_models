@@ -109,6 +109,11 @@ public static class NarradorDeTools
         ["consultar_ticket_sobre"]             = "Buscando el ticket de su tramite",
         ["consultar_atencion_ticket"]          = "Leyendo la atencion de su ticket",
         ["consultar_coberturas_plan_prestador"] = "Viendo que le cubren en ese prestador",
+        // REQ-042: el precio de la consulta se pregunta por dos lados a la vez
+        // -lo negociado y la regla general del contrato- y sin estas dos lineas
+        // el afiliado veia el mismo "Consultando sus datos" repetido.
+        ["precio_consulta_medico"]             = "Calculando cuanto le costaria la consulta",
+        ["copago_del_prestador"]               = "Viendo si ese prestador tiene copago negociado",
     };
 
     /// <summary>
@@ -231,10 +236,46 @@ public static class NarradorDeTools
                 if (filas == 0) return ("Ninguna por esa zona", "atencion");
                 // ComoSeBusco dice si de verdad ubico el sitio. Cuando no, la
                 // lista es de toda la ciudad y anunciar "5 cerca" seria mentir.
+                //
+                // Se busca "NO se ubico" en cualquier posicion y no el principio
+                // exacto de la frase: la version anterior comparaba con
+                // StartsWith("NO se pudo ubicar") y al reescribir el texto en
+                // REQ-042a habria dejado de casar, sin fallar y sin avisar.
+                // Y hay un tercer caso nuevo: la zona se ubico pero es ancha
+                // -una avenida, un nombre repetido-, y ahi la distancia existe
+                // pero es aproximada, asi que tampoco se anuncia como "cerca".
                 var como = Texto(raiz, "ComoSeBusco") ?? string.Empty;
-                return como.StartsWith("NO se pudo ubicar", StringComparison.OrdinalIgnoreCase)
-                    ? ($"{filas}, pero de toda la ciudad", "atencion")
-                    : ($"{filas} cerca", "ok");
+                if (como.Contains("NO se ubico", StringComparison.OrdinalIgnoreCase))
+                    return ($"{filas}, pero de toda la ciudad", "atencion");
+                if (como.Contains("no es un punto sino una zona", StringComparison.OrdinalIgnoreCase))
+                    return ($"{filas} por esa zona", "ok");
+                return ($"{filas} cerca", "ok");
+            }
+
+            // El precio de la consulta. Lo que el afiliado espera leer es UNA
+            // cifra -la suya-, asi que el veredicto la adelanta en vez de decir
+            // cuantas filas vinieron.
+            case "precio_consulta_medico":
+            {
+                var filas = Filas(raiz);
+                if (filas < 0) return (null, "ok");
+                if (filas == 0) return ("No se pudo calcular", "atencion");
+                var paga = Texto(raiz, "UstedPaga");
+                return string.IsNullOrWhiteSpace(paga)
+                    ? ("Calculado", "ok")
+                    : ($"Usted pondria US$ {paga}", "ok");
+            }
+
+            // Vacia NO es un fallo: quiere decir que ese prestador no tiene nada
+            // negociado y que manda la regla general. Pintarlo en ambar seria
+            // alarmar por lo normal -de 2.270 convenios solo 860 tienen copago-.
+            case "copago_del_prestador":
+            {
+                var filas = Filas(raiz);
+                if (filas < 0) return (null, "ok");
+                return filas == 0
+                    ? ("Sin copago negociado", "ok")
+                    : ($"{filas} valor(es) negociados", "ok");
             }
 
             case "buscar_prestador_convenio":
