@@ -70,6 +70,22 @@ namespace app_ocr_ai_models.Services
                 var bytes = await ObtenerBytesAsync(file, cts.Token);
                 var blobUrl = await SubirBytesAsync(bytes, file.Extension, blobCfg, cts.Token);
 
+                // Factura electronica (XML del SRI): NO se OCR-ea, se PARSEA.
+                // DocIntel sobre un XML devuelve vacio -no es una imagen, es
+                // dato estructurado-. Se saca el comprobante y sus campos a
+                // texto legible para que el agente lea la factura igual que si
+                // fuera un PDF escaneado.
+                if (EsXml(file.Extension, bytes))
+                {
+                    var textoXml = ExtraerTextoDeFacturaXml(bytes);
+                    return new OcrResultado
+                    {
+                        Url     = blobUrl,
+                        Text    = textoXml,
+                        Paginas = new List<PaginaOcr> { new() { PageNumber = 1, Text = textoXml } }
+                    };
+                }
+
                 var clientOcr = new DocumentIntelligenceClient(
                     new Uri(ocrSetting.Endpoint),
                     new AzureKeyCredential(ocrSetting.ApiKey!));
@@ -246,6 +262,111 @@ namespace app_ocr_ai_models.Services
             }
 
             return sb.ToString();
+        }
+
+        // ── Factura electronica en XML ───────────────────────────────────────
+
+        /// <summary>¿El fichero es un XML? Por extension o por su primer contenido.</summary>
+        private static bool EsXml(string? extension, byte[] bytes)
+        {
+            if (!string.IsNullOrWhiteSpace(extension) &&
+                extension.Trim().TrimStart('.').Equals("xml", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // Sin extension fiable: se mira el arranque del contenido (saltando BOM
+            // y espacios). Un XML empieza por '<?xml' o directo por una etiqueta.
+            var cabeza = System.Text.Encoding.UTF8.GetString(bytes, 0, Math.Min(bytes.Length, 200))
+                .TrimStart('﻿', ' ', '\r', '\n', '\t');
+            return cabeza.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase)
+                || cabeza.StartsWith("<autorizacion", StringComparison.OrdinalIgnoreCase)
+                || cabeza.StartsWith("<factura", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Saca de la factura electronica del SRI un texto legible: emisor, RUC,
+        /// clave de acceso, comprador, fecha, cada linea de detalle y el total.
+        ///
+        /// El XML del SRI es una &lt;autorizacion&gt; que envuelve el
+        /// &lt;comprobante&gt; -la &lt;factura&gt; de verdad- dentro de un CDATA.
+        /// Se abre esa capa y se aplana. Si algo no cuadra, se devuelve el XML
+        /// crudo -que tambien es texto- para no perder el dato.
+        /// </summary>
+        private static string ExtraerTextoDeFacturaXml(byte[] bytes)
+        {
+            string crudo;
+            try { crudo = System.Text.Encoding.UTF8.GetString(bytes).TrimStart('﻿'); }
+            catch { crudo = string.Empty; }
+            if (string.IsNullOrWhiteSpace(crudo)) return string.Empty;
+
+            try
+            {
+                var doc = System.Xml.Linq.XDocument.Parse(crudo);
+                var raiz = doc.Root;
+
+                // Datos de la autorizacion (si viene envuelta).
+                var estado    = raiz?.Element("estado")?.Value;
+                var numAut    = raiz?.Element("numeroAutorizacion")?.Value;
+                var fechaAut  = raiz?.Element("fechaAutorizacion")?.Value;
+
+                // El comprobante real: dentro de <comprobante> (CDATA) o, si el
+                // XML ya es la factura, la propia raiz.
+                var compTexto = raiz?.Element("comprobante")?.Value;
+                var factura = !string.IsNullOrWhiteSpace(compTexto)
+                    ? System.Xml.Linq.XDocument.Parse(compTexto).Root
+                    : (raiz != null && raiz.Name.LocalName.Equals("factura", StringComparison.OrdinalIgnoreCase) ? raiz : null);
+
+                if (factura == null) return crudo;   // no es una factura reconocible: se da tal cual
+
+                string? V(System.Xml.Linq.XElement? padre, string hijo) => padre?.Element(hijo)?.Value?.Trim();
+                var trib = factura.Element("infoTributaria");
+                var inf  = factura.Element("infoFactura");
+
+                var sb = new StringBuilder();
+                sb.AppendLine("FACTURA ELECTRONICA");
+                if (!string.IsNullOrWhiteSpace(estado)) sb.AppendLine($"Estado autorizacion: {estado}");
+                if (!string.IsNullOrWhiteSpace(numAut))  sb.AppendLine($"Numero de autorizacion: {numAut}");
+                if (!string.IsNullOrWhiteSpace(fechaAut)) sb.AppendLine($"Fecha autorizacion: {fechaAut}");
+                sb.AppendLine();
+                sb.AppendLine($"Emisor: {V(trib, "razonSocial")}  (RUC {V(trib, "ruc")})");
+                var comercial = V(trib, "nombreComercial");
+                if (!string.IsNullOrWhiteSpace(comercial)) sb.AppendLine($"Nombre comercial: {comercial}");
+                sb.AppendLine($"Clave de acceso: {V(trib, "claveAcceso")}");
+                sb.AppendLine($"Factura: {V(trib, "estab")}-{V(trib, "ptoEmi")}-{V(trib, "secuencial")}");
+                sb.AppendLine($"Fecha de emision: {V(inf, "fechaEmision")}");
+                sb.AppendLine($"Comprador: {V(inf, "razonSocialComprador")}  (ID {V(inf, "identificacionComprador")})");
+                sb.AppendLine();
+
+                var detalles = factura.Element("detalles")?.Elements("detalle");
+                if (detalles != null)
+                {
+                    sb.AppendLine("Detalle:");
+                    foreach (var d in detalles)
+                    {
+                        var desc = V(d, "descripcion");
+                        var cant = V(d, "cantidad");
+                        var pu   = V(d, "precioUnitario");
+                        var tot  = V(d, "precioTotalSinImpuesto");
+                        sb.AppendLine($"  - {desc} | cant {cant} | P.U. {pu} | total {tot}");
+                    }
+                    sb.AppendLine();
+                }
+
+                sb.AppendLine($"Subtotal sin impuestos: {V(inf, "totalSinImpuestos")}");
+                sb.AppendLine($"IMPORTE TOTAL: {V(inf, "importeTotal")}");
+
+                // Se anexa el comprobante crudo al final: si al agente le falta un
+                // campo que no aplane aqui, lo tiene entero.
+                sb.AppendLine();
+                sb.AppendLine("--- XML del comprobante ---");
+                sb.Append(factura.ToString());
+
+                return sb.ToString();
+            }
+            catch
+            {
+                // XML raro o roto: mejor el texto crudo que nada -el agente lo lee-.
+                return crudo;
+            }
         }
 
         /// <summary>
