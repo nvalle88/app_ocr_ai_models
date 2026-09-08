@@ -2,6 +2,9 @@ using System;
 using System.Linq;
 using System.IO;
 using System.Text;
+using System.Text.Json;
+using System.Net.Http;
+using Microsoft.Data.SqlClient;
 using System.Threading.Tasks;
 using app_ocr_ai_models.Areas.Studio.Models;
 using app_ocr_ai_models.Data;
@@ -81,6 +84,88 @@ public sealed class ChatClienteController : Controller
         _config = config; _http = http; _token = token;
         _toolExecutor = toolExecutor; _previas = previas; _ocr = ocr;
         _portal = portal;
+    }
+
+    /// <summary>
+    /// La CARTA DE LIQUIDACION oficial de un sobre, en PDF.
+    ///
+    /// No se reinventa: la genera el mismo servicio de Saludsa que usa el portal
+    /// -POST ServicioArmonix/api/reclamos/generarPdf con el reclamo-. Aqui solo
+    /// se resuelve el reclamo del sobre (Lr02Reclamos por numero de sobre, que es
+    /// donde vive la liquidacion de verdad) y se le pide la carta al servicio.
+    /// Se devuelve como descarga: el PDF no entra al chat.
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> CartaLiquidacion(string numeroSobre, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(numeroSobre)) return NotFound();
+        var sobre = numeroSobre.Trim();
+
+        // 1) El reclamo del sobre, en SaludReclamos (SQLCORPROD). El codigo de
+        //    contrato sale del detalle (Lr04), que es donde queda a nivel de linea.
+        int numeroReclamo = 0, numeroAlcance = 0, codigoContrato = 0;
+        var cs = _config.GetConnectionString("SaludReclamos");
+        if (string.IsNullOrWhiteSpace(cs)) return NotFound();
+        try
+        {
+            await using var conn = new SqlConnection(cs);
+            await conn.OpenAsync(ct);
+            await using var cmd = new SqlCommand(
+                "SELECT TOP 1 r.NumeroReclamo, r.NumeroAlcance, " +
+                "(SELECT TOP 1 d.CodigoContrato FROM Salud.dbo.Lr04DetalleReclamo d WITH (NOLOCK) " +
+                " WHERE d.NumeroReclamo = r.NumeroReclamo) AS CodigoContrato " +
+                "FROM Salud.dbo.Lr02Reclamos r WITH (NOLOCK) " +
+                "WHERE r.NumeroSobre = @s ORDER BY r.NumeroReclamo", conn) { CommandTimeout = 30 };
+            cmd.Parameters.Add(new SqlParameter("@s", sobre));
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            if (!await rd.ReadAsync(ct)) return NotFound("Ese sobre todavia no tiene un reclamo liquidado.");
+            numeroReclamo  = rd.IsDBNull(0) ? 0 : rd.GetInt32(0);
+            numeroAlcance  = rd.IsDBNull(1) ? 0 : rd.GetInt32(1);
+            codigoContrato = rd.IsDBNull(2) ? 0 : (int)rd.GetDecimal(2);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "[Carta] No se pudo resolver el reclamo del sobre {Sobre}", sobre);
+            return NotFound("No se pudo consultar el reclamo de ese sobre.");
+        }
+        if (numeroReclamo == 0) return NotFound("Ese sobre todavia no tiene un reclamo liquidado.");
+
+        // 2) La carta, al servicio de Armonix -el mismo del portal-.
+        var baseArmonix = _config["Saludsa:BaseUrls:ApiArmonix"];
+        if (string.IsNullOrWhiteSpace(baseArmonix)) return NotFound();
+        var url = baseArmonix.TrimEnd('/') + "/api/reclamos/generarPdf";
+        var cuerpo = JsonSerializer.Serialize(new
+        {
+            CodigoContrato = codigoContrato,
+            NumeroReclamo  = numeroReclamo,
+            NumeroAlcance  = numeroAlcance,
+            isNuevaCarta   = true
+        });
+        try
+        {
+            var headers = await _token.GetAuthHeadersAsync(ct);
+            using var http = _http.CreateClient("SaludsaInternalApi");
+            using var req = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(cuerpo, Encoding.UTF8, "application/json")
+            };
+            foreach (var (k, v) in headers) req.Headers.TryAddWithoutValidation(k, v);
+            using var resp = await http.SendAsync(req, ct);
+            var bytes = await resp.Content.ReadAsByteArrayAsync(ct);
+            // %PDF al inicio: si no, no es una carta y no se sirve un cuerpo de error.
+            if (!resp.IsSuccessStatusCode || bytes.Length < 5 || bytes[0] != 0x25 || bytes[1] != 0x50)
+            {
+                _log.LogWarning("[Carta] generarPdf devolvio {Code} ({Bytes} bytes) para reclamo {Reclamo}",
+                    (int)resp.StatusCode, bytes.Length, numeroReclamo);
+                return NotFound("No se pudo generar la carta de liquidacion en este momento.");
+            }
+            return File(bytes, "application/pdf", $"Liquidacion-{sobre}.pdf");
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "[Carta] Error pidiendo la carta del reclamo {Reclamo}", numeroReclamo);
+            return NotFound("No se pudo generar la carta de liquidacion en este momento.");
+        }
     }
 
     /// <summary>
