@@ -65,16 +65,28 @@ namespace app_ocr_ai_models.Services
 
             try
             {
-                var blobUrl = await UploadBlobInternalAsync(file, blobCfg, cts.Token);
+                // Los BYTES una sola vez: sirven para guardar el fichero en el
+                // blob Y para el OCR, sin volver a bajarlo.
+                var bytes = await ObtenerBytesAsync(file, cts.Token);
+                var blobUrl = await SubirBytesAsync(bytes, file.Extension, blobCfg, cts.Token);
 
                 var clientOcr = new DocumentIntelligenceClient(
                     new Uri(ocrSetting.Endpoint),
                     new AzureKeyCredential(ocrSetting.ApiKey!));
 
+                // Se le manda el CONTENIDO a DocIntel, no la URL del blob.
+                //
+                // Con la URL, DocIntel tiene que ir a DESCARGAR el blob, y para
+                // eso el contenedor debe ser publico o la URL venir firmada. En
+                // pruebas el contenedor era publico y "colaba"; en produccion el
+                // contenedor es PRIVADO -y debe serlo: son facturas medicas de
+                // afiliados- asi que DocIntel no podia leerlo y el OCR salia
+                // VACIO aunque la factura estuviera clara. Mandando los bytes no
+                // hace falta exponer nada y funciona con el blob cerrado.
                 var operation = await clientOcr.AnalyzeDocumentAsync(
                     WaitUntil.Completed,
                     ocrSetting.ModelId,
-                    new Uri(blobUrl),
+                    BinaryData.FromBytes(bytes),
                     cancellationToken: cts.Token);
 
                 var analyze = operation.Value;
@@ -234,6 +246,42 @@ namespace app_ocr_ai_models.Services
             }
 
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// Los bytes del archivo, vengan como Base64 (Content) o por URL. Una
+        /// sola lectura para blob y OCR.
+        /// </summary>
+        private async Task<byte[]> ObtenerBytesAsync(OcrFile file, CancellationToken ct)
+        {
+            if (!string.IsNullOrWhiteSpace(file.Content))
+            {
+                try { return Convert.FromBase64String(file.Content); }
+                catch (FormatException) { throw new NegocioException("Content no es Base64 válido."); }
+            }
+            if (!string.IsNullOrWhiteSpace(file.Url))
+            {
+                await using var s = await _fileDownloader.DownloadUrlToMemoryStreamAsync(file.Url, ct);
+                using var ms = new MemoryStream();
+                await s.CopyToAsync(ms, ct);
+                return ms.ToArray();
+            }
+            throw new NegocioException("Archivo sin Content ni Url.");
+        }
+
+        /// <summary>Sube bytes ya materializados al blob y devuelve su URL.</summary>
+        private async Task<string> SubirBytesAsync(
+            byte[] bytes, string? extension, AzureBlobConf blobCfg, CancellationToken ct)
+        {
+            ValidateBlobCfg(blobCfg);
+            var blobServiceClient = new BlobServiceClient(blobCfg.ConnectionString);
+            var containerClient = blobServiceClient.GetBlobContainerClient(blobCfg.ContainerName);
+            await containerClient.CreateIfNotExistsAsync(cancellationToken: ct);
+            var ext = NormalizeExtension(extension);
+            var blobClient = containerClient.GetBlobClient($"{Guid.NewGuid()}{ext}");
+            await using var ms = new MemoryStream(bytes, writable: false);
+            await blobClient.UploadAsync(ms, overwrite: true, cancellationToken: ct);
+            return blobClient.Uri.ToString();
         }
 
         private async Task<string> UploadBlobInternalAsync(
