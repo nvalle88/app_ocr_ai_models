@@ -62,6 +62,7 @@ public sealed class ChatClienteController : Controller
     private readonly IOcrIngestService? _ocr;
     private readonly IToolExecutor? _toolExecutor;
     private readonly Services.Ai.IPreValidaciones? _previas;
+    private readonly Services.Ai.PortalClienteService? _portal;
     private readonly ILogger<ChatClienteController> _log;
 
     public ChatClienteController(
@@ -73,11 +74,68 @@ public sealed class ChatClienteController : Controller
         ISaludsaTokenProvider token,
         IToolExecutor? toolExecutor = null,
         Services.Ai.IPreValidaciones? previas = null,
-        IOcrIngestService? ocr = null)
+        IOcrIngestService? ocr = null,
+        Services.Ai.PortalClienteService? portal = null)
     {
         _db = db; _factory = factory; _log = log;
         _config = config; _http = http; _token = token;
         _toolExecutor = toolExecutor; _previas = previas; _ocr = ocr;
+        _portal = portal;
+    }
+
+    /// <summary>
+    /// Identificación EN VIVO por cédula. Si en la Consulta se escribe una cédula
+    /// y no hay ningún caso de esa persona, se resuelve su contrato contra el
+    /// servicio de Saludsa —igual que el Portal del afiliado— y se guardan sus
+    /// contratos como casos, con el JSON real que devuelve la API. Así el auditor
+    /// no depende de que exista un reembolso previo: escribe la cédula y atiende.
+    ///
+    /// Devuelve cuántos contratos se sembraron. Es idempotente: si ya existe un
+    /// caso para (cédula, contrato) no lo duplica.
+    /// </summary>
+    private async Task<int> ResolverEnVivoAsync(string cedula)
+    {
+        if (_portal == null) return 0;
+
+        var res = await _portal.BuscarContratosAsync(cedula, Guid.NewGuid());
+        if (!res.EsOk || res.Contratos.Count == 0) return 0;
+
+        var ced = Services.Ai.PortalClienteService.NormalizarCedula(cedula);
+        var creados = 0;
+
+        foreach (var c in res.Contratos)
+        {
+            var numero = (c.Numero ?? string.Empty).Trim();
+            if (numero.Length == 0) continue;
+
+            // No duplicar: si ya hay un caso de esta persona y este contrato, se deja.
+            var yaExiste = await _db.SolicitudCliente
+                .AnyAsync(x => x.Cedula == ced && x.NumeroContrato == numero);
+            if (yaExiste) continue;
+
+            _db.SolicitudCliente.Add(new SolicitudCliente
+            {
+                CaseCode         = Guid.NewGuid(),
+                Cedula           = ced,
+                NumeroContrato   = numero,
+                CodigoProducto   = c.Producto,
+                CodigoRegion     = c.Region,
+                CodigoPlan       = c.CodigoPlan,
+                NombrePlan       = string.IsNullOrWhiteSpace(c.NombreComercial) ? c.NombrePlan : c.NombreComercial,
+                NombreTitular    = c.TitularNombre,
+                NumeroPersona    = c.TitularNumero,
+                NombreBeneficiario = c.TitularNombre,
+                CedulaBeneficiario = c.TitularDocumento ?? ced,
+                ContratoJson     = c.Crudo,   // el JSON REAL de la API, no un stub
+                Estado           = "CONFIRMADO",
+                DatosConfirmados = true,
+                CreatedDate      = DateTime.UtcNow
+            });
+            creados++;
+        }
+
+        if (creados > 0) await _db.SaveChangesAsync();
+        return creados;
     }
 
     // GET /Studio/ChatCliente?caseCode=&embed=true
@@ -102,6 +160,30 @@ public sealed class ChatClienteController : Controller
             // es hacerle trabajo. Si es todo digitos se busca por cedula y por
             // contrato; si no, por nombre del titular o del beneficiario.
             var t = (buscar ?? string.Empty).Trim();
+
+            // Cédula completa (10 dígitos) y todavía sin ningún caso de esa
+            // persona: se resuelve EN VIVO contra el servicio de Saludsa y se
+            // siembran sus contratos reales como casos. Así la Consulta no
+            // depende de que exista un reembolso previo —escribir la cédula
+            // basta para atender— y lo que se muestra es el dato de producción,
+            // no una ficha inventada.
+            if (t.Length == 10 && t.All(char.IsDigit))
+            {
+                var hayLocal = await _db.SolicitudCliente
+                    .AnyAsync(x => x.Cedula == t || x.CedulaBeneficiario == t);
+                if (!hayLocal)
+                {
+                    try { await ResolverEnVivoAsync(t); }
+                    catch (Exception ex)
+                    {
+                        // Si la resolución en vivo falla, no se rompe la pantalla:
+                        // se sigue con lo local (que estará vacío) y el mensaje de
+                        // "no encontré" de más abajo lo explica.
+                        _log.LogWarning(ex, "[ChatCliente] No se pudo resolver en vivo la cédula {Cedula}", t);
+                    }
+                }
+            }
+
             if (t.Length >= 3)
             {
                 if (t.All(char.IsDigit))
