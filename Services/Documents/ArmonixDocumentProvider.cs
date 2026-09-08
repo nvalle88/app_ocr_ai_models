@@ -212,8 +212,13 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
                 "[T22 B1] 'Saludsa:BaseUrls:ApiContrato' no está configurada " +
                 "(necesaria para buscar sobres por cédula).");
 
+        // tipoDocumento=C (no "CEDULA"): la API SOLO acepta la letra. Con la
+        // palabra completa devuelve "No existen datos de: contratos" -mismo caso
+        // que resolver_contrato_por_cedula-. Y canalAcceso=APP-WEB para que
+        // traiga TODOS los contratos, no vacio en corporativos/telemedicina.
         var url = $"{baseUrl.TrimEnd('/')}/api/contrato/ObtenerContratoPorDocumento" +
-                  $"?tipoDocumento=CEDULA&numeroDocumento={Uri.EscapeDataString(cedula)}";
+                  $"?tipoDocumento=C&numeroDocumento={Uri.EscapeDataString(cedula)}" +
+                  $"&codigoProducto=True&canalAcceso=APP-WEB";
 
         var authHeaders = await _tokenProvider.GetAuthHeadersAsync(ct).ConfigureAwait(false);
 
