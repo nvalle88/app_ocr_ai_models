@@ -498,7 +498,7 @@
         @* Pantalla de espera. Buscar por cédula resuelve el contrato EN VIVO
            contra Salud S.A. y eso tarda unos segundos; sin esto la página se
            queda en blanco y no se sabe si está trabajando o se colgó. *@
-        <div id="cc-espera" class="cc-espera" hidden>
+        <div id="cc-espera" class="cc-espera">
             <div class="cc-espera-caja">
                 <div class="cc-espera-anillo"></div>
                 <div class="cc-espera-tit">Buscando al afiliado…</div>
@@ -507,10 +507,16 @@
             </div>
         </div>
         <style>
-            .cc-espera { position:fixed; inset:0; z-index:2000; display:flex;
+            /* Oculto por defecto. Se controla por CLASE, no por el atributo
+               hidden: una regla de clase (.cc-espera) le gana en especificidad
+               al [hidden]{display:none} del navegador, y el velo se quedaba
+               pegado al cargar. Con display:none aqui y .cc-on para mostrarlo
+               no hay ambiguedad. */
+            .cc-espera { display:none; position:fixed; inset:0; z-index:2000;
                          align-items:center; justify-content:center;
                          background:rgba(244,247,252,.82); backdrop-filter:blur(3px);
                          animation:cc-fade .18s ease; }
+            .cc-espera.cc-on { display:flex; }
             @@keyframes cc-fade { from { opacity:0 } to { opacity:1 } }
             .cc-espera-caja { text-align:center; max-width:320px; padding:28px 30px;
                               background:#fff; border:1px solid #E3E9F3; border-radius:16px;
@@ -539,19 +545,24 @@
                     'Ordenando sus contratos…',
                     'Casi listo…'
                 ];
+                var timer = null;
                 form.addEventListener('submit', function () {
                     var v = (form.querySelector('input[name=buscar]') || {}).value || '';
                     if (!v.trim()) return;            // sin texto no hay espera
-                    espera.hidden = false;
+                    espera.classList.add('cc-on');    // se muestra SOLO al enviar
                     var i = 0;
-                    setInterval(function () {
+                    timer = setInterval(function () {
                         i = Math.min(i + 1, pasos.length - 1);
                         if (sub) { sub.style.opacity = 0;
                             setTimeout(function () { sub.textContent = pasos[i]; sub.style.opacity = 1; }, 180); }
                     }, 2200);
                 });
-                // Si se vuelve por el historial del navegador, que no quede el velo pegado.
-                window.addEventListener('pageshow', function () { espera.hidden = true; });
+                // Al cargar (incluida la vuelta por el historial) el velo NUNCA
+                // debe quedar puesto: la respuesta ya llegó.
+                window.addEventListener('pageshow', function () {
+                    espera.classList.remove('cc-on');
+                    if (timer) { clearInterval(timer); timer = null; }
+                });
             })();
         </script>
 
