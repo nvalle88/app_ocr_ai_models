@@ -73,9 +73,21 @@ public sealed class PortalClienteService
         string json;
         try
         {
+            // Los CUATRO parametros con los que el servicio devuelve TODOS los
+            // contratos, tal como los manda el front del portal (lo verifico
+            // Nestor a mano): sin canalAcceso=APP-WEB algunos afiliados vuelven
+            // vacios, y codigoProducto=True es un flag del endpoint, no un
+            // producto. Aqui se pasan explicitos y no por el default del schema,
+            // porque esta ruta no la conduce el modelo.
             json = await _tools.ExecuteAsync(
                 "resolver_contrato_por_cedula", AgentePortal,
-                new Dictionary<string, object?> { ["numeroDocumento"] = ced, ["tipoDocumento"] = "C" },
+                new Dictionary<string, object?>
+                {
+                    ["numeroDocumento"] = ced,
+                    ["tipoDocumento"]   = "C",
+                    ["codigoProducto"]  = "True",
+                    ["canalAcceso"]     = "APP-WEB"
+                },
                 execId, ced, ct);
         }
         catch (Exception ex)
