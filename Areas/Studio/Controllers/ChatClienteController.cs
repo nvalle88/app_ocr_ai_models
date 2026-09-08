@@ -97,7 +97,21 @@ public sealed class ChatClienteController : Controller
     {
         if (_portal == null) return 0;
 
-        var res = await _portal.BuscarContratosAsync(cedula, Guid.NewGuid());
+        // La resolución cuelga su ejecución (StepExecution) de un caso, y
+        // StepExecution.CaseCode tiene FK a ProcessCase: hay que abrir un caso
+        // REAL antes, no un Guid al aire, o el INSERT del log revienta y no se
+        // resuelve nada. Es lo mismo que hace el Portal del afiliado.
+        var casoResolucion = new ProcessCase
+        {
+            CaseCode       = Guid.NewGuid(),
+            DefinitionCode = "PORTAL_CLIENTE",
+            StartDate      = DateTime.UtcNow,
+            State          = "Started"
+        };
+        _db.ProcessCase.Add(casoResolucion);
+        await _db.SaveChangesAsync();
+
+        var res = await _portal.BuscarContratosAsync(cedula, casoResolucion.CaseCode);
         if (!res.EsOk || res.Contratos.Count == 0) return 0;
 
         var ced = Services.Ai.PortalClienteService.NormalizarCedula(cedula);
@@ -113,9 +127,21 @@ public sealed class ChatClienteController : Controller
                 .AnyAsync(x => x.Cedula == ced && x.NumeroContrato == numero);
             if (yaExiste) continue;
 
+            // Un caso propio por contrato: al hacer clic en la tarjeta el chat
+            // crea su StepExecution colgado de ESTE CaseCode, que también tiene
+            // FK a ProcessCase. Sin un caso real detrás, el chat fallaría al
+            // primer mensaje.
+            var caseCode = Guid.NewGuid();
+            _db.ProcessCase.Add(new ProcessCase
+            {
+                CaseCode       = caseCode,
+                DefinitionCode = "PORTAL_CLIENTE",
+                StartDate      = DateTime.UtcNow,
+                State          = "Started"
+            });
             _db.SolicitudCliente.Add(new SolicitudCliente
             {
-                CaseCode         = Guid.NewGuid(),
+                CaseCode         = caseCode,
                 Cedula           = ced,
                 NumeroContrato   = numero,
                 CodigoProducto   = c.Producto,
