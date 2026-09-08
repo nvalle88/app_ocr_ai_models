@@ -479,7 +479,7 @@
            buscar, y esconderlo obligaria a recargar a mano. *@
         <div class="st-card is-principal" style="margin-bottom:16px">
             <div class="st-card-cuerpo">
-                <form method="get" asp-area="Studio" asp-controller="ChatCliente" asp-action="Index">
+                <form id="cc-form-buscar" method="get" asp-area="Studio" asp-controller="ChatCliente" asp-action="Index">
                     <div class="st-buscador">
                         <input name="buscar" type="text" value="@Model.Buscar"
                                placeholder="Cédula, número de contrato o nombre del afiliado" autofocus />
@@ -494,6 +494,66 @@
                 </form>
             </div>
         </div>
+
+        @* Pantalla de espera. Buscar por cédula resuelve el contrato EN VIVO
+           contra Salud S.A. y eso tarda unos segundos; sin esto la página se
+           queda en blanco y no se sabe si está trabajando o se colgó. *@
+        <div id="cc-espera" class="cc-espera" hidden>
+            <div class="cc-espera-caja">
+                <div class="cc-espera-anillo"></div>
+                <div class="cc-espera-tit">Buscando al afiliado…</div>
+                <div id="cc-espera-sub" class="cc-espera-sub">Consultando sus contratos en Salud&nbsp;S.A.</div>
+                <div class="cc-espera-pie">Puede tomar unos segundos</div>
+            </div>
+        </div>
+        <style>
+            .cc-espera { position:fixed; inset:0; z-index:2000; display:flex;
+                         align-items:center; justify-content:center;
+                         background:rgba(244,247,252,.82); backdrop-filter:blur(3px);
+                         animation:cc-fade .18s ease; }
+            @@keyframes cc-fade { from { opacity:0 } to { opacity:1 } }
+            .cc-espera-caja { text-align:center; max-width:320px; padding:28px 30px;
+                              background:#fff; border:1px solid #E3E9F3; border-radius:16px;
+                              box-shadow:0 18px 50px -18px rgba(0,47,135,.28); }
+            .cc-espera-anillo { width:46px; height:46px; margin:0 auto 16px;
+                                border:4px solid #E3E9F3; border-top-color:#002F87;
+                                border-radius:50%; animation:cc-giro .8s linear infinite; }
+            @@keyframes cc-giro { to { transform:rotate(360deg) } }
+            .cc-espera-tit { font-size:16px; font-weight:700; color:#1F2A33; }
+            .cc-espera-sub { margin-top:6px; font-size:13.5px; color:#4A5A6A;
+                             min-height:19px; transition:opacity .2s ease; }
+            .cc-espera-pie { margin-top:12px; font-size:11px; text-transform:uppercase;
+                             letter-spacing:.5px; color:#8FAAD9; }
+        </style>
+        <script>
+            (function () {
+                var form = document.getElementById('cc-form-buscar');
+                var espera = document.getElementById('cc-espera');
+                if (!form || !espera) return;
+                var sub = document.getElementById('cc-espera-sub');
+                // Los pasos van avanzando para que se vea que sigue trabajando,
+                // no que se colgó. El texto acompaña lo que de verdad pasa.
+                var pasos = [
+                    'Consultando sus contratos en Salud S.A.',
+                    'Leyendo su plan y sus coberturas…',
+                    'Ordenando sus contratos…',
+                    'Casi listo…'
+                ];
+                form.addEventListener('submit', function () {
+                    var v = (form.querySelector('input[name=buscar]') || {}).value || '';
+                    if (!v.trim()) return;            // sin texto no hay espera
+                    espera.hidden = false;
+                    var i = 0;
+                    setInterval(function () {
+                        i = Math.min(i + 1, pasos.length - 1);
+                        if (sub) { sub.style.opacity = 0;
+                            setTimeout(function () { sub.textContent = pasos[i]; sub.style.opacity = 1; }, 180); }
+                    }, 2200);
+                });
+                // Si se vuelve por el historial del navegador, que no quede el velo pegado.
+                window.addEventListener('pageshow', function () { espera.hidden = true; });
+            })();
+        </script>
 
         @if (!string.IsNullOrWhiteSpace(Model.Error))
         {
