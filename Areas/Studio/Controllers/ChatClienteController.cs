@@ -96,13 +96,21 @@ public sealed class ChatClienteController : Controller
     /// Se devuelve como descarga: el PDF no entra al chat.
     /// </summary>
     [HttpGet]
-    public async Task<IActionResult> CartaLiquidacion(string numeroSobre, CancellationToken ct = default)
+    public async Task<IActionResult> CartaLiquidacion(string numeroSobre, bool descargar = false,
+                                                      CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(numeroSobre)) return NotFound();
         var sobre = numeroSobre.Trim();
 
-        // 1) El reclamo del sobre, en SaludReclamos (SQLCORPROD). El codigo de
-        //    contrato sale del detalle (Lr04), que es donde queda a nivel de linea.
+        // 1) El reclamo del sobre, en SaludReclamos (SQLCORPROD). En DOS lookups
+        //    indexados, no un JOIN con subconsulta correlacionada: NumeroSobre y
+        //    NumeroReclamo tienen indice, y asi cada uno es un seek.
+        //
+        //    OJO con el tipo del parametro: NumeroSobre es VARCHAR. Si se manda
+        //    como nvarchar (el default de SqlParameter con string), el indice no
+        //    se puede usar, se escanea Lr02Reclamos entera -millones de filas- y
+        //    la consulta se pasa de los 30 s: "Execution Timeout Expired". Por
+        //    eso va explicito como VarChar.
         int numeroReclamo = 0, numeroAlcance = 0, codigoContrato = 0;
         var cs = _config.GetConnectionString("SaludReclamos");
         if (string.IsNullOrWhiteSpace(cs)) return NotFound();
@@ -110,18 +118,25 @@ public sealed class ChatClienteController : Controller
         {
             await using var conn = new SqlConnection(cs);
             await conn.OpenAsync(ct);
-            await using var cmd = new SqlCommand(
-                "SELECT TOP 1 r.NumeroReclamo, r.NumeroAlcance, " +
-                "(SELECT TOP 1 d.CodigoContrato FROM Salud.dbo.Lr04DetalleReclamo d WITH (NOLOCK) " +
-                " WHERE d.NumeroReclamo = r.NumeroReclamo) AS CodigoContrato " +
-                "FROM Salud.dbo.Lr02Reclamos r WITH (NOLOCK) " +
-                "WHERE r.NumeroSobre = @s ORDER BY r.NumeroReclamo", conn) { CommandTimeout = 30 };
-            cmd.Parameters.Add(new SqlParameter("@s", sobre));
-            await using var rd = await cmd.ExecuteReaderAsync(ct);
-            if (!await rd.ReadAsync(ct)) return NotFound("Ese sobre todavia no tiene un reclamo liquidado.");
-            numeroReclamo  = rd.IsDBNull(0) ? 0 : rd.GetInt32(0);
-            numeroAlcance  = rd.IsDBNull(1) ? 0 : rd.GetInt32(1);
-            codigoContrato = rd.IsDBNull(2) ? 0 : (int)rd.GetDecimal(2);
+            await using (var cmd = new SqlCommand(
+                "SELECT TOP 1 NumeroReclamo, NumeroAlcance FROM Salud.dbo.Lr02Reclamos WITH (NOLOCK) " +
+                "WHERE NumeroSobre = @s ORDER BY NumeroReclamo", conn) { CommandTimeout = 40 })
+            {
+                cmd.Parameters.Add(new SqlParameter("@s", System.Data.SqlDbType.VarChar, 30) { Value = sobre });
+                await using var rd = await cmd.ExecuteReaderAsync(ct);
+                if (!await rd.ReadAsync(ct)) return NotFound("Ese sobre todavia no tiene un reclamo liquidado.");
+                numeroReclamo = rd.IsDBNull(0) ? 0 : rd.GetInt32(0);
+                numeroAlcance = rd.IsDBNull(1) ? 0 : rd.GetInt32(1);
+            }
+            if (numeroReclamo != 0)
+            {
+                await using var cmd2 = new SqlCommand(
+                    "SELECT TOP 1 CodigoContrato FROM Salud.dbo.Lr04DetalleReclamo WITH (NOLOCK) " +
+                    "WHERE NumeroReclamo = @r", conn) { CommandTimeout = 40 };
+                cmd2.Parameters.Add(new SqlParameter("@r", System.Data.SqlDbType.Int) { Value = numeroReclamo });
+                var cc = await cmd2.ExecuteScalarAsync(ct);
+                if (cc != null && cc != DBNull.Value) codigoContrato = (int)Convert.ToDecimal(cc);
+            }
         }
         catch (Exception ex)
         {
@@ -159,7 +174,11 @@ public sealed class ChatClienteController : Controller
                     (int)resp.StatusCode, bytes.Length, numeroReclamo);
                 return NotFound("No se pudo generar la carta de liquidacion en este momento.");
             }
-            return File(bytes, "application/pdf", $"Liquidacion-{sobre}.pdf");
+            // Por defecto INLINE, para que se vea en el visor lateral (iframe).
+            // Con ?descargar=1 va como adjunto: es lo que usa el boton Descargar.
+            return descargar
+                ? File(bytes, "application/pdf", $"Liquidacion-{sobre}.pdf")
+                : File(bytes, "application/pdf");
         }
         catch (Exception ex)
         {

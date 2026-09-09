@@ -835,6 +835,18 @@ else
         document.body.classList.add('cc-con-visor');
     }
 
+    function abrirCartaLiquidacion(href, sobre) {
+        visorTit.textContent = sobre ? ('Carta de liquidación ' + sobre)
+                                     : 'Carta de liquidación';
+        visorBajar.href = href + '&descargar=1';
+        visorBajar.innerHTML = '<i class="fa fa-download"></i> Descargar';
+        esperando.classList.remove('oculto');
+        marco.src = href + '#toolbar=1&navpanes=0&view=FitH';
+        visor.classList.add('abierto');
+        visor.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('cc-con-visor');
+    }
+
     function cerrarCarta() {
         visor.classList.remove('abierto');
         visor.setAttribute('aria-hidden', 'true');
@@ -873,6 +885,17 @@ else
         var a = ev.target.closest ? ev.target.closest('a') : null;
         if (!a || !a.getAttribute('href')) return;
         var href = a.getAttribute('href');
+        // La carta de LIQUIDACION: mismo gesto -verla al lado sin salir del
+        // chat-, en el mismo visor. Abre el PDF inline; el boton Descargar del
+        // visor le agrega &descargar=1 para bajarlo. Se acepta la ruta venga
+        // RELATIVA o como URL completa -el modelo la escribe de las dos formas-,
+        // por eso se busca la ruta EN CUALQUIER posicion, no solo al inicio.
+        if (href.indexOf('/Studio/ChatCliente/CartaLiquidacion?numeroSobre=') >= 0) {
+            ev.preventDefault();
+            var ms = href.match(/numeroSobre=(NA-\d+)/);
+            abrirCartaLiquidacion(href, ms ? ms[1] : '');
+            return;
+        }
         if (href.indexOf('/Studio/ChatCliente/Carta?id=') !== 0) return;   // otro enlace
         ev.preventDefault();
 
