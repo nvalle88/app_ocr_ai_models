@@ -52,6 +52,12 @@ public sealed class AzureOpenAiCompletionService : IAiCompletionService
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         using var client = _httpClientFactory.CreateClient();
+        // Cinco minutos, no los 100 s por defecto de HttpClient. Igual que el
+        // cliente de Claude (ClaudeCompletionService.TiempoDelModelo). Un sobre
+        // grande -medido: 71 paginas, 148 KB de OCR- hace que el clasificador
+        // tarde mas de 100 s y el paso fallaba con "HttpClient.Timeout of 100
+        // seconds elapsing", dejando el caso sin tipificacion.
+        client.Timeout = TimeSpan.FromMinutes(5);
         client.DefaultRequestHeaders.Add("api-key", _config.ApiKey);
 
         var response = await client.PostAsync(_config.EndpointUrl, content, cancellationToken);
