@@ -77,7 +77,18 @@
             // texto.
             .replace(/\[([^\]]+)\]\((\/Studio\/ChatCliente\/Carta\?id=\d{1,12})\)/g, carta)
             .replace(/(^|[\s>])(\/Studio\/ChatCliente\/Carta\?id=\d{1,12})(?![\w=&])/g,
-                     function (t, antes, ruta) { return antes + carta(t, 'Ver la carta', ruta); });
+                     function (t, antes, ruta) { return antes + carta(t, 'Ver la carta', ruta); })
+            // -- La carta de LIQUIDACIÓN de un sobre --------------------------
+            //
+            // Misma idea que la carta de autorización: una ruta relativa que las
+            // reglas de http(s) de arriba no aceptan, así que sin esto el enlace
+            // de descarga llegaba como texto plano y no se podía bajar el PDF.
+            // El endpoint resuelve todo por el número de sobre, así que aquí NO
+            // hace falta el caseCode. Se acepta SOLO esta ruta, con un número de
+            // sobre NA-####, y nada más detrás: el modelo no decide a dónde
+            // apunta un enlace que el afiliado va a pulsar.
+            .replace(/\[([^\]]+)\]\((\/Studio\/ChatCliente\/CartaLiquidacion\?numeroSobre=NA-\d{1,12})\)/g,
+                     '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
     }
 
     /* ── Distintivos en las celdas de estado ──────────────────────────────
