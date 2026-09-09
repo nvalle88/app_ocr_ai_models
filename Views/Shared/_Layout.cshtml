@@ -74,7 +74,13 @@
 
 </head>
 <body class="smart-style-4">
-    @{ await Html.RenderPartialAsync("_Header"); }
+    @* Dentro de los iframes de las pestañas del caso (embed=true) el header NO
+       se pinta: la pagina contenedora ya lo tiene, y repetirlo dejaba DOS barras
+       de Saludsa, una dentro de la otra. *@
+    @if ((ViewData["Embed"] as bool?) != true)
+    {
+        await Html.RenderPartialAsync("_Header");
+    }
     <div id="main" role="main">
         @{
             var _ctrl = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
