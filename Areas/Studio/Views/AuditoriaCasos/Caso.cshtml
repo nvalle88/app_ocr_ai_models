@@ -44,12 +44,13 @@
     <div class="aud-alert"><i class="fa fa-exclamation-triangle"></i> @Model.Error</div>
 }
 
-<div class="aud-ws">
+<div class="aud-ws" id="audWs">
 
     @* ══════════ IZQUIERDA — VISOR EMBEBIDO (documentos + anexo/contrato) ══════════ *@
-    <section class="aud-panel aud-visor">
+    <section class="aud-panel aud-visor" id="audVisor">
         <div class="aud-panel-head">
             <span class="aud-panel-title"><i class="fa fa-file-pdf-o"></i> Fuentes del caso</span>
+            <button type="button" class="aud-collapse" id="audCollapse" title="Ocultar panel de fuentes"><i class="fa fa-angle-double-left"></i></button>
             @if (Model.AnexosOpciones.Any())
             {
                 <span title="Solo planes del producto @Model.Producto (blindaje de producto)">
@@ -105,6 +106,9 @@
             </div>
         </div>
     </section>
+
+    @* barra divisoria: arrastrar para agrandar/achicar los paneles *@
+    <div class="aud-gutter" id="audGutter" title="Arrastra para redimensionar"><span></span></div>
 
     @* ══════════ DERECHA — DICTAMEN ══════════ *@
     <section class="aud-dict">
@@ -210,6 +214,11 @@
     </section>
 </div>
 
+@* pestaña que sobresale para reabrir "Fuentes del caso" cuando está colapsado *@
+<button type="button" class="aud-reopen" id="audReopen" title="Mostrar fuentes del caso">
+    <i class="fa fa-file-pdf-o"></i> Fuentes del caso
+</button>
+
 @section Styles {
     <link rel="stylesheet" href="~/css/app/st-pdf-viewer.css" asp-append-version="true" />
     <style>
@@ -227,13 +236,30 @@
         .aud-btn-ghost { background:#fff; color:#5b6472; border:1px solid #d7dce3; border-radius:8px; padding:10px 16px; font-size:13px; text-decoration:none; }
         .aud-alert { background:#fff6e6; border:1px solid #f2d492; color:#8a5a00; padding:10px 14px; border-radius:8px; margin-bottom:14px; }
 
-        .aud-ws { display:flex; gap:16px; align-items:stretch; }
-        .aud-visor { flex:0 0 56%; max-width:56%; }
-        .aud-dict { flex:1 1 auto; min-width:0; max-height:calc(100vh - 170px); overflow:auto; padding-right:4px; }
+        .aud-ws { display:flex; gap:0; align-items:stretch; }
+        .aud-visor { flex:0 0 auto; width:56%; min-width:320px; }
+        .aud-dict { flex:1 1 auto; min-width:0; max-height:calc(100vh - 170px); overflow:auto; padding:0 4px 0 14px; }
+        /* barra divisoria arrastrable */
+        .aud-gutter { flex:0 0 16px; cursor:col-resize; display:flex; align-items:center; justify-content:center; }
+        .aud-gutter span { width:4px; height:48px; border-radius:3px; background:#d0d6df; transition:background .15s; }
+        .aud-gutter:hover span, .aud-gutter.is-dragging span { background:#0057c8; height:80px; }
+        .aud-gutter.is-dragging { cursor:col-resize; }
+        body.aud-resizing { cursor:col-resize; user-select:none; }
+        /* botón colapsar */
+        .aud-collapse { background:#f1f4f8; border:1px solid #dce1e8; border-radius:6px; width:30px; height:28px; cursor:pointer; color:#5b6472; }
+        .aud-collapse:hover { background:#e5ebf3; color:#002F87; }
+        /* estado colapsado */
+        .aud-ws.is-collapsed .aud-visor, .aud-ws.is-collapsed .aud-gutter { display:none; }
+        .aud-ws.is-collapsed .aud-dict { padding-left:0; }
+        /* pestaña lateral que sobresale para reabrir */
+        .aud-reopen { display:none; position:fixed; left:0; top:150px; z-index:50; background:#002F87; color:#fff; border:0; border-radius:0 10px 10px 0; padding:14px 9px; writing-mode:vertical-rl; font-size:12.5px; font-weight:700; letter-spacing:.03em; cursor:pointer; box-shadow:2px 2px 8px rgba(0,0,0,.18); }
+        .aud-reopen:hover { background:#0043b8; padding-left:14px; }
+        .aud-reopen.is-visible { display:inline-block; }
+        .aud-reopen .fa { margin-bottom:8px; }
 
         .aud-panel { background:#fff; border:1px solid #e6e9ee; border-radius:10px; box-shadow:0 1px 2px rgba(16,24,40,.04); }
-        .aud-panel-head { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid #eef1f5; }
-        .aud-panel-title { font-weight:700; color:#2c3440; font-size:14px; }
+        .aud-panel-head { display:flex; justify-content:flex-end; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid #eef1f5; }
+        .aud-panel-title { font-weight:700; color:#2c3440; font-size:14px; flex:1; }
         .aud-panel-title .fa { color:#d33; margin-right:4px; }
         .aud-select { border:1px solid #d7dce3; border-radius:8px; padding:6px 10px; font-size:13px; max-width:200px; color:#2c3440; background:#fff; }
         .aud-nomatch { font-size:12px; color:#8a5a00; background:#fff6e6; border:1px solid #f2d492; border-radius:8px; padding:5px 10px; }
@@ -294,7 +320,7 @@
         .aud-list { margin:6px 0 0 18px; color:#3b4453; font-size:13px; }
         .aud-raw { white-space:pre-wrap; font-size:12px; }
 
-        @@media (max-width: 1100px) { .aud-visor, .aud-dict { flex:1 1 100%; max-width:100%; max-height:none; } .aud-visor-host{ height:70vh; } }
+        @@media (max-width: 1100px) { .aud-ws{ flex-direction:column; } .aud-visor{ width:100% !important; } .aud-gutter{ display:none; } .aud-dict{ max-height:none; padding-left:0; } .aud-visor-host{ height:70vh; } }
     </style>
 }
 
@@ -320,6 +346,52 @@
                 var first = document.querySelector('.aud-chips .js-ver');
                 if (first) verDoc(first);
             });
+        })();
+
+        // ── Panel de fuentes: colapsable + redimensionable ──
+        (function () {
+            var ws = document.getElementById('audWs');
+            var visor = document.getElementById('audVisor');
+            var gutter = document.getElementById('audGutter');
+            var collapse = document.getElementById('audCollapse');
+            var reopen = document.getElementById('audReopen');
+            if (!ws || !visor) return;
+            var KEY_W = 'audVisorW', KEY_C = 'audVisorCollapsed';
+
+            function fit() { try { window.dispatchEvent(new Event('resize')); } catch (e) {} }
+            function setCollapsed(c) {
+                ws.classList.toggle('is-collapsed', c);
+                if (reopen) reopen.classList.toggle('is-visible', c);
+                try { localStorage.setItem(KEY_C, c ? '1' : '0'); } catch (e) {}
+                setTimeout(fit, 80);
+            }
+            try { var w = localStorage.getItem(KEY_W); if (w) visor.style.width = w; } catch (e) {}
+            try { if (localStorage.getItem(KEY_C) === '1') setCollapsed(true); } catch (e) {}
+
+            if (collapse) collapse.addEventListener('click', function () { setCollapsed(true); });
+            if (reopen) reopen.addEventListener('click', function () { setCollapsed(false); });
+
+            if (gutter) {
+                var dragging = false;
+                gutter.addEventListener('mousedown', function (e) {
+                    dragging = true; gutter.classList.add('is-dragging');
+                    document.body.classList.add('aud-resizing'); e.preventDefault();
+                });
+                document.addEventListener('mousemove', function (e) {
+                    if (!dragging) return;
+                    var rect = ws.getBoundingClientRect();
+                    var px = e.clientX - rect.left, min = 300, max = rect.width - 340;
+                    if (px < min) px = min; if (px > max) px = max;
+                    visor.style.width = px + 'px';
+                });
+                document.addEventListener('mouseup', function () {
+                    if (!dragging) return;
+                    dragging = false; gutter.classList.remove('is-dragging');
+                    document.body.classList.remove('aud-resizing');
+                    try { localStorage.setItem(KEY_W, visor.style.width); } catch (e) {}
+                    fit();
+                });
+            }
         })();
     </script>
 }
