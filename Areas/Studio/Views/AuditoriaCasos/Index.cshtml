@@ -106,8 +106,8 @@
                         </td>
                         <td><small>@c.StartDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small></td>
                         <td class="text-right">
-                            <a class="btn btn-xs btn-primary" asp-area="Studio" asp-controller="Sobres" asp-action="Caso" asp-route-caseCode="@c.CaseCode">
-                                <i class="fa fa-folder-open"></i> Abrir caso
+                            <a class="btn btn-xs btn-primary" asp-area="Studio" asp-controller="AuditoriaCasos" asp-action="Caso" asp-route-caseCode="@c.CaseCode">
+                                <i class="fa fa-stethoscope"></i> @(c.TieneAuditoria ? "Ver dictamen" : "Auditar")
                             </a>
                         </td>
                     </tr>

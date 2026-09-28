@@ -1,9 +1,11 @@
+using System.Text;
 using System.Text.Json;
 using app_ocr_ai_models.Areas.Studio.Models;
 using app_ocr_ai_models.Data;
 using app_ocr_ai_models.Services.Documents;
 using app_tramites.Models.ModelAi;
 using app_tramites.Services.Ai;
+using app_tramites.Services.Ai.Tools;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,46 +13,48 @@ using Microsoft.EntityFrameworkCore;
 namespace app_ocr_ai_models.Areas.Studio.Controllers;
 
 // ============================================================
-// REQ-046 — Pantalla "Auditoría Casos" (rol Auditor Saludsa).
-//   Entrada dedicada del auditor: busca el sobre en Armonix, lo importa como
-//   caso de AUDITORIA_MEDICINA (documentos desde M-Files + contexto del sobre)
-//   y lo lleva al workspace del caso para generar la auditoría con IA.
-//   Reusa: ArmonixDocumentProvider (búsqueda + documentos), el proceso
-//   AUDITORIA_MEDICINA y el agente AGENTE_AUDITOR_MEDICINA (con las tools de
-//   la biblioteca de anexos ya enlazadas).
+// REQ-046 — Pantalla "Auditoría Casos" (rol Auditor Saludsa), INDEPENDIENTE
+//   del workspace de la bandeja (Sobres). Flujo propio:
+//     buscar sobre en Armonix → importar (M-Files) → CASO PROPIO →
+//     generar el DICTAMEN con AGENTE_AUDITOR_CASOS (6 secciones) y mostrarlo
+//     aquí mismo (no redirige a la bandeja).
+//   Reusa: ArmonixDocumentProvider, motor Claude, tools de la biblioteca de anexos.
 // ============================================================
 
-/// <summary>Auditoría de casos de reembolso asistida por IA, desde la búsqueda en Armonix.</summary>
+/// <summary>Auditoría de casos de reembolso asistida por IA, con dictamen propio de 6 secciones.</summary>
 [Area("Studio")]
 [Authorize]
 public sealed class AuditoriaCasosController : Controller
 {
     private const string ProcesoAuditoria = "AUDITORIA_MEDICINA";
+    private const string AgenteAuditorCasos = "AGENTE_AUDITOR_CASOS";
+    private const string NoteAuditoriaCasos = "AuditoriaCasos";
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
     private readonly OCRDbContext _db;
     private readonly ArmonixDocumentProvider _armonix;
+    private readonly AiCompletionServiceFactory _factory;
+    private readonly IToolExecutor? _toolExecutor;
     private readonly ILogger<AuditoriaCasosController> _logger;
 
     public AuditoriaCasosController(
         OCRDbContext db,
         ArmonixDocumentProvider armonix,
-        ILogger<AuditoriaCasosController> logger)
+        AiCompletionServiceFactory factory,
+        ILogger<AuditoriaCasosController> logger,
+        IToolExecutor? toolExecutor = null)
     {
-        _db      = db      ?? throw new ArgumentNullException(nameof(db));
-        _armonix = armonix ?? throw new ArgumentNullException(nameof(armonix));
-        _logger  = logger  ?? throw new ArgumentNullException(nameof(logger));
+        _db           = db      ?? throw new ArgumentNullException(nameof(db));
+        _armonix      = armonix ?? throw new ArgumentNullException(nameof(armonix));
+        _factory      = factory ?? throw new ArgumentNullException(nameof(factory));
+        _logger       = logger  ?? throw new ArgumentNullException(nameof(logger));
+        _toolExecutor = toolExecutor;
     }
 
     // GET /Studio/AuditoriaCasos
     [HttpGet]
     public async Task<IActionResult> Index()
-    {
-        var vm = new AuditoriaCasosViewModel
-        {
-            Recientes = await CargarRecientesAsync()
-        };
-        return View(vm);
-    }
+        => View(new AuditoriaCasosViewModel { Recientes = await CargarRecientesAsync() });
 
     // POST /Studio/AuditoriaCasos/Buscar
     [HttpPost]
@@ -70,20 +74,15 @@ public sealed class AuditoriaCasosController : Controller
             return View(nameof(Index), vm);
         }
 
-        // El criterio puede ser número de sobre, cédula o nombre del titular.
         var texto = criterio.Trim();
         string? sobre = null, cedula = null, nombre = null;
-        if (texto.All(char.IsDigit))
-            cedula = texto;                                   // solo dígitos → cédula
-        else if (texto.Contains('-') || texto.Any(char.IsDigit))
-            sobre = texto;                                    // NA-2612551 / alfanumérico → sobre
-        else
-            nombre = texto;                                   // solo letras → nombre del titular
+        if (texto.All(char.IsDigit))                                cedula = texto;
+        else if (texto.Contains('-') || texto.Any(char.IsDigit))    sobre  = texto;
+        else                                                        nombre = texto;
 
         try
         {
-            vm.Resultados = await _armonix.BuscarSobresAsync(
-                sobre, cedula, nombre, null, HttpContext.RequestAborted);
+            vm.Resultados = await _armonix.BuscarSobresAsync(sobre, cedula, nombre, null, HttpContext.RequestAborted);
         }
         catch (Exception ex)
         {
@@ -94,7 +93,7 @@ public sealed class AuditoriaCasosController : Controller
         return View(nameof(Index), vm);
     }
 
-    // POST /Studio/AuditoriaCasos/Auditar
+    // POST /Studio/AuditoriaCasos/Auditar  → crea el caso propio y va a su pantalla
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Auditar(
@@ -107,7 +106,6 @@ public sealed class AuditoriaCasosController : Controller
             return RedirectToAction(nameof(Index));
         }
 
-        // ── 1. Proceso de auditoría
         var proceso = await _db.Process.FindAsync(ProcesoAuditoria);
         if (proceso == null)
         {
@@ -115,7 +113,6 @@ public sealed class AuditoriaCasosController : Controller
             return RedirectToAction(nameof(Index));
         }
 
-        // ── 2. Caso nuevo
         var caso = new ProcessCase
         {
             CaseCode       = Guid.NewGuid(),
@@ -126,15 +123,15 @@ public sealed class AuditoriaCasosController : Controller
         _db.ProcessCase.Add(caso);
         await _db.SaveChangesAsync();
 
-        // ── 3. Contexto del sobre (Note "ContextoSobre") para el agente y las tools
+        // Contexto del sobre (Note "ContextoSobre") para el agente y las tools
         var contexto = new Dictionary<string, string?>
         {
-            ["numeroSobre"]   = numeroSobre.Trim(),
+            ["numeroSobre"]    = numeroSobre.Trim(),
             ["numeroContrato"] = numeroContrato,
-            ["producto"]      = codigoProducto,
-            ["codigoRegion"]  = codigoRegion,
-            ["nombreTitular"] = nombreTitular,
-            ["origen"]        = "Armonix"
+            ["producto"]       = codigoProducto,
+            ["codigoRegion"]   = codigoRegion,
+            ["nombreTitular"]  = nombreTitular,
+            ["origen"]         = "Armonix"
         };
         _db.Note.Add(new Note
         {
@@ -146,7 +143,7 @@ public sealed class AuditoriaCasosController : Controller
         });
         await _db.SaveChangesAsync();
 
-        // ── 4. Importar documentos del sobre desde M-Files (OCR → DataFile)
+        // Importar documentos del sobre desde M-Files (OCR → DataFile)
         try
         {
             var filter = new SobreDocumentosFilter
@@ -157,13 +154,8 @@ public sealed class AuditoriaCasosController : Controller
                 CodigoRegion   = codigoRegion
             };
             var res = await _armonix.ImportarDocumentosAsync(filter, caso, _db, HttpContext.RequestAborted);
-            if (res.DataFileIds.Count == 0)
-            {
-                caso.State = res.Advertencias.Count > 0 ? "ImportedWithWarnings" : "ImportedEmpty";
-                await _db.SaveChangesAsync();
-                if (res.Advertencias.Count > 0)
-                    TempData["Error"] = "El sobre se importó pero: " + string.Join("; ", res.Advertencias);
-            }
+            if (res.DataFileIds.Count == 0 && res.Advertencias.Count > 0)
+                TempData["Error"] = "El sobre se importó pero: " + string.Join("; ", res.Advertencias);
         }
         catch (Exception ex)
         {
@@ -171,11 +163,194 @@ public sealed class AuditoriaCasosController : Controller
             TempData["Error"] = $"No se pudieron traer los documentos del sobre: {ex.Message}";
         }
 
-        // ── 5. Al workspace del caso (documentos + pestaña Auditoría)
-        return RedirectToAction("Caso", "Sobres", new { area = "Studio", caseCode = caso.CaseCode });
+        // A la pantalla PROPIA del caso (no a la bandeja)
+        return RedirectToAction(nameof(Caso), new { caseCode = caso.CaseCode });
+    }
+
+    // GET /Studio/AuditoriaCasos/Caso/{caseCode}
+    [HttpGet]
+    public async Task<IActionResult> Caso(Guid caseCode)
+    {
+        var caso = await _db.ProcessCase
+            .Include(c => c.DataFile)
+            .Include(c => c.Notes)
+            .FirstOrDefaultAsync(c => c.CaseCode == caseCode);
+        if (caso == null)
+        {
+            TempData["Error"] = "Caso no encontrado.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var vm = BuildCasoVm(caso);
+        return View(vm);
+    }
+
+    // POST /Studio/AuditoriaCasos/Generar  → corre el agente propio y persiste el dictamen
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Generar(Guid caseCode)
+    {
+        var caso = await _db.ProcessCase
+            .Include(c => c.DataFile)
+            .Include(c => c.Notes)
+            .FirstOrDefaultAsync(c => c.CaseCode == caseCode);
+        if (caso == null)
+        {
+            TempData["Error"] = "Caso no encontrado.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var agent = await _db.Agent
+            .Include(a => a.AgentConfig)
+            .Include(a => a.OPAIModelTool).ThenInclude(mt => mt.ToolCodeNavigation)
+            .FirstOrDefaultAsync(a => a.Code == AgenteAuditorCasos && a.IsActive);
+        if (agent?.AgentConfig == null)
+        {
+            TempData["Error"] = $"El agente '{AgenteAuditorCasos}' no está configurado o está inactivo.";
+            return RedirectToAction(nameof(Caso), new { caseCode });
+        }
+
+        var config     = agent.AgentConfig;
+        var caseCtx    = OcrPromptHelper.BuildCaseContext(caso.Notes);
+        var caseCedula = OcrPromptHelper.ExtractCedulaFromCaseContext(caso.Notes);
+
+        var sb = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(caseCtx))
+            sb.AppendLine("## Datos estructurados del sobre").AppendLine(caseCtx).AppendLine();
+        sb.AppendLine("## Documentos del caso (OCR)");
+        if (caso.DataFile.Count == 0)
+            sb.AppendLine("(el caso no tiene documentos adjuntos)");
+        foreach (var f in caso.DataFile.OrderBy(f => f.CreatedDate))
+        {
+            sb.AppendLine($"--- {f.OriginalName} ---");
+            sb.AppendLine(string.IsNullOrWhiteSpace(f.Text) ? "(sin texto OCR)" : f.Text);
+            sb.AppendLine();
+        }
+        sb.AppendLine("## Solicitud")
+          .AppendLine("Audita este caso de reembolso y devuelve ÚNICAMENTE el JSON de 6 secciones del formato de salida. Usa las herramientas de la biblioteca de anexos para el análisis contractual y las demás para verificar historial y preexistencias.");
+
+        var aiRequest = new AiCompletionRequest
+        {
+            SystemPrompt = OcrPromptHelper.ResolveSystemPrompt(agent),
+            UserMessage  = sb.ToString(),
+            MaxTokens    = agent.MaxTokens ?? 8000,
+            Temperature  = agent.Temperature,
+            ThinkingMode = agent.ThinkingMode
+        };
+
+        var enabledTools = agent.OPAIModelTool
+            .Where(mt => mt.IsEnabled && mt.ToolCodeNavigation?.IsActive == true)
+            .Select(mt => mt.ToolCodeNavigation!)
+            .ToList();
+        var hasTools = enabledTools.Count > 0 && _toolExecutor != null
+                       && string.Equals(config.Provider, "Anthropic", StringComparison.OrdinalIgnoreCase);
+
+        string texto;
+        try
+        {
+            var svc = _factory.Create(config);
+            if (hasTools)
+            {
+                var exec = new StepExecution
+                {
+                    CaseCode       = caseCode,
+                    StepOrder      = 0,
+                    DataFileId     = caso.DataFile.FirstOrDefault()?.Id,
+                    ModelCode      = agent.Code,
+                    RequestContent = aiRequest.UserMessage,
+                    Status         = "Running",
+                    StartDate      = DateTime.UtcNow,
+                    EndpointUrl    = config.EndpointUrl
+                };
+                _db.StepExecution.Add(exec);
+                await _db.SaveChangesAsync();
+
+                var toolsCtx = new ToolsContext
+                {
+                    AvailableTools      = enabledTools,
+                    AgentCode           = agent.Code,
+                    ExecutionId         = exec.ExecutionId,
+                    CaseIdentity        = caseCedula,
+                    ToolChoice          = agent.ToolChoice,
+                    StreamEventCallback = null
+                };
+                var res = await svc.CompleteWithToolsAsync(aiRequest, toolsCtx, _toolExecutor!, HttpContext.RequestAborted);
+                texto = res.Text;
+
+                exec.ResponseContent = texto;
+                exec.Status  = "Completed";
+                exec.EndDate = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+                await UsoDelModelo.ApuntarAsync(_db, exec.ExecutionId, res);
+            }
+            else
+            {
+                var res = await svc.CompleteAsync(aiRequest, HttpContext.RequestAborted);
+                texto = res.Text;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[REQ-046] Error generando el dictamen del caso {CaseCode}.", caseCode);
+            TempData["Error"] = $"Error al generar la auditoría: {ex.Message}";
+            return RedirectToAction(nameof(Caso), new { caseCode });
+        }
+
+        var json = ExtractJson(texto);
+        var previas = await _db.Note.Where(n => n.CaseCode == caseCode && n.Title == NoteAuditoriaCasos).ToListAsync();
+        if (previas.Count > 0) _db.Note.RemoveRange(previas);
+        _db.Note.Add(new Note
+        {
+            CaseCode  = caseCode,
+            Title     = NoteAuditoriaCasos,
+            Detail    = string.IsNullOrWhiteSpace(json) ? texto : json,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = $"auditoria-casos-ia|{User?.Identity?.Name}"
+        });
+        await _db.SaveChangesAsync();
+
+        return RedirectToAction(nameof(Caso), new { caseCode });
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
+    private AuditoriaCasoViewModel BuildCasoVm(ProcessCase caso)
+    {
+        var vm = new AuditoriaCasoViewModel
+        {
+            CaseCode   = caso.CaseCode,
+            Documentos = caso.DataFile.OrderBy(f => f.CreatedDate).ToList()
+        };
+
+        // Datos del sobre desde el contexto
+        vm.NumeroSobre    = OcrPromptHelper.ExtractStringFromCaseContext(caso.Notes, "numeroSobre");
+        vm.NombreTitular  = OcrPromptHelper.ExtractStringFromCaseContext(caso.Notes, "nombreTitular");
+        vm.Producto       = OcrPromptHelper.ExtractStringFromCaseContext(caso.Notes, "producto");
+        vm.NumeroContrato = OcrPromptHelper.ExtractStringFromCaseContext(caso.Notes, "numeroContrato");
+
+        var nota = caso.Notes
+            .Where(n => n.Title == NoteAuditoriaCasos)
+            .OrderByDescending(n => n.CreatedAt)
+            .FirstOrDefault();
+
+        if (nota != null && !string.IsNullOrWhiteSpace(nota.Detail))
+        {
+            vm.Generada    = true;
+            vm.GeneradoEn  = nota.CreatedAt;
+            vm.GeneradoPor = nota.CreatedBy;
+            if (nota.Detail.TrimStart().StartsWith('{'))
+            {
+                try { vm.Dictamen = JsonSerializer.Deserialize<AuditoriaCasoDto>(nota.Detail, JsonOpts); }
+                catch (JsonException ex) { _logger.LogWarning(ex, "Dictamen JSON inválido {CaseCode}.", caso.CaseCode); }
+            }
+            if (vm.Dictamen == null)
+            {
+                vm.RawText = nota.Detail;
+                vm.Error   = "El motor no devolvió un dictamen estructurado; se muestra el texto para revisión humana.";
+            }
+        }
+        return vm;
+    }
+
     private async Task<List<CasoAuditoriaReciente>> CargarRecientesAsync()
     {
         var casos = await _db.ProcessCase.AsNoTracking()
@@ -184,13 +359,10 @@ public sealed class AuditoriaCasosController : Controller
             .Take(15)
             .Select(c => new
             {
-                c.CaseCode,
-                c.State,
-                c.StartDate,
+                c.CaseCode, c.State, c.StartDate,
                 Docs = c.DataFile.Count,
-                Contexto = c.Notes.Where(n => n.Title == OcrPromptHelper.ContextoSobreNoteTitle)
-                                   .Select(n => n.Detail).FirstOrDefault(),
-                TieneAud = c.Notes.Any(n => n.Title == OcrPromptHelper.AuditoriaMedicinaNoteTitle)
+                Contexto = c.Notes.Where(n => n.Title == OcrPromptHelper.ContextoSobreNoteTitle).Select(n => n.Detail).FirstOrDefault(),
+                TieneAud = c.Notes.Any(n => n.Title == NoteAuditoriaCasos)
             })
             .ToListAsync();
 
@@ -220,5 +392,26 @@ public sealed class AuditoriaCasosController : Controller
             });
         }
         return lista;
+    }
+
+    private static string? ExtractJson(string? texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto)) return null;
+        var start = texto.IndexOf('{');
+        if (start < 0) return null;
+        int depth = 0; bool inStr = false; char prev = '\0';
+        for (var i = start; i < texto.Length; i++)
+        {
+            var c = texto[i];
+            if (inStr) { if (c == '"' && prev != '\\') inStr = false; }
+            else
+            {
+                if (c == '"') inStr = true;
+                else if (c == '{') depth++;
+                else if (c == '}') { depth--; if (depth == 0) return texto.Substring(start, i - start + 1); }
+            }
+            prev = c;
+        }
+        return null;
     }
 }
