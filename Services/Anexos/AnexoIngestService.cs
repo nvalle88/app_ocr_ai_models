@@ -257,12 +257,18 @@ public sealed class AnexoIngestService : IAnexoIngestService
         var anexos = data.Anexos ?? new List<ExtraccionAnexoPlan>();
         foreach (var a in anexos)
         {
-            var codigoPlan = string.IsNullOrWhiteSpace(a.CodigoPlan) ? planHint : a.CodigoPlan;
+            // Prioridad para la clave del anexo: código explícito → pista del operador →
+            // nombre del plan (muchos anexos POOL no traen un "código" pero sí el nombre).
+            var codigoPlan = a.CodigoPlan;
+            if (string.IsNullOrWhiteSpace(codigoPlan)) codigoPlan = planHint;
+            if (string.IsNullOrWhiteSpace(codigoPlan)) codigoPlan = a.NombrePlan;
             if (string.IsNullOrWhiteSpace(codigoPlan))
             {
-                result.Advertencias.Add("Un anexo llegó sin código de plan y sin pista; se omitió.");
+                result.Advertencias.Add("Un anexo llegó sin código ni nombre de plan; se omitió.");
                 continue;
             }
+            codigoPlan = codigoPlan.Trim();
+            if (codigoPlan.Length > 40) codigoPlan = codigoPlan.Substring(0, 40);
 
             var anexo = await _db.Anexo.FirstOrDefaultAsync(x =>
                 x.CodigoPlan == codigoPlan && x.Version == a.Version && x.IsActive, ct);
