@@ -1,0 +1,117 @@
+@model AnexoDetalleViewModel
+@{
+    ViewData["Title"] = "Anexo " + Model.Anexo.CodigoPlan;
+}
+
+<div class="st-head">
+    <div class="st-head-main">
+        <div class="st-crumbs">
+            Studio / Auditoría / <a asp-area="Studio" asp-controller="Anexos" asp-action="Index">Biblioteca de anexos</a> / @Model.Anexo.CodigoPlan
+        </div>
+        <h1 class="st-title"><i class="fa fa-file-text-o"></i>@Model.Anexo.CodigoPlan
+            @if (!string.IsNullOrEmpty(Model.Anexo.NombrePlan)) { <small> — @Model.Anexo.NombrePlan</small> }
+        </h1>
+        <p class="st-sub">
+            Producto: <strong>@(Model.Anexo.CodigoProducto ?? "—")</strong> ·
+            Contrato base: <strong>@(Model.Contrato?.Tipo ?? "—")</strong> ·
+            Versión: <strong>@(Model.Anexo.Version ?? "—")</strong> ·
+            Estado: <strong>@Model.Anexo.Estado</strong>
+        </p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.Anexo.ResumenCondiciones))
+{
+    <div class="alert alert-info"><i class="fa fa-info-circle"></i> @Model.Anexo.ResumenCondiciones</div>
+}
+
+<div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+    <header><span class="widget-icon"><i class="fa fa-shield"></i></span><h2>Coberturas (@Model.Coberturas.Count)</h2></header>
+    <div><div class="widget-body no-padding">
+        @if (!Model.Coberturas.Any()) { <p class="text-muted" style="padding:16px;">Sin coberturas registradas.</p> }
+        else
+        {
+            <table class="table table-striped table-sm">
+                <thead><tr><th>Beneficio</th><th>Código</th><th class="text-right">% Cob.</th><th class="text-right">Tope</th><th class="text-right">Deducible</th><th>Copago</th><th>Periodo</th><th>Ámbito</th><th>Notas</th></tr></thead>
+                <tbody>
+                @foreach (var c in Model.Coberturas)
+                {
+                    <tr>
+                        <td><strong>@c.Beneficio</strong></td>
+                        <td>@c.CodigoBeneficio</td>
+                        <td class="text-right">@(c.Porcentaje.HasValue ? c.Porcentaje.Value.ToString("0.##") + "%" : "—")</td>
+                        <td class="text-right">@(c.Tope.HasValue ? (c.MonedaTope ?? "$") + " " + c.Tope.Value.ToString("N2") : "—")</td>
+                        <td class="text-right">@(c.Deducible.HasValue ? c.Deducible.Value.ToString("N2") : "—")</td>
+                        <td>@(c.Copago ?? "—")</td>
+                        <td>@(c.Periodo ?? "—")</td>
+                        <td>@(c.Ambito ?? "—")</td>
+                        <td><small>@c.Notas</small></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div></div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="jarviswidget" data-widget-editbutton="false" data-widget-deletebutton="false">
+            <header><span class="widget-icon"><i class="fa fa-hourglass-half"></i></span><h2>Carencias (@Model.Carencias.Count)</h2></header>
+            <div><div class="widget-body no-padding">
+                @if (!Model.Carencias.Any()) { <p class="text-muted" style="padding:16px;">Sin carencias.</p> }
+                else
+                {
+                    <table class="table table-striped table-sm">
+                        <thead><tr><th>Beneficio</th><th class="text-right">Días</th><th>Notas</th></tr></thead>
+                        <tbody>
+                        @foreach (var c in Model.Carencias)
+                        {
+                            <tr><td>@c.Beneficio</td><td class="text-right">@(c.DiasCarencia?.ToString() ?? "—")</td><td><small>@c.Notas</small></td></tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+            </div></div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="jarviswidget" data-widget-editbutton="false" data-widget-deletebutton="false">
+            <header><span class="widget-icon"><i class="fa fa-ban"></i></span><h2>Exclusiones (@Model.Exclusiones.Count)</h2></header>
+            <div><div class="widget-body no-padding">
+                @if (!Model.Exclusiones.Any()) { <p class="text-muted" style="padding:16px;">Sin exclusiones.</p> }
+                else
+                {
+                    <table class="table table-striped table-sm">
+                        <thead><tr><th>Exclusión</th><th>Cláusula</th></tr></thead>
+                        <tbody>
+                        @foreach (var e in Model.Exclusiones)
+                        {
+                            <tr><td>@e.Texto</td><td><small>@e.ClausulaRef</small></td></tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+            </div></div>
+        </div>
+    </div>
+</div>
+
+@if (Model.Clausulas.Any())
+{
+    <div class="jarviswidget" data-widget-editbutton="false" data-widget-deletebutton="false">
+        <header><span class="widget-icon"><i class="fa fa-gavel"></i></span><h2>Cláusulas del contrato base (@Model.Clausulas.Count)</h2></header>
+        <div><div class="widget-body">
+            @foreach (var cl in Model.Clausulas)
+            {
+                <div style="margin-bottom:10px;">
+                    <strong>Cláusula @cl.Ordinal @(string.IsNullOrEmpty(cl.Numeral) ? "" : ", numeral " + cl.Numeral) @(string.IsNullOrEmpty(cl.Literal) ? "" : ", literal " + cl.Literal)</strong>
+                    @if (!string.IsNullOrEmpty(cl.Titulo)) { <em>— @cl.Titulo</em> }
+                    <div><small>@cl.Texto</small></div>
+                </div>
+            }
+        </div></div>
+    </div>
+}
+
+<a class="btn btn-default" asp-area="Studio" asp-controller="Anexos" asp-action="Index"><i class="fa fa-arrow-left"></i> Volver a la biblioteca</a>

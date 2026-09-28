@@ -84,6 +84,14 @@
                 <i class="fa fa-comments"></i> Consulta del afiliado
             </a>
         }
+
+        @* REQ-046 — Auditoría de casos (rol auditor) + biblioteca de anexos. *@
+        <a class="st-rol-op" asp-area="Studio" asp-controller="AuditoriaCasos" asp-action="Index">
+            <i class="fa fa-stethoscope"></i> Auditoría Casos
+        </a>
+        <a class="st-rol-op" asp-area="Studio" asp-controller="Anexos" asp-action="Index">
+            <i class="fa fa-book"></i> Anexos
+        </a>
     </div>
 }
 

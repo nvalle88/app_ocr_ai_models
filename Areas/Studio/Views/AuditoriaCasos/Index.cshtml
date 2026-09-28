@@ -1,0 +1,119 @@
+@model AuditoriaCasosViewModel
+@{
+    ViewData["Title"] = "Auditoría Casos";
+}
+
+<div class="st-head">
+    <div class="st-head-main">
+        <div class="st-crumbs">Studio / Auditoría / Auditoría Casos</div>
+        <h1 class="st-title"><i class="fa fa-stethoscope"></i>Auditoría Casos</h1>
+        <p class="st-sub">
+            Busca el sobre de reembolso en Armonix, tráelo con sus documentos y genera la
+            <strong>auditoría médica y contractual asistida por IA</strong> (pertinencia, cobertura,
+            preexistencias, carencias, exclusiones y alertas de fraude).
+        </p>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.Error))
+{
+    <div class="alert alert-danger"><i class="fa fa-exclamation-triangle"></i> @Model.Error</div>
+}
+
+<div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
+    <header><span class="widget-icon"><i class="fa fa-search"></i></span><h2>Buscar sobre en Armonix</h2></header>
+    <div><div class="widget-body">
+        <form asp-area="Studio" asp-controller="AuditoriaCasos" asp-action="Buscar" method="post"
+              onsubmit="mostrarLoadingPanel('content', 'Buscando el sobre en Armonix…');">
+            @Html.AntiForgeryToken()
+            <div style="display:flex; gap:8px; flex-wrap:wrap; max-width:640px;">
+                <input name="criterio" value="@Model.Criterio" type="text" class="form-control input-lg"
+                       style="flex:1; min-width:280px;" placeholder="N° de sobre (NA-2612551) o cédula del afiliado" autofocus />
+                <button type="submit" class="btn btn-primary btn-lg"><i class="fa fa-search"></i> Buscar</button>
+            </div>
+            <small class="text-muted">Ej.: <code>NA-2612551</code> (sobre) · <code>1701234567</code> (cédula)</small>
+        </form>
+    </div></div>
+</div>
+
+@if (Model.Buscado)
+{
+    <div class="jarviswidget jarviswidget-color-blueDark" data-widget-editbutton="false" data-widget-deletebutton="false">
+        <header><span class="widget-icon"><i class="fa fa-folder-open"></i></span><h2>Resultados (@Model.Resultados.Count)</h2></header>
+        <div><div class="widget-body no-padding">
+            @if (!Model.Resultados.Any())
+            {
+                <p class="text-muted" style="padding:16px;">No se encontraron sobres para <strong>@Model.Criterio</strong> en Armonix.</p>
+            }
+            else
+            {
+                <table class="table table-striped table-hover">
+                    <thead><tr><th>Sobre</th><th>Titular</th><th>Producto</th><th>Región</th><th>Contrato</th><th>Estado</th><th></th></tr></thead>
+                    <tbody>
+                    @foreach (var s in Model.Resultados)
+                    {
+                        <tr>
+                            <td><strong>@s.NumeroSobre</strong></td>
+                            <td>@s.NombreTitular</td>
+                            <td>@s.CodigoProducto</td>
+                            <td>@s.CodigoRegion</td>
+                            <td>@s.NumeroContrato</td>
+                            <td><small>@s.EstadoSobre</small></td>
+                            <td class="text-right">
+                                <form asp-area="Studio" asp-controller="AuditoriaCasos" asp-action="Auditar" method="post"
+                                      onsubmit="mostrarLoadingPanel('content', 'Trayendo documentos del sobre…');">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="numeroSobre" value="@s.NumeroSobre" />
+                                    <input type="hidden" name="numeroContrato" value="@s.NumeroContrato" />
+                                    <input type="hidden" name="codigoProducto" value="@s.CodigoProducto" />
+                                    <input type="hidden" name="codigoRegion" value="@s.CodigoRegion" />
+                                    <input type="hidden" name="nombreTitular" value="@s.NombreTitular" />
+                                    <button type="submit" class="btn btn-sm btn-success">
+                                        <i class="fa fa-stethoscope"></i> Auditar
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div></div>
+    </div>
+}
+
+<div class="jarviswidget" data-widget-editbutton="false" data-widget-deletebutton="false">
+    <header><span class="widget-icon"><i class="fa fa-history"></i></span><h2>Casos de auditoría recientes</h2></header>
+    <div><div class="widget-body no-padding">
+        @if (!Model.Recientes.Any())
+        {
+            <p class="text-muted" style="padding:16px;">Aún no hay casos de auditoría. Busca un sobre arriba para empezar.</p>
+        }
+        else
+        {
+            <table class="table table-striped table-hover">
+                <thead><tr><th>Sobre</th><th>Titular</th><th class="text-center">Docs</th><th>Auditoría</th><th>Fecha</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var c in Model.Recientes)
+                {
+                    <tr>
+                        <td><strong>@(c.NumeroSobre ?? "—")</strong></td>
+                        <td>@(c.NombreTitular ?? "—")</td>
+                        <td class="text-center"><span class="badge">@c.Documentos</span></td>
+                        <td>
+                            @if (c.TieneAuditoria) { <span class="label label-success">Generada</span> }
+                            else { <span class="label label-default">Pendiente</span> }
+                        </td>
+                        <td><small>@c.StartDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small></td>
+                        <td class="text-right">
+                            <a class="btn btn-xs btn-primary" asp-area="Studio" asp-controller="Sobres" asp-action="Caso" asp-route-caseCode="@c.CaseCode">
+                                <i class="fa fa-folder-open"></i> Abrir caso
+                            </a>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div></div>
+</div>

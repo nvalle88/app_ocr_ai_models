@@ -89,6 +89,15 @@ public partial class OCRDbContext : DbContext
 
     public virtual DbSet<DocumentoDiagnostico> DocumentoDiagnostico { get; set; }
 
+    // REQ-046 — Biblioteca de anexos estructurada (Auditoría de Casos)
+    public virtual DbSet<AnexoContrato> AnexoContrato { get; set; }
+    public virtual DbSet<Anexo> Anexo { get; set; }
+    public virtual DbSet<AnexoCobertura> AnexoCobertura { get; set; }
+    public virtual DbSet<AnexoCarencia> AnexoCarencia { get; set; }
+    public virtual DbSet<AnexoExclusion> AnexoExclusion { get; set; }
+    public virtual DbSet<AnexoClausula> AnexoClausula { get; set; }
+    public virtual DbSet<AnexoIngesta> AnexoIngesta { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Agent>(entity =>
@@ -1011,6 +1020,109 @@ public partial class OCRDbContext : DbContext
              .HasDatabaseName("IX_SolicitudCliente_CaseCode");
             e.HasIndex(x => new { x.Cedula, x.CreatedDate })
              .HasDatabaseName("IX_SolicitudCliente_Cedula");
+        });
+
+        // ── REQ-046: biblioteca de anexos estructurada ──────────────────────
+        modelBuilder.Entity<AnexoContrato>(e =>
+        {
+            e.ToTable("AnexoContrato");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Tipo).HasMaxLength(60).IsRequired();
+            e.Property(x => x.CodigoAcess).HasMaxLength(60);
+            e.Property(x => x.Nombre).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Version).HasMaxLength(40);
+            e.Property(x => x.Vigencia).HasMaxLength(100);
+            e.Property(x => x.ArchivoUri).HasMaxLength(500);
+            e.Property(x => x.CreatedBy).HasMaxLength(150);
+            e.Property(x => x.CreatedDate).HasColumnType("datetime");
+            e.Property(x => x.ModifiedDate).HasColumnType("datetime");
+        });
+
+        modelBuilder.Entity<Anexo>(e =>
+        {
+            e.ToTable("Anexo");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.CodigoPlan).HasMaxLength(40).IsRequired();
+            e.Property(x => x.NombrePlan).HasMaxLength(200);
+            e.Property(x => x.CodigoProducto).HasMaxLength(20);
+            e.Property(x => x.Version).HasMaxLength(40);
+            e.Property(x => x.ArchivoUri).HasMaxLength(500);
+            e.Property(x => x.Estado).HasMaxLength(30).IsRequired();
+            e.Property(x => x.CreatedBy).HasMaxLength(150);
+            e.Property(x => x.CreatedDate).HasColumnType("datetime");
+            e.Property(x => x.ModifiedDate).HasColumnType("datetime");
+            e.HasOne(x => x.Contrato).WithMany(c => c.Anexos)
+             .HasForeignKey(x => x.ContratoId).OnDelete(DeleteBehavior.NoAction);
+            e.HasIndex(x => new { x.CodigoPlan, x.CodigoProducto })
+             .HasDatabaseName("IX_Anexo_Plan");
+        });
+
+        modelBuilder.Entity<AnexoCobertura>(e =>
+        {
+            e.ToTable("AnexoCobertura");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Beneficio).HasMaxLength(200).IsRequired();
+            e.Property(x => x.CodigoBeneficio).HasMaxLength(20);
+            e.Property(x => x.Porcentaje).HasColumnType("decimal(5,2)");
+            e.Property(x => x.Tope).HasColumnType("decimal(18,2)");
+            e.Property(x => x.MonedaTope).HasMaxLength(10);
+            e.Property(x => x.Deducible).HasColumnType("decimal(18,2)");
+            e.Property(x => x.Copago).HasMaxLength(100);
+            e.Property(x => x.Periodo).HasMaxLength(60);
+            e.Property(x => x.Ambito).HasMaxLength(60);
+            e.Property(x => x.Notas).HasMaxLength(500);
+            e.Property(x => x.CreatedDate).HasColumnType("datetime");
+            e.HasOne(x => x.Anexo).WithMany(a => a.Coberturas)
+             .HasForeignKey(x => x.AnexoId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AnexoCarencia>(e =>
+        {
+            e.ToTable("AnexoCarencia");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Beneficio).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Notas).HasMaxLength(500);
+            e.Property(x => x.CreatedDate).HasColumnType("datetime");
+            e.HasOne(x => x.Anexo).WithMany(a => a.Carencias)
+             .HasForeignKey(x => x.AnexoId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AnexoExclusion>(e =>
+        {
+            e.ToTable("AnexoExclusion");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Texto).HasMaxLength(1000).IsRequired();
+            e.Property(x => x.ClausulaRef).HasMaxLength(200);
+            e.Property(x => x.CreatedDate).HasColumnType("datetime");
+            e.HasOne(x => x.Anexo).WithMany(a => a.Exclusiones)
+             .HasForeignKey(x => x.AnexoId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Contrato).WithMany()
+             .HasForeignKey(x => x.ContratoId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<AnexoClausula>(e =>
+        {
+            e.ToTable("AnexoClausula");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Ordinal).HasMaxLength(60);
+            e.Property(x => x.Numeral).HasMaxLength(20);
+            e.Property(x => x.Literal).HasMaxLength(20);
+            e.Property(x => x.Titulo).HasMaxLength(200);
+            e.Property(x => x.Texto).IsRequired();
+            e.Property(x => x.CreatedDate).HasColumnType("datetime");
+            e.HasOne(x => x.Contrato).WithMany(c => c.Clausulas)
+             .HasForeignKey(x => x.ContratoId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AnexoIngesta>(e =>
+        {
+            e.ToTable("AnexoIngesta");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Archivo).HasMaxLength(300).IsRequired();
+            e.Property(x => x.ArchivoUri).HasMaxLength(500);
+            e.Property(x => x.Estado).HasMaxLength(30).IsRequired();
+            e.Property(x => x.CreatedBy).HasMaxLength(150);
+            e.Property(x => x.CreatedDate).HasColumnType("datetime");
         });
 
         modelBuilder.Entity<CatalogoBeneficioCorrelacion>(e =>

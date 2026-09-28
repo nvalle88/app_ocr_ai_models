@@ -104,6 +104,10 @@ namespace app_ocr_ai_models
             builder.Services.AddScoped<ZendeskDocumentProvider>();
             builder.Services.AddScoped<ArmonixDocumentProvider>();
 
+            // REQ-046: ingesta de anexos (subir → OCR → Claude estructura → BD)
+            builder.Services.AddScoped<app_ocr_ai_models.Services.Anexos.IAnexoIngestService,
+                                       app_ocr_ai_models.Services.Anexos.AnexoIngestService>();
+
             // REQ-019 T6: motor Claude — factory de proveedor IA + orquestador multi-paso
             builder.Services.AddSingleton<AiCompletionServiceFactory>();
             builder.Services.AddScoped<IProcessOrchestrator, ProcessOrchestrator>();
