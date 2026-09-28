@@ -169,9 +169,9 @@ public sealed class AuditoriaCasosController : Controller
         return RedirectToAction(nameof(Caso), new { caseCode = caso.CaseCode });
     }
 
-    // GET /Studio/AuditoriaCasos/Caso/{caseCode}
+    // GET /Studio/AuditoriaCasos/Caso/{caseCode}?anexoId=
     [HttpGet]
-    public async Task<IActionResult> Caso(Guid caseCode)
+    public async Task<IActionResult> Caso(Guid caseCode, int? anexoId = null)
     {
         var caso = await _db.ProcessCase
             .Include(c => c.DataFile)
@@ -184,39 +184,54 @@ public sealed class AuditoriaCasosController : Controller
         }
 
         var vm = BuildCasoVm(caso);
-        vm.Anexos = await CargarAnexosLateralAsync(vm.Producto);
-        return View(vm);
-    }
 
-    // Anexos de la biblioteca para el panel lateral; los que coinciden con el
-    // producto del sobre se muestran primero (resaltados).
-    private async Task<List<AnexoLateralVM>> CargarAnexosLateralAsync(string? producto)
-    {
-        var anexos = await _db.Anexo.AsNoTracking()
+        // Opciones para el selector (solo Id/Plan/Producto — no se listan todas en pantalla).
+        vm.AnexosOpciones = await _db.Anexo.AsNoTracking()
             .Where(a => a.IsActive)
-            .OrderByDescending(a => a.CreatedDate)
-            .Take(50)
-            .Select(a => new AnexoLateralVM
+            .OrderBy(a => a.CodigoPlan)
+            .Select(a => new AnexoOpcionVM
             {
-                Id             = a.Id,
-                CodigoPlan     = a.CodigoPlan,
-                NombrePlan     = a.NombrePlan,
-                CodigoProducto = a.CodigoProducto,
-                Coberturas     = a.Coberturas.Count
+                Id = a.Id, CodigoPlan = a.CodigoPlan, NombrePlan = a.NombrePlan, CodigoProducto = a.CodigoProducto
             })
             .ToListAsync();
 
-        if (!string.IsNullOrWhiteSpace(producto))
-            foreach (var a in anexos)
-                a.Coincide = string.Equals(a.CodigoProducto, producto, StringComparison.OrdinalIgnoreCase);
+        // UN solo anexo del caso: el elegido (anexoId) o, si hay exactamente uno que
+        // coincide con el producto del sobre, ese; si no, ninguno (el auditor elige).
+        int? sel = anexoId;
+        if (sel == null && !string.IsNullOrWhiteSpace(vm.Producto))
+        {
+            var m = vm.AnexosOpciones
+                .Where(a => string.Equals(a.CodigoProducto, vm.Producto, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (m.Count == 1) sel = m[0].Id;
+        }
 
-        return anexos.OrderByDescending(a => a.Coincide).ThenBy(a => a.CodigoPlan).ToList();
+        if (sel != null)
+        {
+            var a = await _db.Anexo.AsNoTracking().Include(x => x.Contrato)
+                .FirstOrDefaultAsync(x => x.Id == sel);
+            if (a != null)
+            {
+                vm.AnexoDelCaso = new AnexoSeleccionadoVM
+                {
+                    Id              = a.Id,
+                    CodigoPlan      = a.CodigoPlan,
+                    NombrePlan      = a.NombrePlan,
+                    Coberturas      = await _db.AnexoCobertura.CountAsync(c => c.AnexoId == a.Id),
+                    ContratoId      = a.ContratoId,
+                    ContratoTipo    = a.Contrato != null ? a.Contrato.Tipo : null,
+                    TieneContratoPdf = a.Contrato != null && !string.IsNullOrWhiteSpace(a.Contrato.ArchivoUri)
+                };
+            }
+        }
+
+        return View(vm);
     }
 
     // POST /Studio/AuditoriaCasos/Generar  → corre el agente propio y persiste el dictamen
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Generar(Guid caseCode)
+    public async Task<IActionResult> Generar(Guid caseCode, string? codigoPlan = null)
     {
         var caso = await _db.ProcessCase
             .Include(c => c.DataFile)
@@ -227,6 +242,11 @@ public sealed class AuditoriaCasosController : Controller
             TempData["Error"] = "Caso no encontrado.";
             return RedirectToAction(nameof(Index));
         }
+
+        // El auditor eligió el plan del caso → se guarda en el contexto para que las
+        // tools del anexo (anexo_coberturas, etc.) consulten EXACTAMENTE ese plan.
+        if (!string.IsNullOrWhiteSpace(codigoPlan))
+            await GuardarPlanEnContextoAsync(caso, codigoPlan.Trim());
 
         var agent = await _db.Agent
             .Include(a => a.AgentConfig)
@@ -430,6 +450,22 @@ public sealed class AuditoriaCasosController : Controller
             });
         }
         return lista;
+    }
+
+    /// <summary>Escribe el codigoPlan elegido por el auditor en la Note ContextoSobre.</summary>
+    private async Task GuardarPlanEnContextoAsync(ProcessCase caso, string codigoPlan)
+    {
+        var nota = caso.Notes.FirstOrDefault(n => n.Title == OcrPromptHelper.ContextoSobreNoteTitle);
+        if (nota == null) return;
+        try
+        {
+            var dict = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+                string.IsNullOrWhiteSpace(nota.Detail) ? "{}" : nota.Detail!, JsonOpts) ?? new();
+            dict["codigoPlan"] = codigoPlan;
+            nota.Detail = JsonSerializer.Serialize(dict);
+            await _db.SaveChangesAsync();
+        }
+        catch (JsonException) { /* contexto malformado: no bloquear el análisis */ }
     }
 
     private static string? ExtractJson(string? texto)

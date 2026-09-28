@@ -124,18 +124,30 @@ public sealed class AuditoriaCasoViewModel
     public string? GeneradoPor { get; set; }
     public string? Error { get; set; }
 
-    /// <summary>Anexos de la biblioteca para el panel lateral (visor + coberturas).</summary>
-    public List<AnexoLateralVM> Anexos { get; set; } = new();
+    /// <summary>Opciones de plan (para el selector del caso). NO se listan todas en pantalla.</summary>
+    public List<AnexoOpcionVM> AnexosOpciones { get; set; } = new();
+
+    /// <summary>El ÚNICO anexo del caso (elegido/emparejado) + su contrato base.</summary>
+    public AnexoSeleccionadoVM? AnexoDelCaso { get; set; }
 }
 
-/// <summary>Anexo mostrado en el panel lateral del caso.</summary>
-public sealed class AnexoLateralVM
+/// <summary>Opción del selector de plan del caso.</summary>
+public sealed class AnexoOpcionVM
 {
     public int Id { get; set; }
     public string CodigoPlan { get; set; } = string.Empty;
     public string? NombrePlan { get; set; }
     public string? CodigoProducto { get; set; }
+}
+
+/// <summary>Anexo (uno) del caso, con su contrato base, para el visor.</summary>
+public sealed class AnexoSeleccionadoVM
+{
+    public int Id { get; set; }
+    public string CodigoPlan { get; set; } = string.Empty;
+    public string? NombrePlan { get; set; }
     public int Coberturas { get; set; }
-    /// <summary>True si su producto coincide con el del sobre (se resalta).</summary>
-    public bool Coincide { get; set; }
+    public int? ContratoId { get; set; }
+    public string? ContratoTipo { get; set; }
+    public bool TieneContratoPdf { get; set; }
 }

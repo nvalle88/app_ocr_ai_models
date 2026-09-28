@@ -192,6 +192,23 @@ public sealed class AnexosController : Controller
         return File(bytes, "application/pdf");
     }
 
+    // GET /Studio/Anexos/Contrato/{id}  → sirve el PDF del contrato base (inline) para el visor
+    [HttpGet]
+    public async Task<IActionResult> Contrato(int id, bool inline = true)
+    {
+        var contrato = await _db.AnexoContrato.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
+        if (contrato == null || string.IsNullOrWhiteSpace(contrato.ArchivoUri))
+            return NotFound("El contrato no tiene un PDF asociado.");
+
+        var blobCfg = await _db.AzureBlobConf.AsNoTracking().FirstOrDefaultAsync();
+        var bytes = await DescargarBlobAsync(contrato.ArchivoUri!, blobCfg);
+        if (bytes == null) return NotFound("No se pudo descargar el PDF del contrato.");
+
+        Response.Headers["Content-Disposition"] =
+            (inline ? "inline" : "attachment") + $"; filename=\"contrato-{contrato.Tipo}.pdf\"";
+        return File(bytes, "application/pdf");
+    }
+
     /// <summary>
     /// Descarga el blob del anexo SOLO vía el SDK con la connection string + contenedor
     /// configurados (los anexos siempre viven en NUESTRO contenedor). No se hace un GET
