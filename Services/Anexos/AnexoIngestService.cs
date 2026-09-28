@@ -64,11 +64,14 @@ public sealed class AnexoIngestService : IAnexoIngestService
         await _db.SaveChangesAsync(ct);
         result.IngestaId = ingesta.Id;
 
-        // ── 1) OCR ────────────────────────────────────────────────────────
-        string ocrText, blobUrl;
+        // ── 1) OCR (POR PÁGINA: la procedencia necesita saber en qué hoja está cada cosa) ──
+        string ocrText, blobUrl, textoPaginado;
         try
         {
-            (blobUrl, ocrText) = await _ocr.ProcessFileAsync(file);
+            var ocrRes    = await _ocr.ProcessFileDetailedAsync(file);
+            blobUrl       = ocrRes.Url;
+            ocrText       = ocrRes.Text;
+            textoPaginado = ConstruirTextoPaginado(ocrRes);   // con marcas === PÁGINA n ===
             ingesta.ArchivoUri = blobUrl;
             ingesta.TextoOcr   = ocrText;
             ingesta.Estado     = "OCR_OK";
@@ -102,7 +105,7 @@ public sealed class AnexoIngestService : IAnexoIngestService
             throw new InvalidOperationException(
                 $"[REQ-046] No existe la configuración '{ClaudeConfigCode}' activa para estructurar el anexo.");
 
-        var extraido = await ExtraerEstructuraAsync(config, ocrText, tipoContratoHint, codigoPlanHint, ct);
+        var extraido = await ExtraerEstructuraAsync(config, textoPaginado, tipoContratoHint, codigoPlanHint, ct);
         ingesta.JsonExtraido = extraido.Json;
         ingesta.Estado       = "ESTRUCTURADO";
         await _db.SaveChangesAsync(ct);
@@ -149,8 +152,10 @@ public sealed class AnexoIngestService : IAnexoIngestService
         var system = new StringBuilder()
             .AppendLine("Eres un extractor de condiciones de contratos y anexos de salud de Saludsa (medicina prepagada).")
             .AppendLine("Recibes el TEXTO OCR de un contrato base (con cláusulas) o de un ANEXO de un plan (con las tablas de coberturas, topes, deducibles, carencias y exclusiones).")
+            .AppendLine("El texto viene marcado por página con líneas '=== PÁGINA n ==='.")
             .AppendLine("Devuelve ÚNICAMENTE un JSON válido con la forma exacta que se indica. NO inventes datos: si un dato no consta en el texto, omite el campo o ponlo en null.")
             .AppendLine("Los porcentajes son números (80, no \"80%\"). Los montos son números sin separadores de miles.")
+            .AppendLine("PROCEDENCIA OBLIGATORIA: por CADA cobertura, carencia, exclusión y cláusula, incluye 'pagina' (el número de la '=== PÁGINA n ===' donde aparece) y 'textoOrigen' (una frase VERBATIM y corta, copiada tal cual del texto de esa página, que permita ubicar el dato en el PDF). El textoOrigen debe existir literalmente en el OCR de esa página.")
             .AppendLine("Si el documento es un anexo de plan, llena 'anexos' con sus coberturas/carencias/exclusiones y deja 'clausulas' vacío.")
             .AppendLine("Si el documento es el contrato base, llena 'clausulas' y 'contrato'; 'anexos' puede ir vacío.")
             .ToString();
@@ -158,10 +163,10 @@ public sealed class AnexoIngestService : IAnexoIngestService
         var forma = """
         { "contrato": {"tipo":"Individual|Tradicional|OptimusPlus|Oncologico|Corporativo","codigoAcess":"","nombre":"","version":"","vigencia":""},
           "anexos": [ {"codigoPlan":"","nombrePlan":"","codigoProducto":"","version":"","resumenCondiciones":"",
-             "coberturas":[{"beneficio":"","codigoBeneficio":"","porcentaje":0,"tope":0,"monedaTope":"USD","deducible":0,"copago":"","periodo":"anual|por evento","ambito":"nacional|internacional|red","notas":""}],
-             "carencias":[{"beneficio":"","diasCarencia":0,"notas":""}],
-             "exclusiones":[{"texto":"","clausulaRef":""}] } ],
-          "clausulas": [ {"ordinal":"","numeral":"","literal":"","titulo":"","texto":""} ] }
+             "coberturas":[{"beneficio":"","codigoBeneficio":"","porcentaje":0,"tope":0,"monedaTope":"USD","deducible":0,"copago":"","periodo":"anual|por evento","ambito":"nacional|internacional|red","notas":"","pagina":0,"textoOrigen":""}],
+             "carencias":[{"beneficio":"","diasCarencia":0,"notas":"","pagina":0,"textoOrigen":""}],
+             "exclusiones":[{"texto":"","clausulaRef":"","pagina":0,"textoOrigen":""}] } ],
+          "clausulas": [ {"ordinal":"","numeral":"","literal":"","titulo":"","texto":"","pagina":0,"textoOrigen":""} ] }
         """;
 
         var user = new StringBuilder();
@@ -245,6 +250,8 @@ public sealed class AnexoIngestService : IAnexoIngestService
                         Literal     = Cortar(cl.Literal, 20),
                         Titulo      = Cortar(cl.Titulo, 200),
                         Texto       = cl.Texto!,
+                        Pagina      = cl.Pagina,
+                        TextoOrigen = Cortar(cl.TextoOrigen, 2000),
                         CreatedDate = DateTime.UtcNow
                     });
                     result.Clausulas++;
@@ -323,6 +330,8 @@ public sealed class AnexoIngestService : IAnexoIngestService
                     Periodo         = Cortar(c.Periodo, 60),
                     Ambito          = Cortar(c.Ambito, 60),
                     Notas           = Cortar(c.Notas, 500),
+                    Pagina          = c.Pagina,
+                    TextoOrigen     = Cortar(c.TextoOrigen, 2000),
                     CreatedDate     = DateTime.UtcNow
                 });
                 result.Coberturas++;
@@ -336,6 +345,8 @@ public sealed class AnexoIngestService : IAnexoIngestService
                     Beneficio    = Cortar(c.Beneficio, 200)!,
                     DiasCarencia = c.DiasCarencia,
                     Notas        = Cortar(c.Notas, 500),
+                    Pagina       = c.Pagina,
+                    TextoOrigen  = Cortar(c.TextoOrigen, 2000),
                     CreatedDate  = DateTime.UtcNow
                 });
                 result.Carencias++;
@@ -349,6 +360,8 @@ public sealed class AnexoIngestService : IAnexoIngestService
                     ContratoId  = contrato?.Id,
                     Texto       = Cortar(x.Texto, 1000)!,
                     ClausulaRef = Cortar(x.ClausulaRef, 200),
+                    Pagina      = x.Pagina,
+                    TextoOrigen = Cortar(x.TextoOrigen, 2000),
                     CreatedDate = DateTime.UtcNow
                 });
                 result.Exclusiones++;
@@ -361,6 +374,20 @@ public sealed class AnexoIngestService : IAnexoIngestService
     private static string Truncar(string s, int max) => s.Length <= max ? s : s.Substring(0, max);
     private static string? Cortar(string? s, int max) =>
         string.IsNullOrWhiteSpace(s) ? null : (s.Length <= max ? s : s.Substring(0, max));
+
+    /// <summary>Arma el texto OCR con marcas '=== PÁGINA n ===' para que Claude
+    /// pueda anotar de qué página salió cada dato (procedencia).</summary>
+    private static string ConstruirTextoPaginado(OcrResultado ocr)
+    {
+        if (ocr.Paginas == null || ocr.Paginas.Count == 0)
+            return ocr.Text ?? string.Empty;
+        var sb = new StringBuilder();
+        foreach (var p in ocr.Paginas.OrderBy(p => p.PageNumber))
+            sb.AppendLine($"=== PÁGINA {p.PageNumber} ===")
+              .AppendLine(p.Text ?? string.Empty)
+              .AppendLine();
+        return sb.ToString();
+    }
 
     private static string? ExtractJson(string? texto)
     {
@@ -421,17 +448,23 @@ public sealed class AnexoIngestService : IAnexoIngestService
         public string? Periodo { get; set; }
         public string? Ambito { get; set; }
         public string? Notas { get; set; }
+        public int? Pagina { get; set; }
+        public string? TextoOrigen { get; set; }
     }
     private sealed class ExtraccionCarencia
     {
         public string? Beneficio { get; set; }
         public int? DiasCarencia { get; set; }
         public string? Notas { get; set; }
+        public int? Pagina { get; set; }
+        public string? TextoOrigen { get; set; }
     }
     private sealed class ExtraccionExclusion
     {
         public string? Texto { get; set; }
         public string? ClausulaRef { get; set; }
+        public int? Pagina { get; set; }
+        public string? TextoOrigen { get; set; }
     }
     private sealed class ExtraccionClausula
     {
@@ -440,5 +473,7 @@ public sealed class AnexoIngestService : IAnexoIngestService
         public string? Literal { get; set; }
         public string? Titulo { get; set; }
         public string? Texto { get; set; }
+        public int? Pagina { get; set; }
+        public string? TextoOrigen { get; set; }
     }
 }

@@ -11,6 +11,10 @@
     string RiesgoClass(string? n) => (n ?? "").ToLower() switch { "alto" => "bad", "medio" => "warn", "bajo" => "ok", _ => "muted" };
     var d = Model.Dictamen;
     var docBase = Url.Action("DownloadCaseDocument", "Nexus", new { area = "", caseCode = Model.CaseCode });
+    var anexoDocUrl = Model.AnexoDelCaso != null
+        ? Url.Action("Documento", "Anexos", new { area = "Studio", id = Model.AnexoDelCaso.Id, inline = true })
+        : null;
+    var anexoNombre = Model.AnexoDelCaso != null ? "Anexo " + Model.AnexoDelCaso.CodigoPlan : "Anexo";
 }
 
 <div class="aud-top">
@@ -23,6 +27,11 @@
             <span>Producto <strong>@(Model.Producto ?? "—")</strong></span>
             <span class="aud-dot"></span>
             <span>Contrato <strong>@(Model.NumeroContrato ?? "—")</strong></span>
+            @if (Model.AnexoDelCaso != null)
+            {
+                <span class="aud-dot"></span>
+                <span>Plan <strong>@Model.AnexoDelCaso.CodigoPlan</strong></span>
+            }
         </div>
     </div>
     <div class="aud-top-actions">
@@ -182,13 +191,35 @@
                             @if (!string.IsNullOrEmpty(ac.Cobertura.Deducible)) { <span class="aud-inline">deducible @ac.Cobertura.Deducible</span> }
                         </p>
                         @if (!string.IsNullOrEmpty(ac.Cobertura.Notas)) { <p class="aud-body">@ac.Cobertura.Notas</p> }
+                        @if (anexoDocUrl != null && (ac.Cobertura.Pagina != null || !string.IsNullOrEmpty(ac.Cobertura.TextoOrigen)))
+                        {
+                            <button type="button" class="aud-fuente js-verfuente" data-url="@anexoDocUrl" data-nombre="@anexoNombre" data-pagina="@ac.Cobertura.Pagina" data-evid="@ac.Cobertura.TextoOrigen">
+                                <i class="fa fa-search-plus"></i> ver la cobertura en el anexo@(ac.Cobertura.Pagina != null ? $" · pág. {ac.Cobertura.Pagina}" : "")
+                            </button>
+                        }
                     }
                     @if (ac.Preexistencias != null && !string.IsNullOrEmpty(ac.Preexistencias.Hallazgo))
                     { <p><strong>Preexistencias:</strong> @ac.Preexistencias.Hallazgo @if (!string.IsNullOrEmpty(ac.Preexistencias.TipoNexo)) { <em>(@ac.Preexistencias.TipoNexo)</em> }</p> }
                     @if (ac.Carencias != null && ac.Carencias.Aplica == true)
-                    { <p><span class="aud-pill aud-pill-warn">Carencia</span> @ac.Carencias.Detalle</p> }
+                    {
+                        <p><span class="aud-pill aud-pill-warn">Carencia</span> @ac.Carencias.Detalle</p>
+                        @if (anexoDocUrl != null && (ac.Carencias.Pagina != null || !string.IsNullOrEmpty(ac.Carencias.TextoOrigen)))
+                        {
+                            <button type="button" class="aud-fuente js-verfuente" data-url="@anexoDocUrl" data-nombre="@anexoNombre" data-pagina="@ac.Carencias.Pagina" data-evid="@ac.Carencias.TextoOrigen">
+                                <i class="fa fa-search-plus"></i> ver la carencia en el anexo@(ac.Carencias.Pagina != null ? $" · pág. {ac.Carencias.Pagina}" : "")
+                            </button>
+                        }
+                    }
                     @if (ac.Exclusiones != null && ac.Exclusiones.Aplica == true)
-                    { <p><span class="aud-pill aud-pill-bad">Exclusión</span> @ac.Exclusiones.TextoCitado @if (!string.IsNullOrEmpty(ac.Exclusiones.Clausula)) { <small class="aud-muted">(@ac.Exclusiones.Clausula)</small> }</p> }
+                    {
+                        <p><span class="aud-pill aud-pill-bad">Exclusión</span> @ac.Exclusiones.TextoCitado @if (!string.IsNullOrEmpty(ac.Exclusiones.Clausula)) { <small class="aud-muted">(@ac.Exclusiones.Clausula)</small> }</p>
+                        @if (anexoDocUrl != null && (ac.Exclusiones.Pagina != null || !string.IsNullOrEmpty(ac.Exclusiones.TextoOrigen)))
+                        {
+                            <button type="button" class="aud-fuente js-verfuente" data-url="@anexoDocUrl" data-nombre="@anexoNombre" data-pagina="@ac.Exclusiones.Pagina" data-evid="@ac.Exclusiones.TextoOrigen">
+                                <i class="fa fa-search-plus"></i> ver la exclusión en el anexo@(ac.Exclusiones.Pagina != null ? $" · pág. {ac.Exclusiones.Pagina}" : "")
+                            </button>
+                        }
+                    }
                 </div>
             }
 
@@ -315,6 +346,8 @@
         .aud-pill-bad { background:#fbe6e5; color:#b4231f; }
         .aud-pill-warn{ background:#fbf0da; color:#8a5a00; }
         .aud-inline { color:#5b6472; font-size:13px; margin-left:8px; }
+        .aud-fuente { display:inline-flex; align-items:center; gap:6px; margin:6px 0 2px; background:#eef4ff; border:1px solid #cfe0ff; color:#0043b8; border-radius:16px; padding:4px 12px; font-size:12px; font-weight:600; cursor:pointer; }
+        .aud-fuente:hover { background:#dbe9ff; border-color:#a9c9ff; }
         .aud-fraude { border-left:3px solid #b4231f; background:#fff7f6; padding:8px 12px; border-radius:0 6px 6px 0; margin-bottom:8px; }
         .aud-ok .fa, .aud-ok { }
         .aud-list { margin:6px 0 0 18px; color:#3b4453; font-size:13px; }
@@ -330,21 +363,55 @@
     <script>
         (function () {
             var visor = null;
-            function verDoc(btn) {
-                document.querySelectorAll('.aud-chip.is-active').forEach(function (x) { x.classList.remove('is-active'); });
-                btn.classList.add('is-active');
+            function ensureVisor() {
                 var host = document.getElementById('visorHost');
                 if (!visor) { host.innerHTML = ''; visor = StPdfViewer.create(host, {}); }
-                visor.abrir({ url: btn.getAttribute('data-url'), nombre: btn.getAttribute('data-nombre') || 'Documento' });
+                return visor;
+            }
+            function expandir() {
+                var ws = document.getElementById('audWs'); if (ws) ws.classList.remove('is-collapsed');
+                var ro = document.getElementById('audReopen'); if (ro) ro.classList.remove('is-visible');
+                try { localStorage.setItem('audVisorCollapsed', '0'); } catch (e) {}
+                setTimeout(function () { try { window.dispatchEvent(new Event('resize')); } catch (e) {} }, 60);
+            }
+            function abrirEn(url, nombre, pagina, evid) {
+                var v = ensureVisor();
+                if (!pagina && evid) {
+                    StPdfViewer.paginaDe(url, evid)
+                        .then(function (p) { v.abrir({ url: url, nombre: nombre, pagina: p || 1, evidencia: evid }); })
+                        .catch(function () { v.abrir({ url: url, nombre: nombre, evidencia: evid }); });
+                } else {
+                    v.abrir({ url: url, nombre: nombre, pagina: pagina || undefined, evidencia: evid || undefined });
+                }
             }
             document.addEventListener('click', function (ev) {
                 var b = ev.target.closest ? ev.target.closest('.js-ver') : null;
-                if (b) { ev.preventDefault(); verDoc(b); }
+                if (b) {
+                    ev.preventDefault();
+                    document.querySelectorAll('.aud-chip.is-active').forEach(function (x) { x.classList.remove('is-active'); });
+                    if (b.classList.contains('aud-chip')) b.classList.add('is-active');
+                    abrirEn(b.getAttribute('data-url'), b.getAttribute('data-nombre') || 'Documento');
+                    return;
+                }
+                var f = ev.target.closest ? ev.target.closest('.js-verfuente') : null;
+                if (f) {
+                    ev.preventDefault();
+                    expandir(); // el clic viene del dictamen; abre el panel si estaba oculto
+                    var pag = parseInt(f.getAttribute('data-pagina'), 10);
+                    setTimeout(function () {
+                        abrirEn(f.getAttribute('data-url'), f.getAttribute('data-nombre') || 'Anexo',
+                                isNaN(pag) ? null : pag, f.getAttribute('data-evid') || null);
+                    }, 80);
+                }
             });
-            // Auto-abre el primer documento para que el visor no arranque vacío.
+            // Auto-abre el primer documento (sin forzar expandir: respeta si está colapsado).
             document.addEventListener('DOMContentLoaded', function () {
                 var first = document.querySelector('.aud-chips .js-ver');
-                if (first) verDoc(first);
+                if (first) {
+                    document.querySelectorAll('.aud-chip.is-active').forEach(function (x) { x.classList.remove('is-active'); });
+                    first.classList.add('is-active');
+                    abrirEn(first.getAttribute('data-url'), first.getAttribute('data-nombre') || '');
+                }
             });
         })();
 

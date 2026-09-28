@@ -59,6 +59,10 @@ public sealed class CoberturaDto
     public string? Deducible { get; set; }
     public string? Copago { get; set; }
     public string? Notas { get; set; }
+    /// <summary>Procedencia: página del PDF del anexo donde consta.</summary>
+    public int? Pagina { get; set; }
+    /// <summary>Procedencia: segmento verbatim del anexo (para resaltar en el visor).</summary>
+    public string? TextoOrigen { get; set; }
 }
 public sealed class PreexistenciasDto
 {
@@ -70,12 +74,16 @@ public sealed class CarenciasDto
 {
     public bool? Aplica { get; set; }
     public string? Detalle { get; set; }
+    public int? Pagina { get; set; }
+    public string? TextoOrigen { get; set; }
 }
 public sealed class ExclusionesDto
 {
     public bool? Aplica { get; set; }
     public string? TextoCitado { get; set; }
     public string? Clausula { get; set; }
+    public int? Pagina { get; set; }
+    public string? TextoOrigen { get; set; }
 }
 
 public sealed class AlertaFraudeDto

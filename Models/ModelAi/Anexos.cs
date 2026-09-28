@@ -91,6 +91,10 @@ public partial class AnexoCobertura
     public string? Periodo { get; set; }
     public string? Ambito { get; set; }
     public string? Notas { get; set; }
+    /// <summary>Página del PDF de donde se extrajo (procedencia).</summary>
+    public int? Pagina { get; set; }
+    /// <summary>Segmento verbatim del PDF de donde salió el dato (para resaltar en el visor).</summary>
+    public string? TextoOrigen { get; set; }
     public DateTime CreatedDate { get; set; }
 
     public virtual Anexo? Anexo { get; set; }
@@ -104,6 +108,8 @@ public partial class AnexoCarencia
     public string Beneficio { get; set; } = null!;
     public int? DiasCarencia { get; set; }
     public string? Notas { get; set; }
+    public int? Pagina { get; set; }
+    public string? TextoOrigen { get; set; }
     public DateTime CreatedDate { get; set; }
 
     public virtual Anexo? Anexo { get; set; }
@@ -117,6 +123,8 @@ public partial class AnexoExclusion
     public int? ContratoId { get; set; }
     public string Texto { get; set; } = null!;
     public string? ClausulaRef { get; set; }
+    public int? Pagina { get; set; }
+    public string? TextoOrigen { get; set; }
     public DateTime CreatedDate { get; set; }
 
     public virtual Anexo? Anexo { get; set; }
@@ -133,6 +141,8 @@ public partial class AnexoClausula
     public string? Literal { get; set; }
     public string? Titulo { get; set; }
     public string Texto { get; set; } = null!;
+    public int? Pagina { get; set; }
+    public string? TextoOrigen { get; set; }
     public DateTime CreatedDate { get; set; }
 
     public virtual AnexoContrato? Contrato { get; set; }

@@ -202,12 +202,20 @@ public sealed class AuditoriaCasosController : Controller
 
         // UN solo anexo del caso, SIEMPRE dentro del producto del sobre:
         //  · el elegido (anexoId) — validado contra la lista del producto;
+        //  · o el que empate por CÓDIGO DE PLAN del contexto (la llave real);
         //  · o, si hay exactamente uno del producto, ese.
         int? sel = anexoId;
         if (sel != null && !vm.AnexosOpciones.Any(o => o.Id == sel))
         {
             sel = null;
             vm.Error = $"El anexo elegido no corresponde al producto del sobre ({prod}); se ignoró.";
+        }
+        var planCtx = OcrPromptHelper.ExtractStringFromCaseContext(caso.Notes, "codigoPlan");
+        if (sel == null && !string.IsNullOrWhiteSpace(planCtx))
+        {
+            var porPlan = vm.AnexosOpciones.FirstOrDefault(o =>
+                string.Equals(o.CodigoPlan, planCtx, StringComparison.OrdinalIgnoreCase));
+            if (porPlan != null) sel = porPlan.Id;
         }
         if (sel == null && vm.AnexosOpciones.Count == 1)
             sel = vm.AnexosOpciones[0].Id;
