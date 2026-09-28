@@ -185,9 +185,14 @@ public sealed class AuditoriaCasosController : Controller
 
         var vm = BuildCasoVm(caso);
 
-        // Opciones para el selector (solo Id/Plan/Producto — no se listan todas en pantalla).
-        vm.AnexosOpciones = await _db.Anexo.AsNoTracking()
-            .Where(a => a.IsActive)
+        // BLINDAJE DE PRODUCTO: el selector SOLO ofrece anexos del MISMO producto del
+        // sobre. Un sobre COR nunca puede tomar un anexo IND (y viceversa).
+        var prod = vm.Producto;
+        var opcionesQuery = _db.Anexo.AsNoTracking().Where(a => a.IsActive);
+        opcionesQuery = !string.IsNullOrWhiteSpace(prod)
+            ? opcionesQuery.Where(a => a.CodigoProducto == prod)
+            : opcionesQuery.Where(a => false);   // sin producto del sobre, no se ofrece ninguno
+        vm.AnexosOpciones = await opcionesQuery
             .OrderBy(a => a.CodigoPlan)
             .Select(a => new AnexoOpcionVM
             {
@@ -195,16 +200,17 @@ public sealed class AuditoriaCasosController : Controller
             })
             .ToListAsync();
 
-        // UN solo anexo del caso: el elegido (anexoId) o, si hay exactamente uno que
-        // coincide con el producto del sobre, ese; si no, ninguno (el auditor elige).
+        // UN solo anexo del caso, SIEMPRE dentro del producto del sobre:
+        //  · el elegido (anexoId) — validado contra la lista del producto;
+        //  · o, si hay exactamente uno del producto, ese.
         int? sel = anexoId;
-        if (sel == null && !string.IsNullOrWhiteSpace(vm.Producto))
+        if (sel != null && !vm.AnexosOpciones.Any(o => o.Id == sel))
         {
-            var m = vm.AnexosOpciones
-                .Where(a => string.Equals(a.CodigoProducto, vm.Producto, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-            if (m.Count == 1) sel = m[0].Id;
+            sel = null;
+            vm.Error = $"El anexo elegido no corresponde al producto del sobre ({prod}); se ignoró.";
         }
+        if (sel == null && vm.AnexosOpciones.Count == 1)
+            sel = vm.AnexosOpciones[0].Id;
 
         if (sel != null)
         {
@@ -244,9 +250,21 @@ public sealed class AuditoriaCasosController : Controller
         }
 
         // El auditor eligió el plan del caso → se guarda en el contexto para que las
-        // tools del anexo (anexo_coberturas, etc.) consulten EXACTAMENTE ese plan.
+        // tools del anexo consulten ESE plan. BLINDAJE: solo si el plan pertenece al
+        // MISMO producto del sobre; si no, NO se escribe (las tools no consultan un
+        // anexo de otro producto → jamás se audita un COR contra un anexo IND).
         if (!string.IsNullOrWhiteSpace(codigoPlan))
-            await GuardarPlanEnContextoAsync(caso, codigoPlan.Trim());
+        {
+            var prodSobre = OcrPromptHelper.ExtractStringFromCaseContext(caso.Notes, "producto");
+            var plan = codigoPlan.Trim();
+            var planEsDelProducto = await _db.Anexo.AnyAsync(a => a.IsActive && a.CodigoPlan == plan
+                && (string.IsNullOrEmpty(prodSobre) || a.CodigoProducto == prodSobre));
+            if (planEsDelProducto)
+                await GuardarPlanEnContextoAsync(caso, plan);
+            else
+                TempData["Error"] = $"El plan '{plan}' no corresponde al producto del sobre ({prodSobre}); " +
+                                    "el análisis contractual se omite para no mezclar productos.";
+        }
 
         var agent = await _db.Agent
             .Include(a => a.AgentConfig)

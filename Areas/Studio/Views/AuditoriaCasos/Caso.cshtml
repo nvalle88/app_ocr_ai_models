@@ -1,243 +1,301 @@
 @model AuditoriaCasoViewModel
 @{
     ViewData["Title"] = "Auditoría — " + (Model.NumeroSobre ?? "caso");
-    string RiesgoClass(string? n) => (n ?? "").ToLower() switch { "alto" => "danger", "medio" => "warning", "bajo" => "success", _ => "default" };
     string ResoClass(string? r) => (r ?? "").ToLower() switch {
-        var s when s.Contains("aprob") => "success",
-        var s when s.Contains("negad") => "danger",
-        var s when s.Contains("parcial") => "warning",
+        var s when s.Contains("aprob") => "ok",
+        var s when s.Contains("negad") => "bad",
+        var s when s.Contains("parcial") => "warn",
         var s when s.Contains("escal") => "info",
-        _ => "default" };
+        var s when s.Contains("devol") => "warn",
+        _ => "muted" };
+    string RiesgoClass(string? n) => (n ?? "").ToLower() switch { "alto" => "bad", "medio" => "warn", "bajo" => "ok", _ => "muted" };
     var d = Model.Dictamen;
     var docBase = Url.Action("DownloadCaseDocument", "Nexus", new { area = "", caseCode = Model.CaseCode });
 }
 
-<div class="st-head">
-    <div class="st-head-main">
-        <div class="st-crumbs">
-            Studio / <a asp-area="Studio" asp-controller="AuditoriaCasos" asp-action="Index">Auditoría Casos</a> / @Model.NumeroSobre
+<div class="aud-top">
+    <div class="aud-top-id">
+        <div class="aud-crumb">Auditoría de Casos</div>
+        <h1 class="aud-sobre"><i class="fa fa-folder-open-o"></i> @Model.NumeroSobre</h1>
+        <div class="aud-meta">
+            <span><i class="fa fa-user"></i> @(Model.NombreTitular ?? "—")</span>
+            <span class="aud-dot"></span>
+            <span>Producto <strong>@(Model.Producto ?? "—")</strong></span>
+            <span class="aud-dot"></span>
+            <span>Contrato <strong>@(Model.NumeroContrato ?? "—")</strong></span>
         </div>
-        <h1 class="st-title"><i class="fa fa-stethoscope"></i>Sobre @Model.NumeroSobre</h1>
-        <p class="st-sub">
-            @(Model.NombreTitular ?? "—") · Producto <strong>@(Model.Producto ?? "—")</strong> ·
-            Contrato <strong>@(Model.NumeroContrato ?? "—")</strong> · @Model.Documentos.Count documento(s)
-        </p>
     </div>
-    <div class="st-head-actions" style="align-self:center;">
+    <div class="aud-top-actions">
         <form asp-area="Studio" asp-controller="AuditoriaCasos" asp-action="Generar" method="post"
               onsubmit="mostrarLoadingPanel('content', 'El auditor IA está leyendo los documentos y analizando el caso…');">
             @Html.AntiForgeryToken()
             <input type="hidden" name="caseCode" value="@Model.CaseCode" />
             <input type="hidden" name="codigoPlan" value="@(Model.AnexoDelCaso?.CodigoPlan)" />
-            <button type="submit" class="btn btn-lg @(Model.Generada ? "btn-default" : "btn-primary")">
+            <button type="submit" class="aud-btn-primary">
                 <i class="fa fa-magic"></i> @(Model.Generada ? "Regenerar dictamen" : "Generar dictamen")
             </button>
         </form>
+        <a class="aud-btn-ghost" asp-area="Studio" asp-controller="AuditoriaCasos" asp-action="Index"><i class="fa fa-arrow-left"></i> Volver</a>
     </div>
 </div>
 
 @if (!string.IsNullOrEmpty(Model.Error))
 {
-    <div class="alert alert-warning"><i class="fa fa-exclamation-triangle"></i> @Model.Error</div>
+    <div class="aud-alert"><i class="fa fa-exclamation-triangle"></i> @Model.Error</div>
 }
 
-@* ── Fuentes del caso: documentos + el anexo/contrato del plan (compacto, no fijo) ── *@
-<div class="well well-sm" style="margin-bottom:14px;">
-    <div class="row">
-        <div class="col-md-7">
-            <label class="text-muted" style="display:block; margin-bottom:4px;"><i class="fa fa-files-o"></i> Documentos del sobre</label>
-            @if (!Model.Documentos.Any())
+<div class="aud-ws">
+
+    @* ══════════ IZQUIERDA — VISOR EMBEBIDO (documentos + anexo/contrato) ══════════ *@
+    <section class="aud-panel aud-visor">
+        <div class="aud-panel-head">
+            <span class="aud-panel-title"><i class="fa fa-file-pdf-o"></i> Fuentes del caso</span>
+            @if (Model.AnexosOpciones.Any())
             {
-                <span class="text-muted">Sin documentos.</span>
+                <span title="Solo planes del producto @Model.Producto (blindaje de producto)">
+                    <select class="aud-select" id="selPlan"
+                            onchange="location.href='@Url.Action("Caso", new { caseCode = Model.CaseCode })&anexoId='+this.value">
+                        <option value="">Plan (@Model.Producto)…</option>
+                        @foreach (var o in Model.AnexosOpciones)
+                        {
+                            <option value="@o.Id" selected="@(Model.AnexoDelCaso?.Id == o.Id)">@o.CodigoPlan</option>
+                        }
+                    </select>
+                </span>
             }
             else
             {
-                foreach (var f in Model.Documentos)
+                <span class="aud-nomatch"><i class="fa fa-lock"></i> Sin anexo cargado para el producto <strong>@(Model.Producto ?? "—")</strong></span>
+            }
+        </div>
+
+        <div class="aud-chips">
+            @foreach (var f in Model.Documentos)
+            {
+                <button type="button" class="aud-chip js-ver" data-url="@(docBase)&fileId=@f.Id&inline=true" data-nombre="@f.OriginalName">
+                    <i class="fa fa-file-pdf-o"></i> @f.OriginalName
+                </button>
+            }
+            @if (Model.AnexoDelCaso != null)
+            {
+                <button type="button" class="aud-chip aud-chip-anexo js-ver"
+                        data-url="@Url.Action("Documento", "Anexos", new { area = "Studio", id = Model.AnexoDelCaso.Id, inline = true })"
+                        data-nombre="Anexo @Model.AnexoDelCaso.CodigoPlan">
+                    <i class="fa fa-book"></i> Anexo @Model.AnexoDelCaso.CodigoPlan
+                </button>
+                @if (Model.AnexoDelCaso.TieneContratoPdf && Model.AnexoDelCaso.ContratoId != null)
                 {
-                    <button type="button" class="btn btn-xs btn-default js-ver" style="margin:2px;"
-                            data-url="@(docBase)&fileId=@f.Id&inline=true" data-nombre="@f.OriginalName">
-                        <i class="fa fa-file-pdf-o text-danger"></i> @f.OriginalName
+                    <button type="button" class="aud-chip aud-chip-anexo js-ver"
+                            data-url="@Url.Action("Contrato", "Anexos", new { area = "Studio", id = Model.AnexoDelCaso.ContratoId, inline = true })"
+                            data-nombre="Contrato @Model.AnexoDelCaso.ContratoTipo">
+                        <i class="fa fa-gavel"></i> Contrato base
                     </button>
                 }
             }
+            @if (!Model.Documentos.Any() && Model.AnexoDelCaso == null)
+            {
+                <span class="aud-muted">Sin documentos. Elige el plan del caso para ver su anexo.</span>
+            }
         </div>
-        <div class="col-md-5">
-            <label class="text-muted" style="display:block; margin-bottom:4px;"><i class="fa fa-book"></i> Anexo del plan del caso</label>
-            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                <select class="form-control input-sm" style="max-width:230px;"
-                        onchange="location.href='@Url.Action("Caso", new { caseCode = Model.CaseCode })&anexoId='+this.value">
-                    <option value="">— elegir plan —</option>
-                    @foreach (var o in Model.AnexosOpciones)
-                    {
-                        <option value="@o.Id" selected="@(Model.AnexoDelCaso?.Id == o.Id)">@o.CodigoPlan</option>
-                    }
-                </select>
-                @if (Model.AnexoDelCaso != null)
-                {
-                    <button type="button" class="btn btn-xs btn-primary js-ver"
-                            data-url="@Url.Action("Documento", "Anexos", new { area = "Studio", id = Model.AnexoDelCaso.Id, inline = true })"
-                            data-nombre="Anexo @Model.AnexoDelCaso.CodigoPlan">
-                        <i class="fa fa-eye"></i> Anexo
-                    </button>
-                    @if (Model.AnexoDelCaso.TieneContratoPdf && Model.AnexoDelCaso.ContratoId != null)
-                    {
-                        <button type="button" class="btn btn-xs btn-default js-ver"
-                                data-url="@Url.Action("Contrato", "Anexos", new { area = "Studio", id = Model.AnexoDelCaso.ContratoId, inline = true })"
-                                data-nombre="Contrato @Model.AnexoDelCaso.ContratoTipo">
-                            <i class="fa fa-eye"></i> Contrato
-                        </button>
-                    }
-                    <a class="btn btn-xs btn-link" asp-area="Studio" asp-controller="Anexos" asp-action="Detalle" asp-route-id="@Model.AnexoDelCaso.Id">
-                        @Model.AnexoDelCaso.Coberturas coberturas
-                    </a>
-                }
+
+        <div class="aud-visor-host" id="visorHost">
+            <div class="aud-visor-empty">
+                <i class="fa fa-file-pdf-o"></i>
+                <p>Elige un documento del sobre o el anexo del plan para verlo aquí.</p>
             </div>
         </div>
-    </div>
-</div>
+    </section>
 
-@* ══════════ DICTAMEN (protagonista) ══════════ *@
-@if (!Model.Generada)
-{
-    <div class="well text-center" style="padding:28px;">
-        <p class="text-muted" style="font-size:15px;">
-            <i class="fa fa-info-circle"></i>
-            Elige el plan del caso, revisa los documentos, y pulsa <strong>Generar dictamen</strong>
-            para el análisis de pertinencia, cobertura, preexistencias, carencias, exclusiones y fraude.
-        </p>
-    </div>
-}
-else if (d != null)
-{
-    <div class="alert alert-info" style="margin-bottom:12px;">
-        <i class="fa fa-robot"></i> Generado @Model.GeneradoEn?.ToLocalTime().ToString("dd/MM/yyyy HH:mm").
-        <strong>Recomendación, no resolución</strong>: el auditor decide.
-    </div>
+    @* ══════════ DERECHA — DICTAMEN ══════════ *@
+    <section class="aud-dict">
+        @if (!Model.Generada)
+        {
+            <div class="aud-panel aud-empty-dict">
+                <i class="fa fa-stethoscope"></i>
+                <h3>Sin dictamen todavía</h3>
+                <p>Elige el plan del caso, revisa los documentos, y pulsa <strong>Generar dictamen</strong> para el análisis de pertinencia, cobertura, preexistencias, carencias, exclusiones y fraude.</p>
+            </div>
+        }
+        else if (d != null)
+        {
+            <div class="aud-genstamp"><i class="fa fa-robot"></i> Generado @Model.GeneradoEn?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · <em>recomendación, el auditor decide</em></div>
 
-    <div class="row">
-        <div class="col-md-6">
             @if (d.Recomendacion != null)
             {
-                <div class="jarviswidget jarviswidget-color-darken" data-widget-editbutton="false" data-widget-deletebutton="false">
-                    <header><span class="widget-icon"><i class="fa fa-gavel"></i></span><h2>Recomendación</h2></header>
-                    <div><div class="widget-body">
-                        <h3 style="margin-top:0;"><span class="label label-@ResoClass(d.Recomendacion.Resolucion)" style="font-size:16px;">@d.Recomendacion.Resolucion</span></h3>
-                        <p style="font-size:15px;">@d.Recomendacion.MotivoPrincipal</p>
-                        <p>
-                            <strong>Confianza:</strong> @d.Recomendacion.NivelConfianza &nbsp;·&nbsp;
-                            <strong>Riesgo legal:</strong>
-                            <span class="label label-@RiesgoClass(d.Recomendacion.RiesgoLegal?.Nivel)">@(d.Recomendacion.RiesgoLegal?.Nivel ?? "—")</span>
-                            @if (!string.IsNullOrEmpty(d.Recomendacion.RiesgoLegal?.Razon)) { <small class="text-muted"> — @d.Recomendacion.RiesgoLegal!.Razon</small> }
-                        </p>
-                    </div></div>
+                <div class="aud-hero aud-@ResoClass(d.Recomendacion.Resolucion)">
+                    <div class="aud-hero-verdict">@d.Recomendacion.Resolucion</div>
+                    <div class="aud-hero-motivo">@d.Recomendacion.MotivoPrincipal</div>
+                    <div class="aud-hero-tags">
+                        <span class="aud-tag">Confianza: <strong>@d.Recomendacion.NivelConfianza</strong></span>
+                        <span class="aud-tag aud-tag-@RiesgoClass(d.Recomendacion.RiesgoLegal?.Nivel)">Riesgo legal: <strong>@(d.Recomendacion.RiesgoLegal?.Nivel ?? "—")</strong></span>
+                    </div>
+                    @if (!string.IsNullOrEmpty(d.Recomendacion.RiesgoLegal?.Razon)) { <div class="aud-hero-riesgo">@d.Recomendacion.RiesgoLegal!.Razon</div> }
                 </div>
             }
+
             @if (d.DatosCaso != null)
             {
-                <div class="jarviswidget" data-widget-editbutton="false" data-widget-deletebutton="false">
-                    <header><span class="widget-icon"><i class="fa fa-id-card-o"></i></span><h2>Datos del caso</h2></header>
-                    <div><div class="widget-body">
-                        <p><strong>Contrato/plan:</strong> @d.DatosCaso.ContratoPlan &nbsp; <strong>Monto:</strong> @d.DatosCaso.MontoSolicitado</p>
-                        <p><strong>Diagnóstico:</strong> @d.DatosCaso.Diagnostico</p>
-                        <p><strong>Procedimiento:</strong> @d.DatosCaso.Procedimiento</p>
-                        <p><strong>Atención:</strong> @d.DatosCaso.FechaAtencion &nbsp; <strong>Inicio cobertura:</strong> @d.DatosCaso.FechaInicioCobertura</p>
-                        @if (d.DatosCaso.InformacionFaltante.Any())
-                        {
-                            <div class="alert alert-warning" style="margin-bottom:0;"><strong><i class="fa fa-exclamation-circle"></i> Falta:</strong>
-                                <ul style="margin:6px 0 0;">@foreach (var x in d.DatosCaso.InformacionFaltante) { <li>@x</li> }</ul></div>
-                        }
-                    </div></div>
+                <div class="aud-card">
+                    <h3><i class="fa fa-id-card-o"></i> Datos del caso</h3>
+                    <div class="aud-kv">
+                        <div><label>Contrato / plan</label><span>@(d.DatosCaso.ContratoPlan ?? "—")</span></div>
+                        <div><label>Monto solicitado</label><span>@(d.DatosCaso.MontoSolicitado ?? "—")</span></div>
+                        <div><label>Diagnóstico</label><span>@(d.DatosCaso.Diagnostico ?? "—")</span></div>
+                        <div><label>Procedimiento</label><span>@(d.DatosCaso.Procedimiento ?? "—")</span></div>
+                        <div><label>Fecha atención</label><span>@(d.DatosCaso.FechaAtencion ?? "—")</span></div>
+                        <div><label>Inicio cobertura</label><span>@(d.DatosCaso.FechaInicioCobertura ?? "—")</span></div>
+                    </div>
+                    @if (d.DatosCaso.InformacionFaltante.Any())
+                    {
+                        <div class="aud-falta"><i class="fa fa-exclamation-circle"></i> Falta: @string.Join(" · ", d.DatosCaso.InformacionFaltante)</div>
+                    }
                 </div>
             }
-            <div class="jarviswidget @(d.AlertasFraude.Any() ? "jarviswidget-color-red" : "")" data-widget-editbutton="false" data-widget-deletebutton="false">
-                <header><span class="widget-icon"><i class="fa fa-exclamation-triangle"></i></span><h2>3 · Alertas de fraude (@d.AlertasFraude.Count)</h2></header>
-                <div><div class="widget-body">
-                    @if (!d.AlertasFraude.Any()) { <p class="text-success"><i class="fa fa-check-circle"></i> Sin alertas.</p> }
-                    else { foreach (var a in d.AlertasFraude) { <div class="alert alert-danger" style="margin-bottom:8px;"><strong>@a.Hallazgo</strong>@if (!string.IsNullOrEmpty(a.Documento)) { <span class="text-muted"> — @a.Documento</span>}@if (!string.IsNullOrEmpty(a.PorQue)) { <div><small>@a.PorQue</small></div>}</div> } }
-                </div></div>
-            </div>
-        </div>
 
-        <div class="col-md-6">
             @if (d.AnalisisClinico != null)
             {
-                <div class="jarviswidget" data-widget-editbutton="false" data-widget-deletebutton="false">
-                    <header><span class="widget-icon"><i class="fa fa-heartbeat"></i></span><h2>1 · Análisis clínico</h2></header>
-                    <div><div class="widget-body">
-                        <p><strong>Pertinencia:</strong> <span class="label label-info">@d.AnalisisClinico.Pertinencia</span></p>
-                        <p>@d.AnalisisClinico.Justificacion</p>
-                        @if (d.AnalisisClinico.Fuente != null && !string.IsNullOrEmpty(d.AnalisisClinico.Fuente.Guia))
-                        { <p class="text-muted"><small><i class="fa fa-book"></i> @d.AnalisisClinico.Fuente.Guia — @d.AnalisisClinico.Fuente.Organizacion @d.AnalisisClinico.Fuente.Anio. @d.AnalisisClinico.Fuente.Resumen</small></p> }
-                    </div></div>
+                <div class="aud-card">
+                    <h3><i class="fa fa-heartbeat"></i> Análisis clínico</h3>
+                    <p><span class="aud-pill">@d.AnalisisClinico.Pertinencia</span></p>
+                    <p class="aud-body">@d.AnalisisClinico.Justificacion</p>
+                    @if (d.AnalisisClinico.Fuente != null && !string.IsNullOrEmpty(d.AnalisisClinico.Fuente.Guia))
+                    { <p class="aud-src"><i class="fa fa-book"></i> @d.AnalisisClinico.Fuente.Guia — @d.AnalisisClinico.Fuente.Organizacion @d.AnalisisClinico.Fuente.Anio. @d.AnalisisClinico.Fuente.Resumen</p> }
                 </div>
             }
+
             @if (d.AnalisisContractual != null)
             {
                 var ac = d.AnalisisContractual;
-                <div class="jarviswidget" data-widget-editbutton="false" data-widget-deletebutton="false">
-                    <header><span class="widget-icon"><i class="fa fa-file-text"></i></span><h2>2 · Análisis contractual</h2></header>
-                    <div><div class="widget-body">
-                        @if (ac.Cobertura != null)
-                        {
-                            <p><strong>Cobertura:</strong>
-                                @if (ac.Cobertura.Incluido == true) { <span class="label label-success">Incluido</span> }
-                                else if (ac.Cobertura.Incluido == false) { <span class="label label-danger">No incluido</span> }
-                                @if (!string.IsNullOrEmpty(ac.Cobertura.Porcentaje)) { <text> · @ac.Cobertura.Porcentaje</text> }
-                                @if (!string.IsNullOrEmpty(ac.Cobertura.Tope)) { <text> · tope @ac.Cobertura.Tope</text> }
-                                @if (!string.IsNullOrEmpty(ac.Cobertura.Deducible)) { <text> · deducible @ac.Cobertura.Deducible</text> }
-                            </p>
-                            @if (!string.IsNullOrEmpty(ac.Cobertura.Notas)) { <p class="text-muted"><small>@ac.Cobertura.Notas</small></p> }
-                        }
-                        @if (ac.Preexistencias != null && !string.IsNullOrEmpty(ac.Preexistencias.Hallazgo))
-                        { <p><strong>Preexistencias:</strong> @ac.Preexistencias.Hallazgo @if (!string.IsNullOrEmpty(ac.Preexistencias.TipoNexo)) { <em>(@ac.Preexistencias.TipoNexo)</em> }</p> }
-                        @if (ac.Carencias != null && ac.Carencias.Aplica == true)
-                        { <p><strong>Carencia:</strong> <span class="label label-warning">Aplica</span> @ac.Carencias.Detalle</p> }
-                        @if (ac.Exclusiones != null && ac.Exclusiones.Aplica == true)
-                        { <p><strong>Exclusión:</strong> <span class="label label-danger">Aplica</span> @ac.Exclusiones.TextoCitado @if (!string.IsNullOrEmpty(ac.Exclusiones.Clausula)) { <small class="text-muted">(@ac.Exclusiones.Clausula)</small> }</p> }
-                    </div></div>
+                <div class="aud-card">
+                    <h3><i class="fa fa-file-text-o"></i> Análisis contractual</h3>
+                    @if (ac.Cobertura != null)
+                    {
+                        <p>
+                            @if (ac.Cobertura.Incluido == true) { <span class="aud-pill aud-pill-ok">Cubierto</span> }
+                            else if (ac.Cobertura.Incluido == false) { <span class="aud-pill aud-pill-bad">No cubierto</span> }
+                            @if (!string.IsNullOrEmpty(ac.Cobertura.Porcentaje)) { <span class="aud-inline">@ac.Cobertura.Porcentaje</span> }
+                            @if (!string.IsNullOrEmpty(ac.Cobertura.Tope)) { <span class="aud-inline">tope @ac.Cobertura.Tope</span> }
+                            @if (!string.IsNullOrEmpty(ac.Cobertura.Deducible)) { <span class="aud-inline">deducible @ac.Cobertura.Deducible</span> }
+                        </p>
+                        @if (!string.IsNullOrEmpty(ac.Cobertura.Notas)) { <p class="aud-body">@ac.Cobertura.Notas</p> }
+                    }
+                    @if (ac.Preexistencias != null && !string.IsNullOrEmpty(ac.Preexistencias.Hallazgo))
+                    { <p><strong>Preexistencias:</strong> @ac.Preexistencias.Hallazgo @if (!string.IsNullOrEmpty(ac.Preexistencias.TipoNexo)) { <em>(@ac.Preexistencias.TipoNexo)</em> }</p> }
+                    @if (ac.Carencias != null && ac.Carencias.Aplica == true)
+                    { <p><span class="aud-pill aud-pill-warn">Carencia</span> @ac.Carencias.Detalle</p> }
+                    @if (ac.Exclusiones != null && ac.Exclusiones.Aplica == true)
+                    { <p><span class="aud-pill aud-pill-bad">Exclusión</span> @ac.Exclusiones.TextoCitado @if (!string.IsNullOrEmpty(ac.Exclusiones.Clausula)) { <small class="aud-muted">(@ac.Exclusiones.Clausula)</small> }</p> }
                 </div>
             }
+
+            <div class="aud-card @(d.AlertasFraude.Any() ? "aud-card-alert" : "")">
+                <h3><i class="fa fa-exclamation-triangle"></i> Alertas de fraude @(d.AlertasFraude.Any() ? "(" + d.AlertasFraude.Count + ")" : "")</h3>
+                @if (!d.AlertasFraude.Any()) { <p class="aud-ok"><i class="fa fa-check-circle"></i> Sin alertas identificadas.</p> }
+                else { foreach (var a in d.AlertasFraude) { <div class="aud-fraude"><strong>@a.Hallazgo</strong>@if (!string.IsNullOrEmpty(a.Documento)) { <span class="aud-muted"> — @a.Documento</span>}@if (!string.IsNullOrEmpty(a.PorQue)) { <div class="aud-body">@a.PorQue</div>}</div> } }
+            </div>
+
             @if (d.BloqueRedactor != null)
             {
-                <div class="jarviswidget" data-widget-editbutton="false" data-widget-deletebutton="false">
-                    <header><span class="widget-icon"><i class="fa fa-pencil"></i></span><h2>5 · Bloque para redactor</h2></header>
-                    <div><div class="widget-body">
-                        <p><strong>Tipo:</strong> @d.BloqueRedactor.TipoResolucion &nbsp; <strong>Motivo:</strong> @d.BloqueRedactor.MotivoPrincipal</p>
-                        @if (d.BloqueRedactor.ElementosClave.Any()) { <p><strong>Elementos para la carta:</strong></p><ul>@foreach (var e in d.BloqueRedactor.ElementosClave) { <li>@e</li> }</ul> }
-                        @if (d.BloqueRedactor.Alertas.Any()) { <p><strong>Banderas:</strong></p><ul>@foreach (var e in d.BloqueRedactor.Alertas) { <li>@e</li> }</ul> }
-                    </div></div>
+                <div class="aud-card aud-card-soft">
+                    <h3><i class="fa fa-pencil"></i> Bloque para redactor</h3>
+                    <p><strong>@d.BloqueRedactor.TipoResolucion</strong> — @d.BloqueRedactor.MotivoPrincipal</p>
+                    @if (d.BloqueRedactor.ElementosClave.Any()) { <ul class="aud-list">@foreach (var e in d.BloqueRedactor.ElementosClave) { <li>@e</li> }</ul> }
                 </div>
             }
-        </div>
-    </div>
-}
-else if (!string.IsNullOrEmpty(Model.RawText))
-{
-    <div class="jarviswidget" data-widget-editbutton="false" data-widget-deletebutton="false">
-        <header><h2>Dictamen (texto)</h2></header>
-        <div><div class="widget-body"><pre style="white-space:pre-wrap;">@Model.RawText</pre></div></div>
-    </div>
-}
-
-<a class="btn btn-default" asp-area="Studio" asp-controller="AuditoriaCasos" asp-action="Index"><i class="fa fa-arrow-left"></i> Volver</a>
-
-@* ── Visor en MODAL (bajo demanda; se cierra) ── *@
-<div class="modal fade" id="visorModal" tabindex="-1" role="dialog" aria-hidden="true">
-    <div class="modal-dialog" role="document" style="width:92%; max-width:1150px;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar"><span aria-hidden="true">&times;</span></button>
-                <h4 class="modal-title"><i class="fa fa-file-pdf-o"></i> <span id="visorModalTitle">Documento</span></h4>
-            </div>
-            <div class="modal-body" style="padding:0;">
-                <div id="visorModalHost" style="height:78vh; background:#f5f5f5;"></div>
-            </div>
-        </div>
-    </div>
+        }
+        else if (!string.IsNullOrEmpty(Model.RawText))
+        {
+            <div class="aud-card"><h3>Dictamen (texto)</h3><pre class="aud-raw">@Model.RawText</pre></div>
+        }
+    </section>
 </div>
 
 @section Styles {
     <link rel="stylesheet" href="~/css/app/st-pdf-viewer.css" asp-append-version="true" />
+    <style>
+        /* ── Auditoría de Casos — workspace ── */
+        .aud-top { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; padding:4px 2px 14px; border-bottom:1px solid #e6e9ee; margin-bottom:16px; }
+        .aud-crumb { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#8a93a2; }
+        .aud-sobre { margin:2px 0 6px; font-size:24px; color:#002F87; font-weight:700; }
+        .aud-sobre .fa { color:#0057c8; }
+        .aud-meta { color:#5b6472; font-size:13px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+        .aud-meta strong { color:#2c3440; }
+        .aud-dot { width:4px; height:4px; border-radius:50%; background:#c7cdd6; display:inline-block; }
+        .aud-top-actions { display:flex; gap:8px; align-items:center; }
+        .aud-btn-primary { background:#002F87; color:#fff; border:0; border-radius:8px; padding:11px 20px; font-size:14px; font-weight:600; cursor:pointer; }
+        .aud-btn-primary:hover { background:#0043b8; }
+        .aud-btn-ghost { background:#fff; color:#5b6472; border:1px solid #d7dce3; border-radius:8px; padding:10px 16px; font-size:13px; text-decoration:none; }
+        .aud-alert { background:#fff6e6; border:1px solid #f2d492; color:#8a5a00; padding:10px 14px; border-radius:8px; margin-bottom:14px; }
+
+        .aud-ws { display:flex; gap:16px; align-items:stretch; }
+        .aud-visor { flex:0 0 56%; max-width:56%; }
+        .aud-dict { flex:1 1 auto; min-width:0; max-height:calc(100vh - 170px); overflow:auto; padding-right:4px; }
+
+        .aud-panel { background:#fff; border:1px solid #e6e9ee; border-radius:10px; box-shadow:0 1px 2px rgba(16,24,40,.04); }
+        .aud-panel-head { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid #eef1f5; }
+        .aud-panel-title { font-weight:700; color:#2c3440; font-size:14px; }
+        .aud-panel-title .fa { color:#d33; margin-right:4px; }
+        .aud-select { border:1px solid #d7dce3; border-radius:8px; padding:6px 10px; font-size:13px; max-width:200px; color:#2c3440; background:#fff; }
+        .aud-nomatch { font-size:12px; color:#8a5a00; background:#fff6e6; border:1px solid #f2d492; border-radius:8px; padding:5px 10px; }
+        .aud-nomatch .fa { margin-right:4px; }
+
+        .aud-chips { display:flex; gap:6px; flex-wrap:wrap; padding:10px 14px; border-bottom:1px solid #eef1f5; }
+        .aud-chip { background:#f4f6f9; border:1px solid #e0e5ec; border-radius:16px; padding:5px 12px; font-size:12px; color:#3b4453; cursor:pointer; white-space:nowrap; max-width:230px; overflow:hidden; text-overflow:ellipsis; }
+        .aud-chip:hover { background:#e9eef6; border-color:#c3cede; }
+        .aud-chip.is-active { background:#002F87; color:#fff; border-color:#002F87; }
+        .aud-chip .fa { color:#d33; margin-right:4px; }
+        .aud-chip.is-active .fa { color:#cfe0ff; }
+        .aud-chip-anexo .fa { color:#0057c8; }
+
+        .aud-visor-host { height:calc(100vh - 300px); min-height:480px; background:#f6f7f9; border-radius:0 0 10px 10px; overflow:hidden; }
+        .aud-visor-empty { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; color:#aab2be; text-align:center; padding:24px; }
+        .aud-visor-empty .fa { font-size:44px; margin-bottom:12px; opacity:.5; }
+
+        .aud-genstamp { color:#8a93a2; font-size:12px; margin-bottom:10px; }
+        .aud-genstamp .fa { color:#0057c8; }
+        .aud-empty-dict { text-align:center; padding:44px 26px; color:#7b8494; }
+        .aud-empty-dict .fa { font-size:40px; color:#c3cede; }
+        .aud-empty-dict h3 { color:#2c3440; margin:12px 0 6px; }
+
+        /* Hero recomendación */
+        .aud-hero { border-radius:10px; padding:16px 18px; margin-bottom:14px; color:#fff; }
+        .aud-hero-verdict { font-size:22px; font-weight:800; letter-spacing:.02em; }
+        .aud-hero-motivo { font-size:14px; margin-top:6px; opacity:.96; }
+        .aud-hero-tags { margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; }
+        .aud-hero .aud-tag { background:rgba(255,255,255,.22); border-radius:14px; padding:3px 10px; font-size:12px; }
+        .aud-hero .aud-tag-bad { background:rgba(0,0,0,.22); }
+        .aud-hero-riesgo { font-size:12px; margin-top:8px; opacity:.9; }
+        .aud-ok    { background:#127a3e; }
+        .aud-bad   { background:#b4231f; }
+        .aud-warn  { background:#b7791f; }
+        .aud-info  { background:#0057c8; }
+        .aud-muted { background:#5b6472; }
+
+        /* Cards de sección */
+        .aud-card { background:#fff; border:1px solid #e6e9ee; border-radius:10px; padding:14px 16px; margin-bottom:12px; box-shadow:0 1px 2px rgba(16,24,40,.04); }
+        .aud-card h3 { margin:0 0 10px; font-size:14px; font-weight:700; color:#002F87; }
+        .aud-card h3 .fa { margin-right:6px; color:#0057c8; }
+        .aud-card-alert { border-color:#f0b4b1; background:#fff7f6; }
+        .aud-card-soft { background:#f9fafc; }
+        .aud-body { color:#3b4453; font-size:13.5px; line-height:1.5; }
+        .aud-src { color:#7b8494; font-size:12px; margin-top:8px; }
+        .aud-kv { display:grid; grid-template-columns:1fr 1fr; gap:8px 18px; }
+        .aud-kv > div { display:flex; flex-direction:column; }
+        .aud-kv label { font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:#98a1af; }
+        .aud-kv span { color:#2c3440; font-size:13.5px; }
+        .aud-falta { margin-top:10px; background:#fff6e6; border:1px solid #f2d492; color:#8a5a00; padding:8px 12px; border-radius:8px; font-size:12.5px; }
+        .aud-pill { display:inline-block; background:#eef2f8; color:#33507d; border-radius:14px; padding:3px 11px; font-size:12px; font-weight:600; }
+        .aud-pill-ok  { background:#e3f4e9; color:#127a3e; }
+        .aud-pill-bad { background:#fbe6e5; color:#b4231f; }
+        .aud-pill-warn{ background:#fbf0da; color:#8a5a00; }
+        .aud-inline { color:#5b6472; font-size:13px; margin-left:8px; }
+        .aud-fraude { border-left:3px solid #b4231f; background:#fff7f6; padding:8px 12px; border-radius:0 6px 6px 0; margin-bottom:8px; }
+        .aud-ok .fa, .aud-ok { }
+        .aud-list { margin:6px 0 0 18px; color:#3b4453; font-size:13px; }
+        .aud-raw { white-space:pre-wrap; font-size:12px; }
+
+        @@media (max-width: 1100px) { .aud-visor, .aud-dict { flex:1 1 100%; max-width:100%; max-height:none; } .aud-visor-host{ height:70vh; } }
+    </style>
 }
 
 @section Scripts {
@@ -245,20 +303,22 @@ else if (!string.IsNullOrEmpty(Model.RawText))
     <script src="~/js/app/st-pdf-viewer.js" asp-append-version="true"></script>
     <script>
         (function () {
-            var visor = null, pendiente = null;
+            var visor = null;
+            function verDoc(btn) {
+                document.querySelectorAll('.aud-chip.is-active').forEach(function (x) { x.classList.remove('is-active'); });
+                btn.classList.add('is-active');
+                var host = document.getElementById('visorHost');
+                if (!visor) { host.innerHTML = ''; visor = StPdfViewer.create(host, {}); }
+                visor.abrir({ url: btn.getAttribute('data-url'), nombre: btn.getAttribute('data-nombre') || 'Documento' });
+            }
             document.addEventListener('click', function (ev) {
                 var b = ev.target.closest ? ev.target.closest('.js-ver') : null;
-                if (!b) return;
-                ev.preventDefault();
-                pendiente = { url: b.getAttribute('data-url'), nombre: b.getAttribute('data-nombre') || 'Documento' };
-                document.getElementById('visorModalTitle').textContent = pendiente.nombre;
-                jQuery('#visorModal').modal('show');
+                if (b) { ev.preventDefault(); verDoc(b); }
             });
-            // El visor se crea/renderiza cuando el modal YA es visible (tiene tamaño).
-            jQuery('#visorModal').on('shown.bs.modal', function () {
-                var host = document.getElementById('visorModalHost');
-                if (!visor) { host.innerHTML = ''; visor = StPdfViewer.create(host, {}); }
-                if (pendiente) { visor.abrir({ url: pendiente.url, nombre: pendiente.nombre }); pendiente = null; }
+            // Auto-abre el primer documento para que el visor no arranque vacío.
+            document.addEventListener('DOMContentLoaded', function () {
+                var first = document.querySelector('.aud-chips .js-ver');
+                if (first) verDoc(first);
             });
         })();
     </script>
