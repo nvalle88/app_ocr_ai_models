@@ -123,4 +123,19 @@ public sealed class AuditoriaCasoViewModel
     public DateTime? GeneradoEn { get; set; }
     public string? GeneradoPor { get; set; }
     public string? Error { get; set; }
+
+    /// <summary>Anexos de la biblioteca para el panel lateral (visor + coberturas).</summary>
+    public List<AnexoLateralVM> Anexos { get; set; } = new();
+}
+
+/// <summary>Anexo mostrado en el panel lateral del caso.</summary>
+public sealed class AnexoLateralVM
+{
+    public int Id { get; set; }
+    public string CodigoPlan { get; set; } = string.Empty;
+    public string? NombrePlan { get; set; }
+    public string? CodigoProducto { get; set; }
+    public int Coberturas { get; set; }
+    /// <summary>True si su producto coincide con el del sobre (se resalta).</summary>
+    public bool Coincide { get; set; }
 }

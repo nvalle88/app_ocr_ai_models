@@ -1,7 +1,9 @@
 using app_ocr_ai_models.Areas.Studio.Models;
 using app_ocr_ai_models.Data;
 using app_ocr_ai_models.Services.Anexos;
+using app_tramites.Models.ModelAi;
 using app_tramites.Models.ViewModel;
+using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -169,5 +171,58 @@ public sealed class AnexosController : Controller
             TempData["Mensaje"] = $"Anexo {anexo.CodigoPlan} eliminado.";
         }
         return RedirectToAction(nameof(Index));
+    }
+
+    // GET /Studio/Anexos/Documento/{id}  → sirve el PDF del anexo (inline) para el visor
+    [HttpGet]
+    public async Task<IActionResult> Documento(int id, bool inline = true)
+    {
+        var anexo = await _db.Anexo.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id);
+        if (anexo == null || string.IsNullOrWhiteSpace(anexo.ArchivoUri))
+            return NotFound("El anexo no tiene un PDF asociado.");
+
+        var blobCfg = await _db.AzureBlobConf.AsNoTracking().FirstOrDefaultAsync();
+        var bytes = await DescargarBlobAsync(anexo.ArchivoUri!, blobCfg);
+        if (bytes == null)
+            return NotFound("No se pudo descargar el PDF del anexo.");
+
+        var nombre = $"anexo-{anexo.CodigoPlan}.pdf".Replace(' ', '_');
+        Response.Headers["Content-Disposition"] =
+            (inline ? "inline" : "attachment") + $"; filename=\"{nombre}\"";
+        return File(bytes, "application/pdf");
+    }
+
+    /// <summary>Descarga el blob del anexo (SDK con la config; fallback HTTP directo).</summary>
+    private static async Task<byte[]?> DescargarBlobAsync(string archivoUri, AzureBlobConf? blobCfg)
+    {
+        // 1) Vía SDK con la connection string + contenedor configurados.
+        if (blobCfg != null && !string.IsNullOrWhiteSpace(blobCfg.ConnectionString)
+            && !string.IsNullOrWhiteSpace(blobCfg.ContainerName))
+        {
+            try
+            {
+                var u = new Uri(archivoUri);
+                var path = u.AbsolutePath.TrimStart('/');
+                var prefix = blobCfg.ContainerName + "/";
+                var blobName = path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                    ? path.Substring(prefix.Length)
+                    : System.IO.Path.GetFileName(path);
+                var client = new BlobClient(blobCfg.ConnectionString, blobCfg.ContainerName, Uri.UnescapeDataString(blobName));
+                var dl = await client.DownloadContentAsync();
+                return dl.Value.Content.ToArray();
+            }
+            catch { /* cae al fallback HTTP */ }
+        }
+
+        // 2) Fallback: GET directo (por si el blob es accesible por URL).
+        try
+        {
+            using var http = new HttpClient();
+            using var resp = await http.GetAsync(archivoUri);
+            if (resp.IsSuccessStatusCode) return await resp.Content.ReadAsByteArrayAsync();
+        }
+        catch { /* nada */ }
+
+        return null;
     }
 }

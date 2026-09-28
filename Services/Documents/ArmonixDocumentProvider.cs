@@ -400,6 +400,119 @@ public sealed class ArmonixDocumentProvider : IDocumentSourceProvider
         };
     }
 
+    // ── ImportarDocumentos SIN OCR (rápido) — solo descarga + blob ─────────
+
+    /// <summary>
+    /// Trae los documentos del sobre desde M-Files y los sube a Blob como
+    /// <see cref="DataFile"/> <b>sin ejecutar OCR</b> (Text vacío). Es la parte
+    /// "rápida" para que el auditor vea los PDF de inmediato en el visor; el OCR
+    /// se hace después, en la generación del dictamen (<see cref="OcrDocumentosPendientesAsync"/>).
+    /// </summary>
+    public async Task<ImportarDocumentosResult> ImportarDocumentosSinOcrAsync(
+        SobreDocumentosFilter filter,
+        ProcessCase caso,
+        OCRDbContext db,
+        CancellationToken ct = default)
+    {
+        ValidarNumeroSobre(filter);
+        var numeroSobre = filter.NumeroSobre.Trim();
+
+        var objetos = await BuscarObjetosMFilesAsync(numeroSobre, ct).ConfigureAwait(false);
+        var ids  = new List<int>();
+        var adv  = new List<string>();
+        if (objetos.Count == 0)
+            adv.Add($"No se encontraron documentos en M-Files para el sobre '{numeroSobre}'.");
+
+        foreach (var obj in objetos)
+        {
+            var nombre = obj.Nombre;
+            if (string.IsNullOrWhiteSpace(nombre)) continue;
+            try
+            {
+                var ext = NormalizarExtension(obj.Archivos?.FirstOrDefault()?.Extension);
+                var b64 = await DescargarDocumentoMFilesAsync(nombre, ct).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(b64)) { adv.Add($"'{nombre}' llegó sin contenido."); continue; }
+
+                var fileName = nombre.Contains('.') ? nombre : nombre + ext;
+                var bytes = Convert.FromBase64String(b64);
+                using var ms = new MemoryStream(bytes);
+                var fileUrl = await _ingest.UploadFileAsync(ms, ext).ConfigureAwait(false);
+
+                var dataFile = new DataFile
+                {
+                    IsFileUri    = true,
+                    FileUri      = fileUrl,
+                    Text         = string.Empty,   // OCR diferido
+                    CaseCode     = caso.CaseCode,
+                    CreatedDate  = DateTime.UtcNow,
+                    OriginalName = fileName
+                };
+                db.DataFile.Add(dataFile);
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                ids.Add(dataFile.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[T22] Fast import falló para {NombreDoc}.", nombre);
+                adv.Add($"No se pudo traer '{nombre}': {ex.Message}");
+            }
+        }
+
+        return new ImportarDocumentosResult { DataFileIds = ids, Advertencias = adv };
+    }
+
+    /// <summary>
+    /// OCR diferido: para los <see cref="DataFile"/> del caso que no tienen texto,
+    /// re-descarga el binario de M-Files, ejecuta OCR y actualiza el texto (+ páginas).
+    /// Devuelve cuántos documentos se OCR-izaron.
+    /// </summary>
+    public async Task<int> OcrDocumentosPendientesAsync(
+        string numeroSobre,
+        ProcessCase caso,
+        OCRDbContext db,
+        CancellationToken ct = default)
+    {
+        var pendientes = caso.DataFile.Where(f => string.IsNullOrWhiteSpace(f.Text)).ToList();
+        if (pendientes.Count == 0) return 0;
+
+        var objetos = await BuscarObjetosMFilesAsync(numeroSobre.Trim(), ct).ConfigureAwait(false);
+        var ocrCount = 0;
+
+        foreach (var df in pendientes)
+        {
+            var obj = objetos.FirstOrDefault(o =>
+                !string.IsNullOrWhiteSpace(o.Nombre) &&
+                df.OriginalName != null &&
+                df.OriginalName.StartsWith(o.Nombre!, StringComparison.OrdinalIgnoreCase));
+            if (obj?.Nombre == null) continue;
+
+            try
+            {
+                var ext = NormalizarExtension(obj.Archivos?.FirstOrDefault()?.Extension);
+                var b64 = await DescargarDocumentoMFilesAsync(obj.Nombre, ct).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(b64)) continue;
+
+                var ocrFile = new OcrFile { FileName = df.OriginalName!, Content = b64, Extension = ext };
+                var ocrRes  = await _ingest.ProcessFileDetailedAsync(ocrFile).ConfigureAwait(false);
+                df.Text = ocrRes.Text;
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+                var paginas = OcrPaginaPersistencia.Materializar(df.Id, ocrRes.Paginas);
+                if (paginas.Count > 0)
+                {
+                    db.DataFilePage.AddRange(paginas);
+                    await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                }
+                ocrCount++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[T22] OCR diferido falló para {Doc}.", df.OriginalName);
+            }
+        }
+        return ocrCount;
+    }
+
     // ── Helpers M-Files ───────────────────────────────────────────────────
 
     /// <summary>

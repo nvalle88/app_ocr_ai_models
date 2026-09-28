@@ -153,7 +153,9 @@ public sealed class AuditoriaCasosController : Controller
                 CodigoProducto = codigoProducto,
                 CodigoRegion   = codigoRegion
             };
-            var res = await _armonix.ImportarDocumentosAsync(filter, caso, _db, HttpContext.RequestAborted);
+            // RÁPIDO: solo trae los PDF a Blob (sin OCR). El OCR se hace al generar
+            // el dictamen. Así el auditor ve los documentos en el visor de inmediato.
+            var res = await _armonix.ImportarDocumentosSinOcrAsync(filter, caso, _db, HttpContext.RequestAborted);
             if (res.DataFileIds.Count == 0 && res.Advertencias.Count > 0)
                 TempData["Error"] = "El sobre se importó pero: " + string.Join("; ", res.Advertencias);
         }
@@ -182,7 +184,33 @@ public sealed class AuditoriaCasosController : Controller
         }
 
         var vm = BuildCasoVm(caso);
+        vm.Anexos = await CargarAnexosLateralAsync(vm.Producto);
         return View(vm);
+    }
+
+    // Anexos de la biblioteca para el panel lateral; los que coinciden con el
+    // producto del sobre se muestran primero (resaltados).
+    private async Task<List<AnexoLateralVM>> CargarAnexosLateralAsync(string? producto)
+    {
+        var anexos = await _db.Anexo.AsNoTracking()
+            .Where(a => a.IsActive)
+            .OrderByDescending(a => a.CreatedDate)
+            .Take(50)
+            .Select(a => new AnexoLateralVM
+            {
+                Id             = a.Id,
+                CodigoPlan     = a.CodigoPlan,
+                NombrePlan     = a.NombrePlan,
+                CodigoProducto = a.CodigoProducto,
+                Coberturas     = a.Coberturas.Count
+            })
+            .ToListAsync();
+
+        if (!string.IsNullOrWhiteSpace(producto))
+            foreach (var a in anexos)
+                a.Coincide = string.Equals(a.CodigoProducto, producto, StringComparison.OrdinalIgnoreCase);
+
+        return anexos.OrderByDescending(a => a.Coincide).ThenBy(a => a.CodigoPlan).ToList();
     }
 
     // POST /Studio/AuditoriaCasos/Generar  → corre el agente propio y persiste el dictamen
@@ -213,6 +241,16 @@ public sealed class AuditoriaCasosController : Controller
         var config     = agent.AgentConfig;
         var caseCtx    = OcrPromptHelper.BuildCaseContext(caso.Notes);
         var caseCedula = OcrPromptHelper.ExtractCedulaFromCaseContext(caso.Notes);
+
+        // OCR DIFERIDO: los documentos se trajeron rápido (sin OCR). Aquí, al analizar,
+        // se extrae el texto de los que falten. Es el momento donde el auditor ya espera
+        // que "piense", así que el costo del OCR no retrasa el traer los documentos.
+        var numSobreCtx = OcrPromptHelper.ExtractStringFromCaseContext(caso.Notes, "numeroSobre");
+        if (!string.IsNullOrWhiteSpace(numSobreCtx))
+        {
+            try { await _armonix.OcrDocumentosPendientesAsync(numSobreCtx, caso, _db, HttpContext.RequestAborted); }
+            catch (Exception ex) { _logger.LogWarning(ex, "[REQ-046] OCR diferido falló para caso {CaseCode}.", caseCode); }
+        }
 
         var sb = new StringBuilder();
         if (!string.IsNullOrWhiteSpace(caseCtx))
