@@ -1,9 +1,8 @@
 -- ============================================================
--- REQ-046 — MIGRACION A PRODUCCION (db-nexus). CONSOLIDADO.
--- Ejecuta el DBA en su ventana. Guarda: solo corre en 'db-nexus'.
--- Crea la biblioteca de anexos + tools + agente AGENTE_AUDITOR_CASOS.
--- Las tools usan connection 'DefaultConnection' (en prod = db-nexus).
--- Requiere que AGENTE_AUDITOR_MEDICINA y el esquema REQ-019 ya existan en prod.
+-- REQ-046 - MIGRACION PRODUCCION nexus-aud (db-nexus-aud). CONSOLIDADO.
+-- App: web-nexus-aud (gr-op-po-prod). Ejecuta el DBA en su ventana.
+-- Guarda: solo corre en 'db-nexus-aud'. Idempotente.
+-- Requiere AGENTE_AUDITOR_MEDICINA + esquema REQ-019 (verificado presente).
 -- ============================================================
 GO
 -- ##### origen: Req046a_BibliotecaAnexos.sql #####
@@ -17,12 +16,12 @@ GO
 -- la pantalla de administraciÃ³n; las tools del agente auditor LEEN de aquÃ­
 -- (no de M-Files ni de las BD de Saludsa en vivo).
 --
--- Todo en la BD propia de Nexus (db-nexus / OcrAiConnection).
+-- Todo en la BD propia de Nexus (db-nexus-aud / OcrAiConnection).
 -- Idempotente: se puede re-ejecutar.
 -- ============================================================
-IF DB_NAME() <> N'db-nexus'
+IF DB_NAME() <> N'db-nexus-aud'
 BEGIN
-    RAISERROR('Script REQ-046a solo permitido en db-nexus. Abortado.', 16, 1);
+    RAISERROR('Script REQ-046a solo permitido en db-nexus-aud. Abortado.', 16, 1);
     RETURN;
 END;
 SET NOCOUNT ON;
@@ -169,9 +168,9 @@ GO
 -- Se enlazan a AGENTE_AUDITOR_MEDICINA y AGENTE_CLAUDE.
 -- Idempotente (upsert por Code + link condicional).
 -- ============================================================
-IF DB_NAME() <> N'db-nexus'
+IF DB_NAME() <> N'db-nexus-aud'
 BEGIN
-    RAISERROR('Script REQ-046b solo permitido en db-nexus. Abortado.', 16, 1);
+    RAISERROR('Script REQ-046b solo permitido en db-nexus-aud. Abortado.', 16, 1);
     RETURN;
 END;
 SET NOCOUNT ON;
@@ -269,9 +268,9 @@ GO
 --   Anexa (idempotente) al SystemPrompt de AGENTE_AUDITOR_MEDICINA la guÃ­a de
 --   las tools anexo_* y las reglas de prelaciÃ³n contractual.
 -- ============================================================
-IF DB_NAME() <> N'db-nexus'
+IF DB_NAME() <> N'db-nexus-aud'
 BEGIN
-    RAISERROR('Script REQ-046c solo permitido en db-nexus. Abortado.', 16, 1);
+    RAISERROR('Script REQ-046c solo permitido en db-nexus-aud. Abortado.', 16, 1);
     RETURN;
 END;
 SET NOCOUNT ON;
@@ -318,9 +317,9 @@ GO
 --   (CLAUDE_FOUNDRY) y copia las tools del AGENTE_AUDITOR_MEDICINA.
 --   Es DISTINTO del auditor de la bandeja: pantalla, agente y salida propios.
 -- ============================================================
-IF DB_NAME() <> N'db-nexus'
+IF DB_NAME() <> N'db-nexus-aud'
 BEGIN
-    RAISERROR('Script REQ-046d solo permitido en db-nexus. Abortado.', 16, 1);
+    RAISERROR('Script REQ-046d solo permitido en db-nexus-aud. Abortado.', 16, 1);
     RETURN;
 END;
 SET NOCOUNT ON;
