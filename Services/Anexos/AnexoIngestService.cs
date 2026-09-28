@@ -173,9 +173,11 @@ public sealed class AnexoIngestService : IAnexoIngestService
         var req = new AiCompletionRequest
         {
             SystemPrompt = system,
+            // Un anexo con muchas coberturas produce un JSON largo; con 8000 se
+            // truncaba a medias y no parseaba. Opus admite salidas grandes.
             UserMessage  = user.ToString(),
-            MaxTokens    = 8000,
-            ThinkingMode = "disabled"
+            MaxTokens    = 32000,
+            ThinkingMode = "off"
         };
 
         try
