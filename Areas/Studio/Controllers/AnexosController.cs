@@ -192,37 +192,34 @@ public sealed class AnexosController : Controller
         return File(bytes, "application/pdf");
     }
 
-    /// <summary>Descarga el blob del anexo (SDK con la config; fallback HTTP directo).</summary>
+    /// <summary>
+    /// Descarga el blob del anexo SOLO vía el SDK con la connection string + contenedor
+    /// configurados (los anexos siempre viven en NUESTRO contenedor). No se hace un GET
+    /// HTTP a la URL guardada en BD: eso sería un SSRF (fetch de una URL no validada).
+    /// </summary>
     private static async Task<byte[]?> DescargarBlobAsync(string archivoUri, AzureBlobConf? blobCfg)
     {
-        // 1) Vía SDK con la connection string + contenedor configurados.
-        if (blobCfg != null && !string.IsNullOrWhiteSpace(blobCfg.ConnectionString)
-            && !string.IsNullOrWhiteSpace(blobCfg.ContainerName))
-        {
-            try
-            {
-                var u = new Uri(archivoUri);
-                var path = u.AbsolutePath.TrimStart('/');
-                var prefix = blobCfg.ContainerName + "/";
-                var blobName = path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-                    ? path.Substring(prefix.Length)
-                    : System.IO.Path.GetFileName(path);
-                var client = new BlobClient(blobCfg.ConnectionString, blobCfg.ContainerName, Uri.UnescapeDataString(blobName));
-                var dl = await client.DownloadContentAsync();
-                return dl.Value.Content.ToArray();
-            }
-            catch { /* cae al fallback HTTP */ }
-        }
+        if (blobCfg == null || string.IsNullOrWhiteSpace(blobCfg.ConnectionString)
+            || string.IsNullOrWhiteSpace(blobCfg.ContainerName))
+            return null;
 
-        // 2) Fallback: GET directo (por si el blob es accesible por URL).
         try
         {
-            using var http = new HttpClient();
-            using var resp = await http.GetAsync(archivoUri);
-            if (resp.IsSuccessStatusCode) return await resp.Content.ReadAsByteArrayAsync();
+            var u = new Uri(archivoUri);
+            var path = u.AbsolutePath.TrimStart('/');
+            var prefix = blobCfg.ContainerName + "/";
+            var blobName = path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? path.Substring(prefix.Length)
+                : System.IO.Path.GetFileName(path);
+            var client = new BlobClient(blobCfg.ConnectionString, blobCfg.ContainerName, Uri.UnescapeDataString(blobName));
+            var dl = await client.DownloadContentAsync();
+            return dl.Value.Content.ToArray();
         }
-        catch { /* nada */ }
-
-        return null;
+        catch
+        {
+            // Si el SDK no puede resolver el blob, se devuelve null → 404. No se
+            // intenta un GET HTTP a la URL (evita SSRF hacia hosts internos).
+            return null;
+        }
     }
 }
